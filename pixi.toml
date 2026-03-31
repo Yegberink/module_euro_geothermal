@@ -1,0 +1,41 @@
+[workspace]
+name = "geo_module"
+authors = ["See AUTHORS file"]
+description = "This module calculates geothermal heat or power production based on a temperature model by Limberger et al. (2014)."
+license = "Apache-2.0"
+readme = "README.md"
+channels = ["conda-forge", "bioconda"]
+platforms = ["win-64", "linux-64", "osx-arm64"]
+homepage = "https://clio.readthedocs.io/"
+
+[dependencies]
+clio-tools = ">=2025.03.03"
+conda = ">=25.0.0"
+ipdb = ">=0.13.13"
+ipykernel = ">=6.29.5"
+jsonschema = ">=4.0.0"
+mypy = ">=1.15.0"
+pytest = ">=8.3.5"
+python = ">=3.12"
+ruff = ">=0.9.9"
+snakefmt = ">=0.10.2"
+snakemake-minimal = ">=8.29.0"
+rasterio = ">=1.5.0,<2"
+xarray = ">=2026.1.0,<2027"
+snakemake = ">=9.16.0,<10"
+scipy = ">=1.17.0,<2"
+plotly = ">=6.5.2,<7"
+geopandas = ">=1.1.2,<2"
+pyarrow = ">=23.0.0,<24"
+pandas = ">=3.0.0,<4"
+dask = ">=2026.1.1,<2027"
+rioxarray = ">=0.21.0,<0.22"
+affine = ">=2.4.0,<3"
+matplotlib = ">=3.10.8,<4"
+cycler = ">=0.12.1,<0.13"
+
+[tasks]
+test-integration = {cmd = "pytest tests/clio_test.py"}
+
+[pypi-dependencies]
+gregor = ">=0.0.2, <0.0.3"

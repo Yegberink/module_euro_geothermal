@@ -1,0 +1,242 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "file://workflow/internal/config.schema.yaml"
+title: "Geothermal module config"
+type: object
+additionalProperties: true
+
+properties:
+  include_egs:
+    type: boolean
+    description: "Whether to include Enhanced Geothermal Systems (EGS)."
+
+  carrier_out:
+    type: string
+    enum: ["heat", "power", "both"]
+    description: "Which carrier(s) to output."
+
+  max_depth:
+    type: number
+    minimum: 250
+    multipleOf: 250
+    description: "Maximum depth (m) for geothermal voxel construction; must be a multiple of 250 m."
+
+  which_cycles:
+    type: array
+    description: "Power cycle types to evaluate (case-insensitive)."
+    items:
+      type: string
+      pattern: "(?i)^(kalina|orc|flash)$"
+    uniqueItems: true
+
+  EGS_cutoff:
+    type: number
+    minimum: 0
+    description: "Depth (m) below which only EGS is assumed."
+
+  SED_NAN_POLICY:
+    type: string
+    enum: ["depth_only", "always_egs"]
+    description: "How to treat NaNs in sediment thickness after resampling."
+
+  temp_turbine_out:
+    type: object
+    description: "Minimum turbine outlet temperature (°C) per cycle. Should be lower than the max temperature in the efficiency curves for each cycle."
+    additionalProperties: false
+    properties:
+      ORC:
+        type: number
+        minimum: 0
+        maximum: 320
+      Flash:
+        type: number
+        minimum: 0
+        maximum: 485
+      Kalina:
+        type: number
+        minimum: 0
+        maximum: 180
+
+  stimulation_cost_per_doublet:
+    type: number
+    minimum: 0
+    description: "Stimulation cost per doublet (million €)."
+
+  pump_cost:
+    type: number
+    minimum: 0
+    description: "Pump cost (million €) per pair."
+
+  lifetime:
+    type: number
+    exclusiveMinimum: 0
+    description: "Project lifetime (years)."
+
+  fixed_OM_rate:
+    type: number
+    minimum: 0
+    maximum: 1
+    description: "Fixed O&M rate as fraction of CAPEX per year."
+
+  parasitic_fraction:
+    type: number
+    minimum: 0
+    maximum: 1
+    description: "Parasitic fraction of gross power output."
+
+  n_pairs:
+    type: integer
+    minimum: 1
+    description: "Max number of doublets per voxel (10x10 km) without interference."
+
+  orc_money_per_kw:
+    type: number
+    minimum: 0
+    description: "ORC specific CAPEX (EUR/kW)."
+
+  flash_money_per_kw:
+    type: number
+    minimum: 0
+    description: "Flash specific CAPEX (EUR/kW)."
+
+  kalina_money_per_kw:
+    type: number
+    minimum: 0
+    description: "Kalina specific CAPEX (EUR/kW)."
+
+  method_2d_aggregation:
+    type: string
+    enum: ["LCOE_minimization", "depth_categories"]
+    description: "Method to aggregate 3D voxel data to 2D raster."
+
+  method_region_aggregation:
+    type: string
+    enum: ["quantiles", "fixed_bins", "cutoff"]
+    description: "Method to aggregate raster to regions."
+
+  depth_categories:
+    type: array
+    description: "Depth categories (m) used when method_2d_aggregation=depth_categories."
+    minItems: 1
+    items:
+      type: array
+      minItems: 2
+      maxItems: 2
+      items:
+        type: number
+        minimum: 0
+
+  n_quantiles:
+    type: integer
+    minimum: 1
+    description: "Number of quantiles used when method_region_aggregation=quantiles."
+
+  fixed_bins:
+    type: array
+    description: "Fixed LCOE bins in EUR/kWh as strings like '0-50'. Used when method_region_aggregation=fixed_bins."
+    minItems: 1
+    items:
+      type: string
+      pattern: "^[0-9]+(\\.[0-9]+)?-[0-9]+(\\.[0-9]+)?$"
+
+  lcoe_cutoff:
+    type: number
+    minimum: 0
+    description: "LCOE cutoff (EUR/kWh) used when method_region_aggregation=cutoff."
+
+required:
+  - include_egs
+  - carrier_out
+  - max_depth
+  - which_cycles
+  - EGS_cutoff
+  - SED_NAN_POLICY
+  - stimulation_cost_per_doublet
+  - pump_cost
+  - lifetime
+  - fixed_OM_rate
+  - parasitic_fraction
+  - n_pairs
+  - orc_money_per_kw
+  - flash_money_per_kw
+  - kalina_money_per_kw
+  - method_2d_aggregation
+  - method_region_aggregation
+
+allOf:
+
+  # If carrier_out includes power, require temp_turbine_out.
+  - if:
+      properties:
+        carrier_out:
+          enum: ["power", "both"]
+    then:
+      required: ["temp_turbine_out"]
+      properties:
+        which_cycles:
+          minItems: 1
+
+  # Require turbine outlet temperature for each included cycle.
+  - if:
+      properties:
+        which_cycles:
+          contains:
+            const: "ORC"
+    then:
+      properties:
+        temp_turbine_out:
+          required: ["ORC"]
+
+  - if:
+      properties:
+        which_cycles:
+          contains:
+            const: "Flash"
+    then:
+      properties:
+        temp_turbine_out:
+          required: ["Flash"]
+
+  - if:
+      properties:
+        which_cycles:
+          contains:
+            const: "kalina"
+    then:
+      properties:
+        temp_turbine_out:
+          required: ["Kalina"]
+
+  # method_2d_aggregation: depth_categories => require depth_categories
+  - if:
+      properties:
+        method_2d_aggregation:
+          const: "depth_categories"
+    then:
+      required: ["depth_categories"]
+
+  # method_region_aggregation: quantiles => require n_quantiles > 0
+  - if:
+      properties:
+        method_region_aggregation:
+          const: "quantiles"
+    then:
+      properties:
+        n_quantiles:
+          minimum: 1
+      required: ["n_quantiles"]
+
+  # method_region_aggregation: fixed_bins => require fixed_bins
+  - if:
+      properties:
+        method_region_aggregation:
+          const: "fixed_bins"
+    then:
+      required: ["fixed_bins"]
+
+  # method_region_aggregation: cutoff => require lcoe_cutoff
+  - if:
+      properties:
+        method_region_aggregation:
+          const: "cutoff"
+    then:
+      required: ["lcoe_cutoff"]
