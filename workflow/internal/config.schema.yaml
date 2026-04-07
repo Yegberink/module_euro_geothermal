@@ -5,6 +5,21 @@ type: object
 additionalProperties: true
 
 properties:
+  target_shapes:
+    type: array
+    description: "Folder name(s) under resources/user/ to process."
+    minItems: 1
+    items:
+      type: string
+
+  perform_sensitivity:
+    type: boolean
+    description: "Whether to run the sensitivity analysis in addition to the baseline scenario."
+
+  write_qc_sliders:
+    type: boolean
+    description: "Whether to write QC slider HTML files."
+
   include_egs:
     type: boolean
     description: "Whether to include Enhanced Geothermal Systems (EGS)."
@@ -22,10 +37,10 @@ properties:
 
   which_cycles:
     type: array
-    description: "Power cycle types to evaluate (case-insensitive)."
+    description: "Power cycle types to evaluate."
     items:
       type: string
-      pattern: "(?i)^(kalina|orc|flash)$"
+      enum: ["orc", "flash", "kalina"]
     uniqueItems: true
 
   EGS_cutoff:
@@ -40,7 +55,7 @@ properties:
 
   temp_turbine_out:
     type: object
-    description: "Minimum turbine outlet temperature (°C) per cycle. Should be lower than the max temperature in the efficiency curves for each cycle."
+    description: "Minimum turbine outlet temperature (°C) per cycle."
     additionalProperties: false
     properties:
       ORC:
@@ -55,6 +70,11 @@ properties:
         type: number
         minimum: 0
         maximum: 180
+
+  well_cost_sens:
+    type: number
+    minimum: 0
+    description: "Multiplicative scaling factor for well costs."
 
   stimulation_cost_per_doublet:
     type: number
@@ -83,11 +103,6 @@ properties:
     maximum: 1
     description: "Parasitic fraction of gross power output."
 
-  n_pairs:
-    type: integer
-    minimum: 1
-    description: "Max number of doublets per voxel (10x10 km) without interference."
-
   orc_money_per_kw:
     type: number
     minimum: 0
@@ -102,6 +117,26 @@ properties:
     type: number
     minimum: 0
     description: "Kalina specific CAPEX (EUR/kW)."
+
+  well_spacing:
+    type: number
+    exclusiveMinimum: 0
+    description: "Distance between production and injection well (m)."
+
+  flowrate_egs:
+    type: number
+    exclusiveMinimum: 0
+    description: "Mass flow rate per EGS doublet (kg/s)."
+
+  flowrate_conventional:
+    type: number
+    exclusiveMinimum: 0
+    description: "Mass flow rate per conventional doublet (kg/s)."
+
+  min_dt:
+    type: number
+    minimum: 0
+    description: "Minimum temperature difference between production temperature and turbine outlet temperature for power generation (°C)."
 
   method_2d_aggregation:
     type: string
@@ -121,9 +156,11 @@ properties:
       type: array
       minItems: 2
       maxItems: 2
-      items:
-        type: number
-        minimum: 0
+      prefixItems:
+        - type: number
+          minimum: 0
+        - type: number
+          minimum: 0
 
   n_quantiles:
     type: integer
@@ -143,28 +180,76 @@ properties:
     minimum: 0
     description: "LCOE cutoff (EUR/kWh) used when method_region_aggregation=cutoff."
 
+  sens_tech:
+    type: string
+    enum: ["orc", "flash", "kalina"]
+    description: "Technology used as the reference in sensitivity summary plots."
+
+  active_sensitivity_parameters:
+    type: array
+    description: "List of parameter names to vary in the sensitivity sweep."
+    items:
+      type: string
+    uniqueItems: true
+
+  sensitivity_parameters:
+    type: object
+    description: "Definitions of sensitivity ranges or categorical/boolean alternatives per parameter."
+    additionalProperties:
+      anyOf:
+        - type: boolean
+        - type: string
+        - type: object
+          additionalProperties: false
+          properties:
+            max_dev_pct:
+              type: number
+              minimum: 0
+            steps:
+              type: integer
+              minimum: 1
+            absolute_values:
+              type: array
+              minItems: 1
+              items:
+                type: number
+
+  qc_stride:
+    type: integer
+    minimum: 1
+    description: "Subsampling stride for QC sliders."
+
 required:
+  - target_shapes
+  - perform_sensitivity
+  - write_qc_sliders
   - include_egs
   - carrier_out
   - max_depth
   - which_cycles
   - EGS_cutoff
   - SED_NAN_POLICY
+  - well_cost_sens
   - stimulation_cost_per_doublet
   - pump_cost
   - lifetime
   - fixed_OM_rate
   - parasitic_fraction
-  - n_pairs
   - orc_money_per_kw
   - flash_money_per_kw
   - kalina_money_per_kw
+  - well_spacing
+  - flowrate_egs
+  - flowrate_conventional
+  - min_dt
   - method_2d_aggregation
   - method_region_aggregation
+  - sens_tech
+  - active_sensitivity_parameters
+  - sensitivity_parameters
+  - qc_stride
 
 allOf:
-
-  # If carrier_out includes power, require temp_turbine_out.
   - if:
       properties:
         carrier_out:
@@ -175,12 +260,11 @@ allOf:
         which_cycles:
           minItems: 1
 
-  # Require turbine outlet temperature for each included cycle.
   - if:
       properties:
         which_cycles:
           contains:
-            const: "ORC"
+            const: "orc"
     then:
       properties:
         temp_turbine_out:
@@ -190,7 +274,7 @@ allOf:
       properties:
         which_cycles:
           contains:
-            const: "Flash"
+            const: "flash"
     then:
       properties:
         temp_turbine_out:
@@ -206,7 +290,6 @@ allOf:
         temp_turbine_out:
           required: ["Kalina"]
 
-  # method_2d_aggregation: depth_categories => require depth_categories
   - if:
       properties:
         method_2d_aggregation:
@@ -214,18 +297,13 @@ allOf:
     then:
       required: ["depth_categories"]
 
-  # method_region_aggregation: quantiles => require n_quantiles > 0
   - if:
       properties:
         method_region_aggregation:
           const: "quantiles"
     then:
-      properties:
-        n_quantiles:
-          minimum: 1
       required: ["n_quantiles"]
 
-  # method_region_aggregation: fixed_bins => require fixed_bins
   - if:
       properties:
         method_region_aggregation:
@@ -233,7 +311,6 @@ allOf:
     then:
       required: ["fixed_bins"]
 
-  # method_region_aggregation: cutoff => require lcoe_cutoff
   - if:
       properties:
         method_region_aggregation:

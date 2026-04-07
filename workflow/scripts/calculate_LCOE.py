@@ -195,7 +195,10 @@ def calculate_LCOE_vec(
     pump_cost,
     fixed_OM_rate,
     parasitic_fraction,
-    n_pairs,
+    well_spacing,
+    flowrate_egs,
+    flowrate_conventional,
+    area_available,
     orc_money_per_kw,
     flash_money_per_kw,
     kalina_money_per_kw,
@@ -213,8 +216,12 @@ def calculate_LCOE_vec(
     else:
         is_egs = np.full_like(depth, False, dtype=bool)
 
+    doublet_occupation = 2*well_spacing**2  # occupation area per doublet (km^2)
+
+    n_pairs = area_available/doublet_occupation #10*10km2 per voxel - unsuitable areas / occupation area per doublet -> max doublet pairs per voxel before interference
+
     nr_wells = n_pairs * 2
-    flowrate_wells = np.where(is_egs, 3000.0, 5000.0)
+    flowrate_wells = np.where(is_egs, flowrate_egs * n_pairs, flowrate_conventional * n_pairs)
 
     dT = production_temp - temp_turb_out
 
@@ -272,7 +279,17 @@ def calculate_LCOE_vec(
     return np.float32(lcoe)
 
 
-def calculate_capacity_vec(efficiency, production_temp, depth, temp_turb_out, sed_thickness, n_pairs, min_dt):
+def calculate_capacity_vec(efficiency, 
+                           production_temp, 
+                           depth, 
+                           temp_turb_out, 
+                           sed_thickness, 
+                           min_dt,
+                           well_spacing,
+                           flowrate_egs,
+                           flowrate_conventional,
+                           area_available):
+    
     Cp_water = 4250.0
     parasitic_fraction = 0.21
     MIN_DT = min_dt
@@ -285,8 +302,12 @@ def calculate_capacity_vec(efficiency, production_temp, depth, temp_turb_out, se
     else:
         is_egs = np.full_like(depth, False, dtype=bool)
 
-    flowrate_wells = np.where(is_egs, 3000.0, 5000.0)
+    doublet_occupation = 2*well_spacing**2  # occupation area per doublet (m^2), assuming 2 wells per doublet
+
+    n_pairs = area_available/doublet_occupation
+
     nr_wells = n_pairs * 2
+    flowrate_wells = np.where(is_egs, flowrate_egs * n_pairs, flowrate_conventional * n_pairs)
 
     dT = production_temp - temp_turb_out
 
@@ -369,7 +390,6 @@ def _normalize_cycle_param(x: str) -> str:
     x = str(x).strip().lower()
     return x
 
-
 def main():
     if carrier_out != "power":
         raise NotImplementedError("Only carrier_out='power' is currently implemented.")
@@ -379,12 +399,14 @@ def main():
 
     # Explicit outputs from Snakemake rule (one tech per job)
     cube_nc = Path(snakemake.output.cube)
-    qc_lcoe = Path(snakemake.output.qc_lcoe)
-    qc_pot = Path(snakemake.output.qc_potential)
+    qc_lcoe = Path(snakemake.output.qc_lcoe) if hasattr(snakemake.output, "qc_lcoe") else None
+    qc_pot = Path(snakemake.output.qc_potential) if hasattr(snakemake.output, "qc_potential") else None
 
     cube_nc.parent.mkdir(parents=True, exist_ok=True)
-    qc_lcoe.parent.mkdir(parents=True, exist_ok=True)
-    qc_pot.parent.mkdir(parents=True, exist_ok=True)
+    if qc_lcoe is not None:
+        qc_lcoe.parent.mkdir(parents=True, exist_ok=True)
+    if qc_pot is not None:
+        qc_pot.parent.mkdir(parents=True, exist_ok=True)
 
     ds = xr.open_dataset(VOXEL_NC)
     if VAR not in ds:
@@ -431,13 +453,15 @@ def main():
 
     temps_curve, effs_curve = load_efficiency_curve_csv(CSV_PATH, cycle_key)
 
+    use_dask = "parallelized" if hasattr(T.data, "chunks") else False
+
     eff = xr.apply_ufunc(
         interp_eff,
         T,
         input_core_dims=[[]],
         kwargs={"temps_curve": temps_curve, "effs_curve": effs_curve},
         vectorize=True,
-        dask="parallelized" if hasattr(T.data, "chunks") else False,
+        dask=use_dask,
         output_dtypes=[np.float32],
     )
 
@@ -454,7 +478,7 @@ def main():
             sed3d,
             input_core_dims=[[], [], [], [], []],
             vectorize=True,
-            dask="parallelized" if hasattr(T.data, "chunks") else None,
+            dask=use_dask,
             output_dtypes=[np.float32],
             keep_attrs=True,
             kwargs=dict(
@@ -463,13 +487,16 @@ def main():
                 pump_cost=snakemake.params.get("pump_cost"),
                 fixed_OM_rate=snakemake.params.get("fixed_OM_rate"),
                 parasitic_fraction=snakemake.params.get("parasitic_fraction"),
-                n_pairs=snakemake.params.get("n_pairs"),
                 orc_money_per_kw=snakemake.params.get("orc_money_per_kw"),
                 flash_money_per_kw=snakemake.params.get("flash_money_per_kw"),
                 kalina_money_per_kw=snakemake.params.get("kalina_money_per_kw"),
                 lifetime=snakemake.params.get("lifetime"),
                 well_cost_sens=snakemake.params.get("well_cost_sens"),
                 min_dt=snakemake.params.get("min_dt"),
+                well_spacing=snakemake.params.get("well_spacing"),
+                flowrate_egs=snakemake.params.get("flowrate_egs"),
+                flowrate_conventional=snakemake.params.get("flowrate_conventional"),
+                area_available=100,
             ),
         )
         .transpose("depth_m", "y", "x")
@@ -487,12 +514,15 @@ def main():
             sed3d,
             input_core_dims=[[], [], [], [], []],
             vectorize=True,
-            dask="parallelized" if hasattr(T.data, "chunks") else None,
+            dask=use_dask,
             output_dtypes=[np.float32],
             keep_attrs=True,
             kwargs=dict(
-                n_pairs=snakemake.params.get("n_pairs"),
                 min_dt=snakemake.params.get("min_dt"),
+                well_spacing=snakemake.params.get("well_spacing"),
+                flowrate_egs=snakemake.params.get("flowrate_egs"),
+                flowrate_conventional=snakemake.params.get("flowrate_conventional"),
+                area_available=100,
             ),
         )
         .transpose("depth_m", "y", "x")
@@ -527,20 +557,23 @@ def main():
     ds_out.to_netcdf(cube_nc)
     print(f"  • wrote {cube_nc} (vars: lcoe, potential, egs_cutoff_depth_m)")
 
-    #Write html sliders if requested
-    if snakemake.params.get("write_qc_sliders", False):
-        write_depth_slider_html(
-            lcoe,
-            qc_lcoe,
-            title=f"LCOE depth slider ({cycle_key})",
-            stride=snakemake.params.get("qc_stride"),
-        )
-        write_depth_slider_html(
-            cap,
-            qc_pot,
-            title=f"Potential depth slider ({cycle_key})",
-            stride=snakemake.params.get("qc_stride"),
-        )
+    # Write html sliders only if both requested and declared as outputs
+    write_qc = bool(snakemake.params.get("write_qc_sliders", False))
+    if write_qc:
+        if qc_lcoe is not None:
+            write_depth_slider_html(
+                lcoe,
+                qc_lcoe,
+                title=f"LCOE depth slider ({cycle_key})",
+                stride=snakemake.params.get("qc_stride"),
+            )
+        if qc_pot is not None:
+            write_depth_slider_html(
+                cap,
+                qc_pot,
+                title=f"Potential depth slider ({cycle_key})",
+                stride=snakemake.params.get("qc_stride"),
+            )
 
     print("\nDone.")
 

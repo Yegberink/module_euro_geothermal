@@ -98,7 +98,7 @@ _df = _build_scen(
 SCEN = _df.set_index("scenario").replace({np.nan: None}).to_dict(orient="index")
 del _base_cfg, _base_row, _df
 
-SCENARIOS         = list(SCEN.keys())
+SCENARIOS = list(SCEN.keys())
 
 if BASELINE_SCENARIO not in SCEN:
     raise ValueError(
@@ -140,8 +140,10 @@ scen_str   = lambda wc, key, default: scen_cast(wc, key, default, str)
 
 def scen_temp_turbine_out(wc):
     base = config["temp_turbine_out"]
-    return {c: float(scen_value(wc, f"temp_turbine_out_{c}", base[c]))
-            for c in ("ORC", "Flash", "Kalina")}
+    return {
+        c: float(scen_value(wc, f"temp_turbine_out_{c}", base[c]))
+        for c in ("ORC", "Flash", "Kalina")
+    }
 
 
 # -----------------------------
@@ -194,22 +196,21 @@ all_geothermal_inputs += expand(
     shapes=SHAPES, scenario=TARGET_SCENARIOS,
 )
 
+_sens_target = lambda pattern, scenarios=TARGET_SCENARIOS: expand(
+    pattern, shapes=SHAPES, scenario=scenarios
+)
+
+all_geothermal_inputs += [
+    *_sens_target("results/{shapes}/scenarios/{scenario}/sensitivity/boxplot_data.parquet"),
+    *_sens_target("results/{shapes}/scenarios/{scenario}/sensitivity/summary.png"),
+    *_sens_target("results/{shapes}/scenarios/{scenario}/sensitivity/metrics.tsv"),
+    *_sens_target("results/{shapes}/scenarios/{scenario}/sensitivity/boxplot_base_dual_axis.png"),
+    *_sens_target("results/{shapes}/scenarios/{scenario}/sensitivity/boxplot_lcoe.png"),
+    *_sens_target("results/{shapes}/scenarios/{scenario}/sensitivity/boxplot_potential.png"),
+]
+
 if PERFORM_SENSITIVITY:
-    _sens_all = lambda pattern, scenarios=SCENARIOS: expand(
-        pattern, shapes=SHAPES, scenario=scenarios
-    )
-    _sens_no_base = lambda pattern, scenarios=SCENARIOS_NO_BASE: expand(
-        pattern, shapes=SHAPES, scenario=scenarios
-    )
-
     all_geothermal_inputs += [
-        # include base
-        *_sens_all("results/{shapes}/scenarios/{scenario}/sensitivity/boxplot_data.parquet"),
-        *_sens_all("results/{shapes}/scenarios/{scenario}/sensitivity/summary.png"),
-        *_sens_all("results/{shapes}/scenarios/{scenario}/sensitivity/metrics.tsv"),
-        *_sens_all("results/{shapes}/scenarios/{scenario}/sensitivity/boxplot_per_scenario.png"),
-
-        # still global combined plots
         *expand(
             "results/{shapes}/scenarios/sensitivity/lineplot_mean_abs_pct_change_sens.png",
             shapes=SHAPES,
@@ -305,7 +306,9 @@ rule calculate_LCOE:
         lifetime                     = lambda wc: scen_float(wc, "lifetime",                     config["lifetime"]),
         fixed_OM_rate                = lambda wc: scen_float(wc, "fixed_OM_rate",                config["fixed_OM_rate"]),
         parasitic_fraction           = lambda wc: scen_float(wc, "parasitic_fraction",           config["parasitic_fraction"]),
-        n_pairs                      = lambda wc: scen_int(wc,   "n_pairs",                      config["n_pairs"]),
+        well_spacing                 = lambda wc: scen_float(wc, "well_spacing",                 config["well_spacing"]),
+        flowrate_egs                 = lambda wc: scen_float(wc, "flowrate_egs",                 config["flowrate_egs"]),
+        flowrate_conventional        = lambda wc: scen_float(wc, "flowrate_conventional",        config["flowrate_conventional"]),
         orc_money_per_kw             = lambda wc: scen_float(wc, "orc_money_per_kw",             config["orc_money_per_kw"]),
         flash_money_per_kw           = lambda wc: scen_float(wc, "flash_money_per_kw",           config["flash_money_per_kw"]),
         kalina_money_per_kw          = lambda wc: scen_float(wc, "kalina_money_per_kw",          config["kalina_money_per_kw"]),
@@ -372,44 +375,46 @@ rule aggregate_to_regions:
         "../scripts/aggregate_to_regions.py"
 
 
+rule scenario_summary_fig:
+    input:
+        base_lcoe = lambda wc: expand(
+            "results/{shapes}/scenarios/{baseline}/2d_potential_cost/{cycle}_2d_lcoe.tif",
+            shapes=wc.shapes, baseline=BASELINE_SCENARIO, cycle=CYCLES,
+        ),
+        scen_lcoe = lambda wc: expand(
+            "results/{shapes}/scenarios/{scenario}/2d_potential_cost/{cycle}_2d_lcoe.tif",
+            shapes=wc.shapes, scenario=wc.scenario, cycle=CYCLES,
+        ),
+        base_pot = lambda wc: expand(
+            "results/{shapes}/scenarios/{baseline}/2d_potential_cost/{cycle}_2d_potential.tif",
+            shapes=wc.shapes, baseline=BASELINE_SCENARIO, cycle=CYCLES,
+        ),
+        scen_pot = lambda wc: expand(
+            "results/{shapes}/scenarios/{scenario}/2d_potential_cost/{cycle}_2d_potential.tif",
+            shapes=wc.shapes, scenario=wc.scenario, cycle=CYCLES,
+        ),
+    output:
+        fig          = "results/{shapes}/scenarios/{scenario}/sensitivity/summary.png",
+        metrics      = "results/{shapes}/scenarios/{scenario}/sensitivity/metrics.tsv",
+        boxplot_data = "results/{shapes}/scenarios/{scenario}/sensitivity/boxplot_data.parquet",
+    params:
+        baseline  = BASELINE_SCENARIO,
+        cycles    = CYCLES,
+        sens_tech = config.get("sens_tech", "orc"),
+    script:
+        "../scripts/sensitivity_summary.py"
+
+rule sensitivity_boxplot_per_scenario:
+    input:
+        boxplot_data = "results/{shapes}/scenarios/{scenario}/sensitivity/boxplot_data.parquet",
+    output:
+        base_fig      = "results/{shapes}/scenarios/{scenario}/sensitivity/boxplot_base_dual_axis.png",
+        lcoe_fig      = "results/{shapes}/scenarios/{scenario}/sensitivity/boxplot_lcoe.png",
+        potential_fig = "results/{shapes}/scenarios/{scenario}/sensitivity/boxplot_potential.png",
+    script:
+        "../scripts/sensitivity_boxplot_per_scenario.py"
+
 if PERFORM_SENSITIVITY:
-    rule scenario_summary_fig:
-        input:
-            base_lcoe = lambda wc: expand(
-                "results/{shapes}/scenarios/{baseline}/2d_potential_cost/{cycle}_2d_lcoe.tif",
-                shapes=wc.shapes, baseline=BASELINE_SCENARIO, cycle=CYCLES,
-            ),
-            scen_lcoe = lambda wc: expand(
-                "results/{shapes}/scenarios/{scenario}/2d_potential_cost/{cycle}_2d_lcoe.tif",
-                shapes=wc.shapes, scenario=wc.scenario, cycle=CYCLES,
-            ),
-            base_pot  = lambda wc: expand(
-                "results/{shapes}/scenarios/{baseline}/2d_potential_cost/{cycle}_2d_potential.tif",
-                shapes=wc.shapes, baseline=BASELINE_SCENARIO, cycle=CYCLES,
-            ),
-            scen_pot  = lambda wc: expand(
-                "results/{shapes}/scenarios/{scenario}/2d_potential_cost/{cycle}_2d_potential.tif",
-                shapes=wc.shapes, scenario=wc.scenario, cycle=CYCLES,
-            ),
-        output:
-            fig          = "results/{shapes}/scenarios/{scenario}/sensitivity/summary.png",
-            metrics      = "results/{shapes}/scenarios/{scenario}/sensitivity/metrics.tsv",
-            boxplot_data = "results/{shapes}/scenarios/{scenario}/sensitivity/boxplot_data.parquet",
-        params:
-            baseline  = BASELINE_SCENARIO,
-            cycles    = CYCLES,
-            sens_tech = config.get("sens_tech", "orc"),
-        script:
-            "../scripts/sensitivity_summary.py"
-
-    rule sensitivity_boxplot_per_scenario:
-        input:
-            boxplot_data="results/{shapes}/scenarios/{scenario}/sensitivity/boxplot_data.parquet",
-        output:
-            fig="results/{shapes}/scenarios/{scenario}/sensitivity/boxplot_per_scenario.png",
-        script:
-            "../scripts/sensitivity_boxplot_per_scenario.py"
-
     rule sensitivity_vis:
         input:
             scenario_table = SCENARIO_TABLE,

@@ -13,7 +13,7 @@
 target_shapes:
   - euro_iceland              # folder name(s) under resources/user/
 
-perform_sensitivity: true     # false → only the baseline scenario is run
+perform_sensitivity: false     # false → only the baseline scenario is run
 write_qc_sliders: false        # false → skip depth-slider HTML files (saves disk)
 
 method_region_aggregation: cutoff 
@@ -65,7 +65,9 @@ pump_cost: 0.6                # pump cost per doublet pair (M€2020)
 lifetime: 30.0                # plant lifetime (years)
 fixed_OM_rate: 0.01           # fixed O&M as fraction of capital cost per year
 parasitic_fraction: 0.21      # parasitic power consumption as fraction of gross output
-n_pairs: 50                   # maximum doublet pairs per 10×10 km voxel before interference
+well_spacing: 1.0             # distance between production and injection well (km)
+flowrate_egs: 60.0            # mass flow rate per EGS doublet (kg/s)
+flowrate_conventional: 100.0   # mass flow rate per conventional
 
 # Turbine outlet temperatures
 temp_turbine_out:
@@ -122,23 +124,25 @@ sens_tech: orc                # options: orc, flash, kalina
 # Ranges and step counts are defined in `sensitivity_parameters` below.
 active_sensitivity_parameters:
   - max_depth
-  - EGS_cutoff
-  - well_cost_sens
-  - stimulation_cost_per_doublet
-  - n_pairs
-  - pump_cost
-  - lifetime
-  - fixed_OM_rate
-  - parasitic_fraction
-  - orc_money_per_kw
-  - flash_money_per_kw
-  - kalina_money_per_kw
-  - temp_turbine_out_ORC
-  - temp_turbine_out_Flash
-  - temp_turbine_out_Kalina
-  - include_egs
-  - SED_NAN_POLICY
-  - min_dt
+  # - EGS_cutoff
+  # - well_cost_sens
+  # - stimulation_cost_per_doublet
+  # - pump_cost
+  # - lifetime
+  # - fixed_OM_rate
+  # - parasitic_fraction
+  # - orc_money_per_kw
+  # - flash_money_per_kw
+  # - kalina_money_per_kw
+  # - temp_turbine_out_ORC
+  # - temp_turbine_out_Flash
+  # - temp_turbine_out_Kalina
+  # - include_egs
+  # - SED_NAN_POLICY
+  # - min_dt
+  # - well_spacing
+  # - flowrate_egs
+  # - flowrate_conventional
 
 # Sensitivity ranges.
 # For numeric parameters: max_dev_pct is the maximum deviation in percent from
@@ -158,9 +162,16 @@ sensitivity_parameters:
   stimulation_cost_per_doublet:
     max_dev_pct: 50
     steps: 5
-  n_pairs:
+  well_spacing:
     max_dev_pct: 50
     steps: 5
+  flowrate_egs:
+    max_dev_pct: 50
+    steps: 5
+  flowrate_conventional:
+    max_dev_pct: 50
+    steps: 5
+
   # --- Plant economics ---
   pump_cost:
     max_dev_pct: 50
