@@ -28,6 +28,14 @@ import gregor
 import affine
 
 
+plt.rcParams.update({
+    "font.family": "serif",
+    "font.serif": ["Times New Roman"],
+    "mathtext.fontset": "stix",
+    "axes.unicode_minus": False,
+})
+
+
 # ---------------------------------------------------------------------------
 # Filename parsing
 # ---------------------------------------------------------------------------

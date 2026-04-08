@@ -13,6 +13,10 @@ from cycler import cycler
 plt.rcParams.update({
     "figure.dpi": 200,
     "savefig.dpi": 300,
+    "font.family": "serif",
+    "font.serif": ["Times New Roman"],
+    "mathtext.fontset": "stix",
+    "axes.unicode_minus": False,
     "font.size": 11,
     "axes.labelsize": 12,
     "axes.titlesize": 13,

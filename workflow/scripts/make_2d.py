@@ -6,6 +6,26 @@ from pathlib import Path
 import rioxarray
 import os
 import re
+import matplotlib.pyplot as plt
+from matplotlib.colors import BoundaryNorm, ListedColormap
+from matplotlib.patches import Patch
+
+
+plt.rcParams.update({
+    "font.family": "serif",
+    "font.serif": ["Times New Roman"],
+    "mathtext.fontset": "stix",
+    "axes.unicode_minus": False,
+})
+
+TECH_LABELS = {"orc": "ORC", "flash": "Flash", "kalina": "Kalina"}
+TECH_COLORS = {"orc": "#0072B2", "flash": "#E69F00", "kalina": "#009E73"}
+PANEL_LETTERS = "abcdefghijklmnopqrstuvwxyz"
+LCOE_BOUNDS = [0.0, 100.0, 200.0, 400.0, 600.0, 1.0e9]
+LCOE_TICKS = [50.0, 150.0, 300.0, 500.0, 800.0]
+LCOE_TICKLABELS = ["0-100", "100-200", "200-400", "400-600", "≥600"]
+LCOE_COLORS = ["#481567", "#414487", "#2A788E", "#22A884", "#FDE725"]
+MAP_CMAP = "viridis"
 
 # --------------------------
 # Data classes
@@ -104,6 +124,7 @@ def quick_map_png(
         vmin=vmin,
         vmax=vmax,
         interpolation="nearest",
+        cmap=MAP_CMAP,
     )
     ax.set_title(title)
     ax.set_xlabel(x_name)
@@ -115,6 +136,333 @@ def quick_map_png(
     plt.close(fig)
 
 
+def _map_extent(da: xr.DataArray, x_name: str = "x", y_name: str = "y") -> list[float]:
+    if da.dims != (y_name, x_name):
+        da = da.transpose(y_name, x_name)
+    x = da[x_name].values
+    y = da[y_name].values
+    return [x.min(), x.max(), y.min(), y.max()]
+
+
+def _clean_map_axes(ax):
+    ax.set_xticks([])
+    ax.set_yticks([])
+    for spine in ax.spines.values():
+        spine.set_visible(True)
+        spine.set_linewidth(0.8)
+        spine.set_edgecolor("#666666")
+
+
+def _winner_map(lcoe_maps: dict[str, xr.DataArray], cycles: list[str]) -> np.ndarray:
+    stack = np.stack([lcoe_maps[cycle].values for cycle in cycles], axis=0).astype(np.float32)
+    finite = np.isfinite(stack)
+    stack_filled = np.where(finite, stack, np.inf)
+    winner = np.argmin(stack_filled, axis=0).astype(np.int16)
+    all_nan = ~np.any(finite, axis=0)
+    return np.where(all_nan, -1, winner)
+
+
+def _finite_limits(arrays: list[np.ndarray]) -> tuple[float, float]:
+    finite_arrays = [a[np.isfinite(a)] for a in arrays if np.isfinite(a).any()]
+    if not finite_arrays:
+        return (np.nan, np.nan)
+    return (
+        float(min(np.nanmin(a) for a in finite_arrays)),
+        float(max(np.nanmax(a) for a in finite_arrays)),
+    )
+
+
+def _cumulative_potential_curve(
+    sort_da: xr.DataArray,
+    potential_da: xr.DataArray,
+    potential_scale: float = 1000.0,
+    x_scale: float = 1.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    x = np.asarray(sort_da.values, dtype=np.float64).ravel() / x_scale
+    potential = np.asarray(potential_da.values, dtype=np.float64).ravel() / potential_scale
+    mask = np.isfinite(x) & np.isfinite(potential) & (potential > 0)
+    if not np.any(mask):
+        return np.array([], dtype=np.float64), np.array([], dtype=np.float64)
+
+    x = x[mask]
+    potential = potential[mask]
+    order = np.argsort(x, kind="mergesort")
+    x_sorted = x[order]
+    cumulative_potential = np.cumsum(potential[order])
+    return x_sorted, cumulative_potential
+
+
+def make_three_panel_map_figure(
+    maps: dict[str, xr.DataArray],
+    cycles: list[str],
+    out_path: Path,
+    *,
+    colorbar_label: str,
+    cmap: str,
+    value_scale: float = 1.0,
+):
+    n_panels = len(cycles)
+    ncols = n_panels
+    nrows = 1
+
+    reference_da = maps[cycles[0]]
+    extent = _map_extent(reference_da)
+    data_aspect = (extent[3] - extent[2]) / (extent[1] - extent[0])
+
+    panel_w = 4.5
+    panel_h = panel_w * data_aspect
+    gap = 0.15
+    margin_l = 0.1
+    margin_r = 0.1
+    margin_t = 0.1
+    margin_b = 0.9
+
+    fig_w = margin_l + ncols * panel_w + (ncols - 1) * gap + margin_r
+    fig_h = margin_t + nrows * panel_h + (nrows - 1) * gap + margin_b
+
+    fig = plt.figure(figsize=(fig_w, fig_h))
+
+    def make_ax(col):
+        x0 = (margin_l + col * (panel_w + gap)) / fig_w
+        y0 = margin_b / fig_h
+        w = panel_w / fig_w
+        h = panel_h / fig_h
+        return fig.add_axes([x0, y0, w, h])
+
+    axes = [make_ax(i) for i in range(n_panels)]
+    scaled_arrays = [(maps[cycle].values / value_scale).astype(np.float32) for cycle in cycles]
+    vmin, vmax = _finite_limits(scaled_arrays)
+    map_cmap = plt.get_cmap(cmap).copy()
+    map_cmap.set_bad("#D9D9D9")
+
+    for idx, cycle in enumerate(cycles):
+        ax = axes[idx]
+        ax.set_facecolor("#D9D9D9")
+        im = ax.imshow(
+            scaled_arrays[idx],
+            origin="lower",
+            extent=extent,
+            interpolation="nearest",
+            cmap=map_cmap,
+            vmin=vmin,
+            vmax=vmax,
+        )
+        ax.text(
+            0.02,
+            0.98,
+            f"{PANEL_LETTERS[idx]}) {TECH_LABELS.get(cycle, cycle.upper())}",
+            transform=ax.transAxes,
+            ha="left",
+            va="top",
+            fontsize=11,
+            fontweight="bold",
+            color="black",
+        )
+        _clean_map_axes(ax)
+        ax.set_aspect("equal")
+
+    cax = fig.add_axes([0.14, 0.075, 0.72, 0.04])
+    cbar = fig.colorbar(im, cax=cax, orientation="horizontal")
+    cbar.set_label(colorbar_label)
+    cbar.ax.tick_params(length=0, labelsize=9)
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+
+
+def make_cumulative_potential_figure(
+    x_maps: dict[str, xr.DataArray],
+    potential_maps: dict[str, xr.DataArray],
+    cycles: list[str],
+    out_path: Path,
+    *,
+    xlabel: str,
+    x_scale: float = 1.0,
+):
+    fig, ax = plt.subplots(figsize=(6, 4))
+    is_depth_curve = "Depth" in xlabel
+
+    for cycle in cycles:
+        x, y = _cumulative_potential_curve(
+            x_maps[cycle],
+            potential_maps[cycle],
+            x_scale=x_scale,
+        )
+        if x.size == 0:
+            continue
+
+        ax.plot(
+            x,
+            y,
+            color=TECH_COLORS.get(cycle, "#333333"),
+            linewidth=2.0,
+            label=TECH_LABELS.get(cycle, cycle.upper()),
+        )
+
+        target_y = 0.8 * y[-1]
+        idx = int(np.searchsorted(y, target_y, side="left"))
+        idx = min(idx, len(y) - 1)
+
+        ax.scatter(
+            [x[idx]],
+            [y[idx]],
+            color=TECH_COLORS.get(cycle, "#333333"),
+            edgecolor="black",
+            linewidth=0.5,
+            s=22,
+            zorder=4,
+        )
+        label_value = f"{x[idx]:.1f} km" if is_depth_curve else f"{x[idx]:.0f} €/MWh$_e$"
+        ax.annotate(
+            label_value,
+            (x[idx], y[idx]),
+            xytext=(5, 5),
+            textcoords="offset points",
+            color="black",
+            fontsize=9,
+            bbox=dict(
+                boxstyle="round,pad=0.2",
+                facecolor="white",
+                edgecolor="none",
+                alpha=0.85,
+            ),
+        )
+
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel("Cumulative potential below cost (GW)")
+    ax.legend(
+        loc="center left",
+        bbox_to_anchor=(1.02, 0.5),
+        frameon=False,
+        borderaxespad=0.0,
+    )
+    ax.spines["top"].set_visible(True)
+    ax.spines["right"].set_visible(True)
+    ax.grid(False)
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+
+def make_lcoe_overview_figure(
+    lcoe_maps: dict[str, xr.DataArray],
+    cycles: list[str],
+    out_path: Path,
+):
+    panels = cycles + ["winner"]
+    n_panels = len(panels)
+    ncols = 2 if n_panels > 1 else 1
+    nrows = int(np.ceil(n_panels / ncols))
+
+    reference_da = lcoe_maps[cycles[0]]
+    extent = _map_extent(reference_da)
+    # Compute the data aspect ratio once and apply it uniformly
+    data_aspect = (extent[3] - extent[2]) / (extent[1] - extent[0])  # height/width
+
+    panel_w = 4.5
+    panel_h = panel_w * data_aspect
+    cbar_h = 0.5
+    gap = 0.15          # gap between panels in inches
+    margin_l = 0.1
+    margin_r = 0.1
+    margin_t = 0.1
+    margin_b = 0.9      # room for colorbar + label
+
+    fig_w = margin_l + ncols * panel_w + (ncols - 1) * gap + margin_r
+    fig_h = margin_t + nrows * panel_h + (nrows - 1) * gap + margin_b
+
+    fig = plt.figure(figsize=(fig_w, fig_h))
+
+    # Place axes manually in figure-fraction coordinates
+    def make_ax(row, col):
+        x0 = (margin_l + col * (panel_w + gap)) / fig_w
+        y0 = (margin_b + (nrows - 1 - row) * (panel_h + gap)) / fig_h
+        w = panel_w / fig_w
+        h = panel_h / fig_h
+        return fig.add_axes([x0, y0, w, h])
+
+    axes = []
+    for i in range(n_panels):
+        row, col = divmod(i, ncols)
+        axes.append(make_ax(row, col))
+
+    lcoe_cmap = ListedColormap(LCOE_COLORS)
+    lcoe_cmap.set_bad("#D9D9D9")
+    lcoe_norm = BoundaryNorm(LCOE_BOUNDS, lcoe_cmap.N)
+
+    winner_cmap = ListedColormap([TECH_COLORS[c] for c in cycles])
+    winner_cmap.set_bad("#D9D9D9")
+
+    winner = _winner_map(lcoe_maps, cycles)
+    winner_masked = np.where(winner >= 0, winner, np.nan)
+
+    for idx, panel in enumerate(panels):
+        ax = axes[idx]
+        ax.set_facecolor("#D9D9D9")
+
+        if panel == "winner":
+            ax.imshow(
+                winner_masked,
+                origin="lower",
+                extent=extent,
+                interpolation="nearest",
+                cmap=winner_cmap,
+                vmin=-0.5,
+                vmax=len(cycles) - 0.5,
+                aspect="auto",      # axes box is already the right shape
+            )
+            title = "Cheapest technology"
+        else:
+            da = lcoe_maps[panel]
+            ax.imshow(
+                da.values,
+                origin="lower",
+                extent=extent,
+                interpolation="nearest",
+                cmap=lcoe_cmap,
+                norm=lcoe_norm,
+                aspect="auto",      # axes box is already the right shape
+            )
+            title = TECH_LABELS.get(panel, panel.upper())
+
+        ax.text(
+            0.02, 0.98,
+            f"{PANEL_LETTERS[idx]}) {title}",
+            transform=ax.transAxes,
+            ha="left", va="top",
+            fontsize=11, fontweight="bold", color="black",
+        )
+        _clean_map_axes(ax)
+
+    # Colorbar: placed manually in figure coordinates below all panels
+    cbar_x0 = (margin_l + 0.1 * fig_w) / fig_w
+    cbar_y0 = 0.38 / fig_h
+    cbar_w = 1 - cbar_x0 - (margin_r + 0.1 * fig_w) / fig_w
+    cbar_h_frac = 0.04 / fig_h * fig_w  # keep it thin
+
+    cax = fig.add_axes([cbar_x0, cbar_y0, cbar_w, cbar_h_frac])
+    sm = plt.cm.ScalarMappable(norm=lcoe_norm, cmap=lcoe_cmap)
+    cbar = fig.colorbar(sm, cax=cax, orientation="horizontal", extend="max")
+    cbar.set_ticks(LCOE_TICKS)
+    cbar.set_ticklabels(LCOE_TICKLABELS)
+    cbar.set_label("Levelized Cost of Electricity (€/MWh$_e$)")
+    cbar.ax.tick_params(length=0, labelsize=9)
+
+    legend_handles = [
+        Patch(facecolor=TECH_COLORS[c], edgecolor="none", label=TECH_LABELS.get(c, c.upper()))
+        for c in cycles
+    ]
+    axes[-1].legend(
+        handles=legend_handles,
+        loc="lower right",
+        frameon=True, facecolor="white", framealpha=0.9,
+        edgecolor="#AAAAAA", fontsize=8,
+    )
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
 # --------------------------
 # 3D -> 2D aggregation
 # --------------------------
@@ -241,6 +589,9 @@ def main():
 
     out_lcoe_by_cycle = {_cycle_from_tif_name(p, "_2d_lcoe.tif"): p for p in lcoe_tifs}
     out_pot_by_cycle  = {_cycle_from_tif_name(p, "_2d_potential.tif"): p for p in pot_tifs}
+    lcoe_maps_2d: dict[str, xr.DataArray] = {}
+    potential_maps_2d: dict[str, xr.DataArray] = {}
+    depth_maps_2d: dict[str, xr.DataArray] = {}
 
     for cycle in cycles:
         if cycle not in out_lcoe_by_cycle or cycle not in out_pot_by_cycle:
@@ -250,9 +601,15 @@ def main():
                 f"but got lcoe={sorted(out_lcoe_by_cycle)} pot={sorted(out_pot_by_cycle)}"
         )
 
-    # Choose an outdir for extra products (depth_at_min.tif, PNGs)
-    # This is not part of Snakemake outputs, but is useful. Keep it deterministic.
-    extra_outdir = Path("results") / snakemake.wildcards["shapes"] / "2d_potential_cost"
+    # Choose an outdir for extra products (depth_at_min.tif, PNGs).
+    # Keep it scenario-specific so different scenarios do not overwrite one another.
+    extra_outdir = (
+        Path("results")
+        / snakemake.wildcards["shapes"]
+        / "scenarios"
+        / snakemake.wildcards["scenario"]
+        / "2d_potential_cost"
+    )
     (extra_outdir / "figures").mkdir(parents=True, exist_ok=True)
 
     for cycle in cycles:
@@ -264,6 +621,9 @@ def main():
 
         if method_2d_aggregation == "LCOE_minimization":
             ds_2d = aggregate_3d_to_2d_lcoe_min(ds_3d, depth_dim="depth_m")
+            lcoe_maps_2d[cycle] = ds_2d["lcoe_2d"].copy()
+            potential_maps_2d[cycle] = ds_2d["potential_2d"].copy()
+            depth_maps_2d[cycle] = ds_2d["depth_at_min"].copy()
 
             # Write exactly the outputs Snakemake expects
             write_geotiff(ds_2d["lcoe_2d"], Path(out_lcoe_by_cycle[cycle]), crs=crs)
@@ -271,9 +631,6 @@ def main():
 
             # Optional extras (not DAG-critical)
             write_geotiff(ds_2d["depth_at_min"], extra_outdir / f"{cycle}_2d_depth_at_min.tif", crs=crs)
-            quick_map_png(ds_2d["lcoe_2d"], (extra_outdir / "figures") / f"{cycle}_2d_lcoe.png", title=f"{cycle} – LCOE")
-            quick_map_png(ds_2d["potential_2d"], (extra_outdir / "figures") / f"{cycle}_2d_potential.png", title=f"{cycle} – Potential")
-            quick_map_png(ds_2d["depth_at_min"], (extra_outdir / "figures") / f"{cycle}_2d_depth_at_min.png", title=f"{cycle} – Depth@min")
 
         elif method_2d_aggregation == "depth_categories":
             # NOTE: your Snakefile outputs currently do NOT include category-suffixed files.
@@ -289,6 +646,44 @@ def main():
                 write_geotiff(ds_cat["lcoe_2d"], extra_outdir / f"{base}_lcoe.tif", crs=crs)
                 write_geotiff(ds_cat["potential_2d"], extra_outdir / f"{base}_potential.tif", crs=crs)
                 write_geotiff(ds_cat["depth_at_min"], extra_outdir / f"{base}_depth_at_min.tif", crs=crs)
+
+    if method_2d_aggregation == "LCOE_minimization" and hasattr(snakemake.output, "overview_fig"):
+        make_lcoe_overview_figure(
+            lcoe_maps=lcoe_maps_2d,
+            cycles=cycles,
+            out_path=Path(snakemake.output.overview_fig),
+        )
+        make_cumulative_potential_figure(
+            x_maps=lcoe_maps_2d,
+            potential_maps=potential_maps_2d,
+            cycles=cycles,
+            out_path=Path(snakemake.output.cumulative_curve_fig),
+            xlabel="LCOE threshold (€/MWh$_e$)",
+        )
+        make_cumulative_potential_figure(
+            x_maps=depth_maps_2d,
+            potential_maps=potential_maps_2d,
+            cycles=cycles,
+            out_path=Path(snakemake.output.cumulative_depth_fig),
+            xlabel="Depth threshold (km)",
+            x_scale=1000.0,
+        )
+        make_three_panel_map_figure(
+            maps=potential_maps_2d,
+            cycles=cycles,
+            out_path=Path(snakemake.output.potential_overview_fig),
+            colorbar_label="Potential (GW)",
+            cmap=MAP_CMAP,
+            value_scale=1000.0,
+        )
+        make_three_panel_map_figure(
+            maps=depth_maps_2d,
+            cycles=cycles,
+            out_path=Path(snakemake.output.depth_overview_fig),
+            colorbar_label="Depth at minimum LCOE (km)",
+            cmap=f"{MAP_CMAP}_r",
+            value_scale=1000.0,
+        )
 
 
 if __name__ == "__main__":

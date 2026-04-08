@@ -191,6 +191,28 @@ def _2d_files(suffix):
 
 all_geothermal_inputs = [*_2d_files("lcoe"), *_2d_files("potential")]
 
+if METHOD_2D == "LCOE_minimization":
+    all_geothermal_inputs += expand(
+        "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/lcoe_overview.png",
+        shapes=SHAPES, scenario=TARGET_SCENARIOS,
+    )
+    all_geothermal_inputs += expand(
+        "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/cumulative_potential_vs_lcoe.png",
+        shapes=SHAPES, scenario=TARGET_SCENARIOS,
+    )
+    all_geothermal_inputs += expand(
+        "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/cumulative_potential_vs_depth.png",
+        shapes=SHAPES, scenario=TARGET_SCENARIOS,
+    )
+    all_geothermal_inputs += expand(
+        "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/potential_overview.png",
+        shapes=SHAPES, scenario=TARGET_SCENARIOS,
+    )
+    all_geothermal_inputs += expand(
+        "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/depth_at_min_overview.png",
+        shapes=SHAPES, scenario=TARGET_SCENARIOS,
+    )
+
 all_geothermal_inputs += expand(
     "results/{shapes}/scenarios/{scenario}/region_aggregation/geothermal_regions.parquet",
     shapes=SHAPES, scenario=TARGET_SCENARIOS,
@@ -346,6 +368,17 @@ rule make_2d:
                 "results/{{shapes}}/scenarios/{{scenario}}/2d_potential_cost/{cycle}_2d_{cat}_potential.tif",
                 cycle=CYCLES, cat=DEPTHCAT_LABELS,
             )
+        ),
+        **(
+            {
+                "overview_fig": "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/lcoe_overview.png",
+                "cumulative_curve_fig": "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/cumulative_potential_vs_lcoe.png",
+                "cumulative_depth_fig": "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/cumulative_potential_vs_depth.png",
+                "potential_overview_fig": "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/potential_overview.png",
+                "depth_overview_fig": "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/depth_at_min_overview.png",
+            }
+            if METHOD_2D == "LCOE_minimization" else
+            {}
         ),
     params:
         method_2d_aggregation = METHOD_2D,

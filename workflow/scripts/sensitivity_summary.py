@@ -223,6 +223,30 @@ def pct_change_map(base_arr, scen_arr, eps=1e-6):
     return pct
 
 
+def finite_nanmin(arr):
+    arr = np.asarray(arr)
+    finite = np.isfinite(arr)
+    if not finite.any():
+        return np.nan
+    return float(np.nanmin(arr[finite]))
+
+
+def finite_nanmax(arr):
+    arr = np.asarray(arr)
+    finite = np.isfinite(arr)
+    if not finite.any():
+        return np.nan
+    return float(np.nanmax(arr[finite]))
+
+
+def finite_nanmean(arr):
+    arr = np.asarray(arr)
+    finite = np.isfinite(arr)
+    if not finite.any():
+        return np.nan
+    return float(np.nanmean(arr[finite]))
+
+
 # -----------------------------
 # Plot helpers
 # -----------------------------
@@ -496,6 +520,13 @@ def main():
 
     # If single-tech mode: only plot 1 panel, and write minimal metrics (no switch rates)
     if len(cycles) == 1:
+        min_lcoe_base = finite_nanmin(base_stack[0])
+        min_lcoe_scen = finite_nanmin(scen_stack[0])
+        mean_lcoe_base = finite_nanmean(base_stack[0])
+        mean_lcoe_scen = finite_nanmean(scen_stack[0])
+        max_lcoe_base = finite_nanmax(base_stack[0])
+        max_lcoe_scen = finite_nanmax(scen_stack[0])
+
         save_1panel_figure(
             snakemake.output.fig,
             scenario=scenario,
@@ -516,6 +547,18 @@ def main():
             # Defined metrics for single-tech mode
             f.write(f"mean_abs_pct_change_sens\t{mean_abs_pct_change_sens}\n")
             f.write(f"max_abs_pct_change_sens\t{max_abs_pct_change_sens}\n")
+            f.write(f"min_lcoe_baseline\t{min_lcoe_base}\n")
+            f.write(f"min_lcoe_scenario\t{min_lcoe_scen}\n")
+            f.write(f"mean_lcoe_baseline\t{mean_lcoe_base}\n")
+            f.write(f"mean_lcoe_scenario\t{mean_lcoe_scen}\n")
+            f.write(f"max_lcoe_baseline\t{max_lcoe_base}\n")
+            f.write(f"max_lcoe_scenario\t{max_lcoe_scen}\n")
+            f.write(f"min_lcoe_baseline_{cycles[0]}\t{min_lcoe_base}\n")
+            f.write(f"min_lcoe_scenario_{cycles[0]}\t{min_lcoe_scen}\n")
+            f.write(f"mean_lcoe_baseline_{cycles[0]}\t{mean_lcoe_base}\n")
+            f.write(f"mean_lcoe_scenario_{cycles[0]}\t{mean_lcoe_scen}\n")
+            f.write(f"max_lcoe_baseline_{cycles[0]}\t{max_lcoe_base}\n")
+            f.write(f"max_lcoe_scenario_{cycles[0]}\t{max_lcoe_scen}\n")
 
             # Keep these keys present (as nan) so downstream code that expects them won’t crash
             f.write("switch_rate_pixels\tnan\n")
@@ -567,6 +610,12 @@ def main():
     # Keep your old “best-tech” change metrics too (still useful generally),
     # but NOTE: these are based on best tech, not sens tech.
     pct_change_best = pct_change_map(best_base, best_scen)
+    min_lcoe_base = finite_nanmin(best_base)
+    min_lcoe_scen = finite_nanmin(best_scen)
+    mean_lcoe_base = finite_nanmean(best_base)
+    mean_lcoe_scen = finite_nanmean(best_scen)
+    max_lcoe_base = finite_nanmax(best_base)
+    max_lcoe_scen = finite_nanmax(best_scen)
     mask_best = np.isfinite(pct_change_best)
     if mask_best.any():
         mean_abs_pct_change_best_simple = float(np.nanmean(np.abs(pct_change_best[mask_best])))
@@ -625,9 +674,21 @@ def main():
         # NEW/explicit: sens-tech metrics (what panel d shows)
         f.write(f"mean_abs_pct_change_sens\t{mean_abs_pct_change_sens}\n")
         f.write(f"max_abs_pct_change_sens\t{max_abs_pct_change_sens}\n")
+        f.write(f"min_lcoe_baseline\t{min_lcoe_base}\n")
+        f.write(f"min_lcoe_scenario\t{min_lcoe_scen}\n")
+        f.write(f"mean_lcoe_baseline\t{mean_lcoe_base}\n")
+        f.write(f"mean_lcoe_scenario\t{mean_lcoe_scen}\n")
+        f.write(f"max_lcoe_baseline\t{max_lcoe_base}\n")
+        f.write(f"max_lcoe_scenario\t{max_lcoe_scen}\n")
 
         # shares
         for t in cycles:
+            f.write(f"min_lcoe_baseline_{t}\t{finite_nanmin(base_stack[tech_code[t]])}\n")
+            f.write(f"min_lcoe_scenario_{t}\t{finite_nanmin(scen_stack[tech_code[t]])}\n")
+            f.write(f"mean_lcoe_baseline_{t}\t{finite_nanmean(base_stack[tech_code[t]])}\n")
+            f.write(f"mean_lcoe_scenario_{t}\t{finite_nanmean(scen_stack[tech_code[t]])}\n")
+            f.write(f"max_lcoe_baseline_{t}\t{finite_nanmax(base_stack[tech_code[t]])}\n")
+            f.write(f"max_lcoe_scenario_{t}\t{finite_nanmax(scen_stack[tech_code[t]])}\n")
             f.write(f"share_baseline_{t}\t{share_base[t]}\n")
             f.write(f"share_scenario_{t}\t{share_scen[t]}\n")
 
