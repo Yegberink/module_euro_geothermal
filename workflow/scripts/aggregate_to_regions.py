@@ -35,6 +35,10 @@ plt.rcParams.update({
     "axes.unicode_minus": False,
 })
 
+TECH_LABELS = {"orc": "ORC", "flash": "Flash", "kalina": "Kalina"}
+PANEL_LETTERS = "abcdefghijklmnopqrstuvwxyz"
+MAP_CMAP = "viridis"
+
 
 # ---------------------------------------------------------------------------
 # Filename parsing
@@ -196,26 +200,107 @@ def _bins_for_method(method, lcoe_da, n_quantiles, fixed_bins, lcoe_cutoff):
 # Choropleth helper
 # ---------------------------------------------------------------------------
 
-def choropleth_png(gdf: gpd.GeoDataFrame, column: str, path: str, title: str):
-    """Write a simple choropleth PNG; silently skip if data are missing."""
-    if gdf is None or len(gdf) == 0 or column not in gdf.columns:
-        return
-    if gdf[column].notna().sum() == 0:
+def composite_choropleth_png(
+    panel_specs: list[dict],
+    path: str,
+    title_suffix: str,
+    value_scale: float = 1000.0,
+):
+    """Write a 3-panel choropleth PNG with a shared colorbar."""
+    valid_specs = [
+        spec for spec in panel_specs
+        if spec["gdf"] is not None
+        and len(spec["gdf"]) > 0
+        and spec["column"] in spec["gdf"].columns
+        and spec["gdf"][spec["column"]].notna().sum() > 0
+    ]
+    if not valid_specs:
         return
 
-    d = os.path.dirname(path)
-    if d:
-        os.makedirs(d, exist_ok=True)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
 
-    fig, ax = plt.subplots(figsize=(8, 6))
-    try:
-        gdf.plot(column=column, ax=ax, legend=True)
-        gdf.geometry.boundary.plot(ax=ax, linewidth=0.5, color="black")
-        ax.set_title(title)
-        ax.set_axis_off()
-        fig.savefig(path, dpi=150, bbox_inches="tight")
-    finally:
-        plt.close(fig)
+    values = []
+    for spec in valid_specs:
+        vals = spec["gdf"][spec["column"]].astype(float) / value_scale
+        vals = vals[np.isfinite(vals)]
+        if len(vals):
+            values.append(vals)
+    if not values:
+        return
+
+    vmin = float(min(v.min() for v in values))
+    vmax = float(max(v.max() for v in values))
+    cmap = plt.get_cmap(MAP_CMAP).copy()
+    cmap.set_bad("#D9D9D9")
+
+    n_panels = len(valid_specs)
+    fig_w = 9.5
+    fig_h = 5.3
+    gap = 0.08
+    margin_l = 0.14
+    margin_r = 0.14
+    margin_t = 0.42
+    margin_b = 0.78
+
+    bounds = valid_specs[0]["gdf"].total_bounds
+    xmin, ymin, xmax, ymax = bounds
+    data_aspect = (ymax - ymin) / (xmax - xmin)
+    available_w = fig_w - margin_l - margin_r - (n_panels - 1) * gap
+    available_h = fig_h - margin_t - margin_b
+    panel_w = available_w / n_panels
+    panel_h = min(available_h, panel_w * data_aspect)
+    fig = plt.figure(figsize=(fig_w, fig_h))
+
+    axes = []
+    for i in range(n_panels):
+        x0 = (margin_l + i * (panel_w + gap)) / fig_w
+        y0 = (margin_b + 0.5 * (available_h - panel_h)) / fig_h
+        w = panel_w / fig_w
+        h = panel_h / fig_h
+        axes.append(fig.add_axes([x0, y0, w, h]))
+
+    for idx, (ax, spec) in enumerate(zip(axes, valid_specs)):
+        gdf_plot = spec["gdf"].copy()
+        gdf_plot["_plot_value"] = gdf_plot[spec["column"]].astype(float) / value_scale
+        ax.set_facecolor("#D9D9D9")
+        gdf_plot.plot(
+            column="_plot_value",
+            ax=ax,
+            cmap=cmap,
+            vmin=vmin,
+            vmax=vmax,
+            linewidth=0.0,
+            missing_kwds={"color": "#D9D9D9"},
+        )
+        gdf_plot.geometry.boundary.plot(ax=ax, linewidth=0.35, color="#666666")
+        ax.text(
+            0.02,
+            0.98,
+            f"{PANEL_LETTERS[idx]}) {TECH_LABELS.get(spec['tech'], spec['tech'].upper())}",
+            transform=ax.transAxes,
+            ha="left",
+            va="top",
+            fontsize=11,
+            fontweight="bold",
+            color="black",
+        )
+        ax.set_xticks([])
+        ax.set_yticks([])
+        for spine in ax.spines.values():
+            spine.set_visible(True)
+            spine.set_linewidth(0.8)
+            spine.set_edgecolor("#666666")
+
+    cax = fig.add_axes([0.14, 0.08, 0.72, 0.04])
+    sm = plt.cm.ScalarMappable(cmap=cmap)
+    sm.set_clim(vmin, vmax)
+    cbar = fig.colorbar(sm, cax=cax, orientation="horizontal")
+    cbar.set_label("Potential (GW)")
+    cbar.ax.tick_params(length=0, labelsize=9)
+
+    fig.suptitle(title_suffix, y=0.96, fontsize=12)
+    fig.savefig(path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
 
 
 # ---------------------------------------------------------------------------
@@ -247,7 +332,7 @@ def aggregate_one_tech(
     figdir: str,
     lcoe_cutoff: float | None,
     depth_category: str = "all_depths",
-) -> tuple[pd.DataFrame, object]:
+) -> tuple[pd.DataFrame, object, list[dict]]:
     """
     Aggregate LCOE and potential for a single (tech, depth_category) pair.
 
@@ -266,6 +351,7 @@ def aggregate_one_tech(
     bins = _bins_for_method(method, lcoe, n_quantiles, fixed_bins, lcoe_cutoff)
 
     rows = []
+    figure_specs = []
 
     for bi, (bin_left, bin_right) in enumerate(bins):
 
@@ -318,14 +404,14 @@ def aggregate_one_tech(
 
         mean_lcoe = agg_lp["sum"].astype(float) / total_pot.replace(0.0, np.nan)
 
-        choropleth_png(
-            agg_p,
-            column="sum",
-            path=os.path.join(
-                figdir,
-                f"{tech}_{_safe_name(depth_category)}_potential_bin_{_safe_name(bin_label)}.png",
-            ),
-            title=f"{tech} ({depth_category}): potential per region — LCOE bin {bin_label}",
+        figure_specs.append(
+            {
+                "tech": tech,
+                "depth_category": str(depth_category),
+                "price_bin": bin_label,
+                "column": "sum",
+                "gdf": agg_p.copy(),
+            }
         )
 
         df = pd.DataFrame(
@@ -355,7 +441,7 @@ def aggregate_one_tech(
             ]
         )
 
-    return out_df, lcoe.rio.crs
+    return out_df, lcoe.rio.crs, figure_specs
 
 
 # ---------------------------------------------------------------------------
@@ -424,9 +510,10 @@ def main():
     # --- Aggregate each (tech, depth_category) pair -----------------------
     frames  = []
     out_crs = None
+    figure_specs_all = []
 
     for tech, depth_cat in pairs:
-        df, crs = aggregate_one_tech(
+        df, crs, fig_specs = aggregate_one_tech(
             tech           = tech,
             lcoe_path      = lcoe_map[(tech, depth_cat)],
             pot_path       = pot_map[(tech, depth_cat)],
@@ -440,6 +527,7 @@ def main():
         )
         if not df.empty:
             frames.append(df)
+        figure_specs_all.extend(fig_specs)
         out_crs = out_crs or crs
 
     # --- Assemble output GeoDataFrame -------------------------------------
@@ -476,6 +564,22 @@ def main():
     )
 
     out_gdf.to_parquet(out_path, index=False)
+
+    grouped_specs: dict[tuple[str, str], list[dict]] = {}
+    for spec in figure_specs_all:
+        key = (spec["depth_category"], spec["price_bin"])
+        grouped_specs.setdefault(key, []).append(spec)
+
+    for (depth_category, price_bin), specs in grouped_specs.items():
+        specs = sorted(specs, key=lambda s: list(TECH_LABELS).index(s["tech"]) if s["tech"] in TECH_LABELS else 999)
+        composite_choropleth_png(
+            panel_specs=specs,
+            path=os.path.join(
+                figdir,
+                f"potential_overview_{_safe_name(depth_category)}_bin_{_safe_name(price_bin)}.png",
+            ),
+            title_suffix=f"Potential per region — {depth_category}, LCOE bin {price_bin}",
+        )
 
 
 if "snakemake" in dir():

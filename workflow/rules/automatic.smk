@@ -197,6 +197,14 @@ if METHOD_2D == "LCOE_minimization":
         shapes=SHAPES, scenario=TARGET_SCENARIOS,
     )
     all_geothermal_inputs += expand(
+        "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/lcoe_vs_potential_scatter.png",
+        shapes=SHAPES, scenario=TARGET_SCENARIOS,
+    )
+    all_geothermal_inputs += expand(
+        "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/average_potential_per_cell_by_depth.png",
+        shapes=SHAPES, scenario=TARGET_SCENARIOS,
+    )
+    all_geothermal_inputs += expand(
         "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/cumulative_potential_vs_lcoe.png",
         shapes=SHAPES, scenario=TARGET_SCENARIOS,
     )
@@ -372,6 +380,8 @@ rule make_2d:
         **(
             {
                 "overview_fig": "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/lcoe_overview.png",
+                "scatter_fig": "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/lcoe_vs_potential_scatter.png",
+                "avg_potential_depth_fig": "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/average_potential_per_cell_by_depth.png",
                 "cumulative_curve_fig": "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/cumulative_potential_vs_lcoe.png",
                 "cumulative_depth_fig": "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/cumulative_potential_vs_depth.png",
                 "potential_overview_fig": "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/potential_overview.png",

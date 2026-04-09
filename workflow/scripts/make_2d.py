@@ -192,6 +192,15 @@ def _cumulative_potential_curve(
     return x_sorted, cumulative_potential
 
 
+def _finite_mean_by_depth(da3d: xr.DataArray, value_scale: float = 1.0) -> np.ndarray:
+    return (
+        da3d.astype(np.float64)
+        .mean(dim=("y", "x"), skipna=True)
+        .values.astype(np.float64)
+        / value_scale
+    )
+
+
 def make_three_panel_map_figure(
     maps: dict[str, xr.DataArray],
     cycles: list[str],
@@ -331,6 +340,88 @@ def make_cumulative_potential_figure(
 
     ax.set_xlabel(xlabel)
     ax.set_ylabel("Cumulative potential below cost (GW)")
+    ax.legend(
+        loc="center left",
+        bbox_to_anchor=(1.02, 0.5),
+        frameon=False,
+        borderaxespad=0.0,
+    )
+    ax.spines["top"].set_visible(True)
+    ax.spines["right"].set_visible(True)
+    ax.grid(False)
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+
+
+def make_average_potential_by_depth_figure(
+    potential_profiles: dict[str, np.ndarray],
+    depths_m: np.ndarray,
+    cycles: list[str],
+    out_path: Path,
+):
+    fig, ax = plt.subplots(figsize=(6, 4))
+
+    depths_km = np.asarray(depths_m, dtype=np.float64) / 1000.0
+    for cycle in cycles:
+        y = np.asarray(potential_profiles[cycle], dtype=np.float64)
+        mask = np.isfinite(depths_km) & np.isfinite(y)
+        if not np.any(mask):
+            continue
+
+        ax.plot(
+            depths_km[mask],
+            y[mask],
+            color=TECH_COLORS.get(cycle, "#333333"),
+            linewidth=2.0,
+            label=TECH_LABELS.get(cycle, cycle.upper()),
+        )
+
+    ax.set_xlabel("Depth (km)")
+    ax.set_ylabel("Average potential per grid cell (GW)")
+    ax.legend(
+        loc="center left",
+        bbox_to_anchor=(1.02, 0.5),
+        frameon=False,
+        borderaxespad=0.0,
+    )
+    ax.spines["top"].set_visible(True)
+    ax.spines["right"].set_visible(True)
+    ax.grid(False)
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+
+
+def make_lcoe_vs_potential_scatter_figure(
+    lcoe_maps: dict[str, xr.DataArray],
+    potential_maps: dict[str, xr.DataArray],
+    cycles: list[str],
+    out_path: Path,
+):
+    fig, ax = plt.subplots(figsize=(6, 4))
+
+    for cycle in cycles:
+        x = np.asarray(lcoe_maps[cycle].values, dtype=np.float64).ravel()
+        y = np.asarray(potential_maps[cycle].values, dtype=np.float64).ravel() / 1000.0
+        mask = np.isfinite(x) & np.isfinite(y) & (y > 0)
+        if not np.any(mask):
+            continue
+
+        ax.scatter(
+            x[mask],
+            y[mask],
+            s=6,
+            alpha=0.35,
+            linewidths=0,
+            color=TECH_COLORS.get(cycle, "#333333"),
+            label=TECH_LABELS.get(cycle, cycle.upper()),
+        )
+
+    ax.set_xlabel("Minimized LCOE (€/MWh$_e$)")
+    ax.set_ylabel("Minimized potential (GW)")
     ax.legend(
         loc="center left",
         bbox_to_anchor=(1.02, 0.5),
@@ -592,6 +683,8 @@ def main():
     lcoe_maps_2d: dict[str, xr.DataArray] = {}
     potential_maps_2d: dict[str, xr.DataArray] = {}
     depth_maps_2d: dict[str, xr.DataArray] = {}
+    potential_profiles_3d: dict[str, np.ndarray] = {}
+    depths_m: np.ndarray | None = None
 
     for cycle in cycles:
         if cycle not in out_lcoe_by_cycle or cycle not in out_pot_by_cycle:
@@ -620,6 +713,9 @@ def main():
         ds_3d = xr.open_dataset(cube_path)
 
         if method_2d_aggregation == "LCOE_minimization":
+            if depths_m is None:
+                depths_m = ds_3d["depth_m"].values.astype(np.float64)
+            potential_profiles_3d[cycle] = _finite_mean_by_depth(ds_3d["potential"], value_scale=1000.0)
             ds_2d = aggregate_3d_to_2d_lcoe_min(ds_3d, depth_dim="depth_m")
             lcoe_maps_2d[cycle] = ds_2d["lcoe_2d"].copy()
             potential_maps_2d[cycle] = ds_2d["potential_2d"].copy()
@@ -652,6 +748,18 @@ def main():
             lcoe_maps=lcoe_maps_2d,
             cycles=cycles,
             out_path=Path(snakemake.output.overview_fig),
+        )
+        make_lcoe_vs_potential_scatter_figure(
+            lcoe_maps=lcoe_maps_2d,
+            potential_maps=potential_maps_2d,
+            cycles=cycles,
+            out_path=Path(snakemake.output.scatter_fig),
+        )
+        make_average_potential_by_depth_figure(
+            potential_profiles=potential_profiles_3d,
+            depths_m=depths_m,
+            cycles=cycles,
+            out_path=Path(snakemake.output.avg_potential_depth_fig),
         )
         make_cumulative_potential_figure(
             x_maps=lcoe_maps_2d,
