@@ -213,6 +213,26 @@ if METHOD_2D == "LCOE_minimization":
         shapes=SHAPES, scenario=TARGET_SCENARIOS,
     )
     all_geothermal_inputs += expand(
+        "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/cumulative_potential_vs_temperature.png",
+        shapes=SHAPES, scenario=TARGET_SCENARIOS,
+    )
+    all_geothermal_inputs += expand(
+        "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/potential_temperature_lcoe_heatmap.png",
+        shapes=SHAPES, scenario=TARGET_SCENARIOS,
+    )
+    all_geothermal_inputs += expand(
+        "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/temperature_vs_lcoe_scatter.png",
+        shapes=SHAPES, scenario=TARGET_SCENARIOS,
+    )
+    all_geothermal_inputs += expand(
+        "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/temperature_lcoe_isopotential_contours.png",
+        shapes=SHAPES, scenario=TARGET_SCENARIOS,
+    )
+    all_geothermal_inputs += expand(
+        "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/temperature_lcoe_potential_scatter.png",
+        shapes=SHAPES, scenario=TARGET_SCENARIOS,
+    )
+    all_geothermal_inputs += expand(
         "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/potential_overview.png",
         shapes=SHAPES, scenario=TARGET_SCENARIOS,
     )
@@ -384,6 +404,11 @@ rule make_2d:
                 "avg_potential_depth_fig": "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/average_potential_per_cell_by_depth.png",
                 "cumulative_curve_fig": "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/cumulative_potential_vs_lcoe.png",
                 "cumulative_depth_fig": "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/cumulative_potential_vs_depth.png",
+                "cumulative_temperature_fig": "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/cumulative_potential_vs_temperature.png",
+                "temperature_lcoe_potential_fig": "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/potential_temperature_lcoe_heatmap.png",
+                "temperature_lcoe_scatter_fig": "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/temperature_vs_lcoe_scatter.png",
+                "temperature_lcoe_isopotential_fig": "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/temperature_lcoe_isopotential_contours.png",
+                "temperature_lcoe_potential_scatter_fig": "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/temperature_lcoe_potential_scatter.png",
                 "potential_overview_fig": "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/potential_overview.png",
                 "depth_overview_fig": "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/depth_at_min_overview.png",
             }

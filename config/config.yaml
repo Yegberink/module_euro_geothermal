@@ -67,7 +67,7 @@ fixed_OM_rate: 0.01           # fixed O&M as fraction of capital cost per year
 parasitic_fraction: 0.21      # parasitic power consumption as fraction of gross output
 well_spacing: 1.0             # distance between production and injection well (km)
 flowrate_egs: 60.0            # mass flow rate per EGS doublet (kg/s)
-flowrate_conventional: 100.0   # mass flow rate per conventional
+flowrate_conventional: 100.0  # mass flow rate per conventional
 
 # Turbine outlet temperatures
 temp_turbine_out:

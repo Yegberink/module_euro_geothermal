@@ -531,6 +531,7 @@ def main():
 
     ds_out = xr.Dataset(
         data_vars={
+            "temperature": T.astype(np.float32),
             "lcoe": lcoe.astype(np.float32),
             "potential": cap.astype(np.float32),
             "egs_cutoff_depth_m": cutoff3d.astype(np.float32),
@@ -550,12 +551,13 @@ def main():
         },
     )
 
+    ds_out["temperature"].attrs.update({"units": "degC", "long_name": "Reservoir temperature"})
     ds_out["lcoe"].attrs.update({"units": "€/MWh_e", "long_name": f"LCOE ({cycle_key})"})
     ds_out["potential"].attrs.update({"units": "MW", "long_name": f"Net electric capacity ({cycle_key})"})
     ds_out["egs_cutoff_depth_m"].attrs.update({"units": "m", "long_name": "EGS cutoff depth"})
 
     ds_out.to_netcdf(cube_nc)
-    print(f"  • wrote {cube_nc} (vars: lcoe, potential, egs_cutoff_depth_m)")
+    print(f"  • wrote {cube_nc} (vars: temperature, lcoe, potential, egs_cutoff_depth_m)")
 
     # Write html sliders only if both requested and declared as outputs
     write_qc = bool(snakemake.params.get("write_qc_sliders", False))
