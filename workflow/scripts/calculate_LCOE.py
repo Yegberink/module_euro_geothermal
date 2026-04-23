@@ -195,6 +195,7 @@ def calculate_LCOE_vec(
     pump_cost,
     fixed_OM_rate,
     parasitic_fraction,
+    capacity_factor,
     well_spacing,
     flowrate_egs,
     flowrate_conventional,
@@ -216,9 +217,9 @@ def calculate_LCOE_vec(
     else:
         is_egs = np.full_like(depth, False, dtype=bool)
 
-    doublet_occupation = 2*well_spacing**2  # occupation area per doublet (km^2)
-
-    n_pairs = area_available/doublet_occupation #10*10km2 per voxel - unsuitable areas / occupation area per doublet -> max doublet pairs per voxel before interference
+    # `well_spacing` and `area_available` are both expressed in km / km^2 here.
+    doublet_occupation = 2 * well_spacing**2  # km^2 per doublet
+    n_pairs = area_available / doublet_occupation
 
     nr_wells = n_pairs * 2
     flowrate_wells = np.where(is_egs, flowrate_egs * n_pairs, flowrate_conventional * n_pairs)
@@ -256,7 +257,6 @@ def calculate_LCOE_vec(
     drill_investment = well_cost + pump_cost * n_pairs
     capex_total = powerplant_investment + drill_investment
 
-    capacity_factor = 0.88
     load_hours = capacity_factor * 24.0 * 365.0
     elec_out = W * load_hours
     net_elec = elec_out * (1.0 - parasitic_fraction)
@@ -302,11 +302,12 @@ def calculate_capacity_vec(efficiency,
     else:
         is_egs = np.full_like(depth, False, dtype=bool)
 
-    doublet_occupation = 2*well_spacing**2  # occupation area per doublet (m^2), assuming 2 wells per doublet
+    # `well_spacing` and `area_available` are both expressed in km / km^2 here,
+    # so `n_pairs` is the number of geothermal doublets that fit in one grid cell.
+    doublet_occupation = 2 * well_spacing**2  # km^2 per doublet
 
-    n_pairs = area_available/doublet_occupation
+    n_pairs = area_available / doublet_occupation
 
-    nr_wells = n_pairs * 2
     flowrate_wells = np.where(is_egs, flowrate_egs * n_pairs, flowrate_conventional * n_pairs)
 
     dT = production_temp - temp_turb_out
@@ -322,7 +323,7 @@ def calculate_capacity_vec(efficiency,
         return np.float32(np.nan)
 
     W_net = power_out_gross * (1.0 - parasitic_fraction)
-    potential = W_net * nr_wells
+    potential = W_net
 
     if (not np.isfinite(potential)) or (potential <= 0.0):
         return np.float32(np.nan)
@@ -487,6 +488,7 @@ def main():
                 pump_cost=snakemake.params.get("pump_cost"),
                 fixed_OM_rate=snakemake.params.get("fixed_OM_rate"),
                 parasitic_fraction=snakemake.params.get("parasitic_fraction"),
+                capacity_factor=snakemake.params.get("capacity_factor"),
                 orc_money_per_kw=snakemake.params.get("orc_money_per_kw"),
                 flash_money_per_kw=snakemake.params.get("flash_money_per_kw"),
                 kalina_money_per_kw=snakemake.params.get("kalina_money_per_kw"),

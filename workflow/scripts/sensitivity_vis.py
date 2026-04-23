@@ -44,6 +44,7 @@ PARAM_LABELS = {
     "stimulation_cost_per_doublet": "Stimulation cost per doublet",
     "pump_cost": "Pump cost",
     "lifetime": "Lifetime",
+    "capacity_factor": "Capacity factor",
     "fixed_OM_rate": "Fixed O&M rate",
     "parasitic_fraction": "Parasitic fraction",
     "n_pairs": "Max doublets per pixel",
@@ -320,6 +321,75 @@ def make_single_baseline_plus_parameter_boxplot(specs, value_key, ylabel, title,
     plt.close(fig)
 
 
+def make_top_switch_rate_barplot(df, top_n, out_path):
+    """
+    Plot a horizontal bar chart for the scenarios with the largest pixel switch rate.
+
+    Expects one representative scenario per parameter with columns:
+      - parameter
+      - pct_change
+      - transition_total_pixels
+    """
+    plot_df = df.copy()
+    plot_df = plot_df[np.isfinite(plot_df["transition_total_pixels"])].copy()
+    if plot_df.empty:
+        raise ValueError(f"No finite switch-rate values available for {out_path}")
+
+    plot_df = plot_df.sort_values(
+        ["transition_total_pixels", "pct_change", "parameter"],
+        ascending=[False, False, True],
+    ).head(top_n)
+
+    labels = [
+        make_parameter_box_label(param, pct_change)
+        for param, pct_change in zip(plot_df["parameter"], plot_df["pct_change"])
+    ]
+    values = plot_df["transition_total_pixels"].to_numpy(dtype=float) * 100.0
+
+    fig_h = max(5.0, 0.9 * len(plot_df) + 1.8)
+    fig, ax = plt.subplots(figsize=(10, fig_h))
+
+    y = np.arange(len(plot_df))
+    bars = ax.barh(
+        y,
+        values,
+        color="#D55E00",
+        edgecolor="#7F2704",
+        alpha=0.85,
+        height=0.7,
+    )
+
+    ax.set_yticks(y)
+    ax.set_yticklabels(labels)
+    ax.invert_yaxis()
+    ax.set_xlabel("Pixels with changed winning technology (%)")
+    ax.set_title(f"Top {len(plot_df)} parameter scenarios by technology switch rate")
+    ax.grid(True, axis="x", linewidth=0.6, alpha=0.35)
+
+    xmax = float(np.nanmax(values)) if len(values) else 0.0
+    if not np.isfinite(xmax):
+        xmax = 0.0
+    ax.set_xlim(0.0, xmax * 1.15 if xmax > 0 else 1.0)
+
+    for bar, value in zip(bars, values):
+        ax.text(
+            bar.get_width() + max(xmax * 0.015, 0.3),
+            bar.get_y() + bar.get_height() / 2.0,
+            f"{value:.1f}%",
+            va="center",
+            ha="left",
+            fontsize=10,
+        )
+
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    fig.tight_layout()
+    fig.savefig(out_path)
+    plt.close(fig)
+
+
 # =========================
 # Main
 # =========================
@@ -581,6 +651,19 @@ def main():
         ylabel="Potential",
         title=f"Potential distributions for cheapest technology per pixel\n{title_suffix}",
         out_path=snakemake.output["boxplot_potential_top6_winner"],
+    )
+
+    df_switch = df.copy()
+    df_switch["metric_value"] = df_switch["transition_total_pixels"]
+    switch_df = select_representative_scenarios_per_parameter(
+        df=df_switch,
+        parameter_order=selected_params,
+    ).rename(columns={"metric_value": "transition_total_pixels"})
+
+    make_top_switch_rate_barplot(
+        df=switch_df,
+        top_n=top_n,
+        out_path=snakemake.output["barplot_switch_rate_top6"],
     )
 
 

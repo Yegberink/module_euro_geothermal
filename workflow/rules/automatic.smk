@@ -277,6 +277,10 @@ if PERFORM_SENSITIVITY:
             "results/{shapes}/scenarios/sensitivity/boxplot_potential_top_6_winner.png",
             shapes=SHAPES,
         ),
+        *expand(
+            "results/{shapes}/scenarios/sensitivity/barplot_switch_rate_top_6.png",
+            shapes=SHAPES,
+        ),
     ]
 
 # -----------------------------
@@ -354,6 +358,7 @@ rule calculate_LCOE:
         stimulation_cost_per_doublet = lambda wc: scen_float(wc, "stimulation_cost_per_doublet", config.get("stimulation_cost_per_doublet")),
         pump_cost                    = lambda wc: scen_float(wc, "pump_cost",                    config["pump_cost"]),
         lifetime                     = lambda wc: scen_float(wc, "lifetime",                     config["lifetime"]),
+        capacity_factor              = lambda wc: scen_float(wc, "capacity_factor",              config["capacity_factor"]),
         fixed_OM_rate                = lambda wc: scen_float(wc, "fixed_OM_rate",                config["fixed_OM_rate"]),
         parasitic_fraction           = lambda wc: scen_float(wc, "parasitic_fraction",           config["parasitic_fraction"]),
         well_spacing                 = lambda wc: scen_float(wc, "well_spacing",                 config["well_spacing"]),
@@ -499,6 +504,7 @@ if PERFORM_SENSITIVITY:
             lineplot_table                = "results/{shapes}/scenarios/sensitivity/lineplot_mean_abs_pct_change_sens.tsv",
             boxplot_lcoe_top6_winner      = "results/{shapes}/scenarios/sensitivity/boxplot_lcoe_top_6_winner.png",
             boxplot_potential_top6_winner = "results/{shapes}/scenarios/sensitivity/boxplot_potential_top_6_winner.png",
+            barplot_switch_rate_top6     = "results/{shapes}/scenarios/sensitivity/barplot_switch_rate_top_6.png",
         params:
             baseline    = BASELINE_SCENARIO,
             metric_name = "mean_abs_pct_change_sens",

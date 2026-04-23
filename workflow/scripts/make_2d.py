@@ -912,7 +912,7 @@ def make_lcoe_overview_figure(
     ]
     axes[-1].legend(
         handles=legend_handles,
-        loc="lower right",
+        loc="upper right",
         frameon=True, facecolor="white", framealpha=0.9,
         edgecolor="#AAAAAA", fontsize=8,
     )
