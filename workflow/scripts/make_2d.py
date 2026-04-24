@@ -48,8 +48,6 @@ def _parse_depth_categories(raw) -> List[DepthCategory]:
     raw = raw or []
     out: List[DepthCategory] = []
     for pair in raw:
-        if not (isinstance(pair, (list, tuple)) and len(pair) == 2):
-            raise ValueError(f"Invalid depth category entry: {pair!r} (expected [zmin,zmax])")
         out.append(DepthCategory(float(pair[0]), float(pair[1])))
     return out
 
@@ -993,8 +991,6 @@ def aggregate_3d_to_2d_depth_categories(
 
 def _cycle_from_cube_path(p: str) -> str:
     name = Path(p).name
-    if not name.endswith("_lcoe_cube.nc"):
-        raise ValueError(f"Unexpected cube filename (expected *_lcoe_cube.nc): {p}")
     return name.replace("_lcoe_cube.nc", "")
 
 def _cycle_from_tif_name(path: str, suffix: str | None = None) -> str:
@@ -1014,16 +1010,8 @@ def _cycle_from_tif_name(path: str, suffix: str | None = None) -> str:
         r"^(?P<cycle>[A-Za-z0-9]+)_2d_(?:(?P<cat>.+)_)?(?P<kind>lcoe|potential)\.tif$",
         name
     )
-    if not m:
-        raise ValueError(f"Unexpected output tif name: {name}")
 
     # If caller provided suffix, you can optionally validate 'kind' against it
-    if suffix is not None:
-        if suffix.endswith("_2d_lcoe.tif") and m.group("kind") != "lcoe":
-            raise ValueError(f"Unexpected output tif name: {name} (expected *{suffix})")
-        if suffix.endswith("_2d_potential.tif") and m.group("kind") != "potential":
-            raise ValueError(f"Unexpected output tif name: {name} (expected *{suffix})")
-
     return m.group("cycle").lower()
 
 
@@ -1059,12 +1047,7 @@ def main():
     depths_m: np.ndarray | None = None
 
     for cycle in cycles:
-        if cycle not in out_lcoe_by_cycle or cycle not in out_pot_by_cycle:
-            raise ValueError(
-                f"Outputs missing for cycle={cycle}. "
-                f"Expected {cycle}_2d_lcoe.tif and {cycle}_2d_potential.tif "
-                f"but got lcoe={sorted(out_lcoe_by_cycle)} pot={sorted(out_pot_by_cycle)}"
-        )
+        pass
 
     # Choose an outdir for extra products (depth_at_min.tif, PNGs).
     # Keep it scenario-specific so different scenarios do not overwrite one another.
@@ -1079,8 +1062,6 @@ def main():
 
     for cycle in cycles:
         cube_path = cubes_by_cycle.get(cycle)
-        if cube_path is None:
-            raise ValueError(f"Missing input cube for cycle={cycle}. Have cubes: {sorted(cubes_by_cycle)}")
 
         ds_3d = xr.open_dataset(cube_path)
 

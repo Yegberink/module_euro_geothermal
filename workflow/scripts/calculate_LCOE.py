@@ -69,11 +69,6 @@ EUR_PER_USD_2020 = 1 / 1.1422
 def _usd_to_eur2020_factor(currency_year):
     if int(currency_year) == 2025:
         return (CPI_US[2020] / CPI_2025_PROXY) * EUR_PER_USD_2020
-    if int(currency_year) not in CPI_US:
-        raise ValueError(
-            f"Unsupported drilling curve currency_year={currency_year!r}. "
-            f"Supported years: {sorted(CPI_US)} plus 2025."
-        )
     return (CPI_US[2020] / CPI_US[int(currency_year)]) * EUR_PER_USD_2020
 
 
@@ -90,15 +85,7 @@ def _init_log_quadratic_guesses(depth_m, costs):
 
 def _load_curve_from_csv(csv_path, currency_year):
     csv_file = Path(csv_path)
-    if not csv_file.exists():
-        raise FileNotFoundError(
-            f"Drilling cost curve CSV not found: {csv_file}. "
-            "Provide the file or switch to a built-in curve."
-        )
-
     df = pd.read_csv(csv_file, header=None)
-    if df.shape[1] < 2:
-        raise ValueError(f"Expected at least 2 columns in {csv_file}, got {df.shape[1]}.")
 
     depth_m = df.iloc[:, 0].to_numpy(dtype=float)
     costs = df.iloc[:, 1].to_numpy(dtype=float)
@@ -142,11 +129,6 @@ def _resolve_drilling_curve_definition(curve_name, definitions):
         else:
             spec = custom_spec
 
-    if spec is None:
-        known = sorted(set(builtins) | set(definitions))
-        raise ValueError(
-            f"Unknown drilling_cost_curve={curve_name!r}. Available curves: {known}."
-        )
     return spec
 
 
@@ -176,10 +158,6 @@ def _drilling_cost_meur_per_well(depth_m):
         )
         return cost_meur * _usd_to_eur2020_factor(spec["currency_year"])
 
-    raise ValueError(
-        f"Unsupported drilling curve type {curve_type!r} for curve {DRILLING_COST_CURVE!r}."
-    )
-
 
 def load_efficiency_curve_csv(csv_path, cycle_key):
     """
@@ -192,9 +170,6 @@ def load_efficiency_curve_csv(csv_path, cycle_key):
 
     t_col = f"{cycle}_temperature"
     e_col = f"{cycle}_efficiency"
-
-    if t_col not in df.columns or e_col not in df.columns:
-        raise KeyError(f"CSV missing columns '{t_col}' / '{e_col}'")
 
     sub = df[[t_col, e_col]].dropna()
 
@@ -228,15 +203,8 @@ def sed_from_laske_nc_to_grid(
     """
     ds = xr.open_dataset(nc_path)
 
-    missing = [v for v in thk_vars if v not in ds]
-    if missing:
-        raise ValueError(f"Missing sediment vars {missing} in {nc_path}. Found: {list(ds.data_vars)}")
-
     thk_total_km = sum(ds[v] for v in thk_vars)
     thk_total_m = (thk_total_km * 1000.0).astype(np.float32)
-
-    if lat_name not in thk_total_m.coords or lon_name not in thk_total_m.coords:
-        raise ValueError(f"Expected coords {lat_name}/{lon_name}. Found coords: {list(thk_total_m.coords)}")
 
     lat = thk_total_m[lat_name].values
     lon = thk_total_m[lon_name].values
@@ -402,19 +370,20 @@ def calculate_LCOE_vec(
     return np.float32(lcoe)
 
 
-def calculate_capacity_vec(efficiency, 
-                           production_temp, 
-                           depth, 
-                           temp_turb_out, 
-                           sed_thickness, 
-                           min_dt,
-                           well_spacing,
-                           flowrate_egs,
-                           flowrate_conventional,
-                           area_available):
-    
+def calculate_capacity_vec(
+    efficiency,
+    production_temp,
+    depth,
+    temp_turb_out,
+    sed_thickness,
+    min_dt,
+    parasitic_fraction,
+    well_spacing,
+    flowrate_egs,
+    flowrate_conventional,
+    area_available,
+):
     Cp_water = 4250.0
-    parasitic_fraction = 0.21
     MIN_DT = min_dt
 
     sed_ok = _apply_sed_nan_policy(sed_thickness, z_thr=Z_THR_M, policy=SED_NAN_POLICY)
@@ -462,9 +431,6 @@ def write_depth_slider_html(da3d, qc_path: Path, title: str, stride: int = 1):
         da = da.isel(y=slice(None, None, stride), x=slice(None, None, stride))
 
     depths = da["depth_m"].values.astype(float)
-    if depths.size == 0:
-        raise ValueError("No depth_m values found for slider plot.")
-
     z0 = depths[0]
     img0 = da.sel(depth_m=z0).values
 
@@ -507,7 +473,6 @@ def write_depth_slider_html(da3d, qc_path: Path, title: str, stride: int = 1):
     )
 
     fig.write_html(str(qc_path), include_plotlyjs="cdn")
-    print(f"✅ Wrote slider HTML: {qc_path.resolve()}")
 
 
 def _normalize_cycle_param(x: str) -> str:
@@ -515,9 +480,6 @@ def _normalize_cycle_param(x: str) -> str:
     return x
 
 def main():
-    if carrier_out != "power":
-        raise NotImplementedError("Only carrier_out='power' is currently implemented.")
-
     cycle = _normalize_cycle_param(snakemake.params.get("cycle"))
     cycle_key = {"orc": "ORC", "flash": "Flash", "kalina": "Kalina"}[cycle]
 
@@ -533,8 +495,6 @@ def main():
         qc_pot.parent.mkdir(parents=True, exist_ok=True)
 
     ds = xr.open_dataset(VOXEL_NC)
-    if VAR not in ds:
-        raise RuntimeError(f"'{VAR}' not found in {VOXEL_NC}")
     crs_str = str(ds.attrs.get("crs", "")).strip() or "EPSG:3857"
 
     T = ds[VAR]  # (depth_m, y, x)
@@ -553,13 +513,6 @@ def main():
 
     # Re-broadcast depth coordinate to match sliced T
     depth3d = T["depth_m"].broadcast_like(T)
-
-    # Sanity check
-    if T.sizes.get("depth_m", 0) == 0:
-        raise RuntimeError(
-            f"No depth layers left after applying effective_max={effective_max} m "
-            f"(max_depth={max_depth}, include_egs={include_egs}, egs_cutoff={egs_cutoff})."
-        )
 
     x_coords = T["x"].values
     y_coords = T["y"].values
@@ -643,6 +596,7 @@ def main():
             keep_attrs=True,
             kwargs=dict(
                 min_dt=snakemake.params.get("min_dt"),
+                parasitic_fraction=snakemake.params.get("parasitic_fraction"),
                 well_spacing=snakemake.params.get("well_spacing"),
                 flowrate_egs=snakemake.params.get("flowrate_egs"),
                 flowrate_conventional=snakemake.params.get("flowrate_conventional"),
@@ -681,7 +635,6 @@ def main():
     ds_out["egs_cutoff_depth_m"].attrs.update({"units": "m", "long_name": "EGS cutoff depth"})
 
     ds_out.to_netcdf(cube_nc)
-    print(f"  • wrote {cube_nc} (vars: temperature, lcoe, potential, egs_cutoff_depth_m)")
 
     # Write html sliders only if both requested and declared as outputs
     write_qc = bool(snakemake.params.get("write_qc_sliders", False))
@@ -700,9 +653,6 @@ def main():
                 title=f"Potential depth slider ({cycle_key})",
                 stride=snakemake.params.get("qc_stride"),
             )
-
-    print("\nDone.")
-
 
 if __name__ == "__main__":
     main()

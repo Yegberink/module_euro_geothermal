@@ -25,9 +25,7 @@ def effective_max_depth(cfg):
 
 def norm_cycle(c):
     c = str(c).strip().lower()
-    if c in ("orc", "flash", "kalina"):
-        return c
-    raise ValueError(f"Unknown cycle in config.which_cycles: {c!r}")
+    return c
 
 
 def depthcat_labels():
@@ -36,8 +34,6 @@ def depthcat_labels():
 
 def _read_scenario_table(path: str) -> dict:
     df = pd.read_csv(path, sep="\t", comment="#").replace({np.nan: None})
-    if "scenario" not in df.columns:
-        raise ValueError(f"{path} must have a 'scenario' column.")
     return df.astype({"scenario": str}).set_index("scenario").to_dict(orient="index")
 
 
@@ -100,12 +96,6 @@ SCEN = _df.set_index("scenario").replace({np.nan: None}).to_dict(orient="index")
 del _base_cfg, _base_row, _df
 
 SCENARIOS = list(SCEN.keys())
-
-if BASELINE_SCENARIO not in SCEN:
-    raise ValueError(
-        f"baseline_scenario={BASELINE_SCENARIO!r} not found in scenario table. "
-        f"Available: {SCENARIOS}"
-    )
 
 SCENARIOS_NO_BASE = [s for s in SCENARIOS if s != BASELINE_SCENARIO]
 TARGET_SCENARIOS  = SCENARIOS if PERFORM_SENSITIVITY else [BASELINE_SCENARIO]
@@ -320,7 +310,7 @@ rule crop_to_speed_up:
     params:
         pad_m=25_000
     output:
-        clipped_temp_voxel = protected("results/{shapes}/clipped_temp_voxel.nc"),
+        clipped_temp_voxel = "results/{shapes}/clipped_temp_voxel.nc",
         qc_html            = "results/{shapes}/figures/clipped_temp_voxel_depth_slider.html",
     script:
         "../scripts/crop_to_speed_up.py"

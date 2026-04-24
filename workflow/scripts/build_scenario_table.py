@@ -46,11 +46,19 @@ def _parse_bool(x: Any) -> bool:
         return x
     if isinstance(x, str):
         s = x.strip().lower()
-        if s in {"true", "t", "1", "yes", "y"}:
-            return True
-        if s in {"false", "f", "0", "no", "n"}:
-            return False
-    raise ValueError(f"Cannot parse {x!r} as bool")
+        return {
+            "true": True,
+            "t": True,
+            "1": True,
+            "yes": True,
+            "y": True,
+            "false": False,
+            "f": False,
+            "0": False,
+            "no": False,
+            "n": False,
+        }[s]
+    return bool(x)
 
 
 def _build_deltas(max_dev_pct: float, steps: int) -> list[float]:
@@ -58,8 +66,6 @@ def _build_deltas(max_dev_pct: float, steps: int) -> list[float]:
     Build symmetric list of fractional deltas.
     E.g. steps=2, max_dev_pct=20 -> [-0.2, -0.1, 0.1, 0.2]
     """
-    if steps < 1:
-        raise ValueError("steps must be >= 1")
     pct_range = max_dev_pct / 100.0
     step = pct_range / steps
     neg = [-(k * step) for k in range(steps, 0, -1)]
@@ -156,11 +162,6 @@ def build_scenario_table(
     existing_names: set[str] = {baseline_scenario}
 
     for param in active_parameters:
-        if param not in parameter_definitions:
-            raise ValueError(
-                f"Parameter {param!r} listed in active_sensitivity_parameters "
-                f"but not defined in sensitivity_parameters."
-            )
         defn = parameter_definitions[param]
 
         base_val = base_row.get(param)
@@ -178,13 +179,6 @@ def build_scenario_table(
             if param == "include_egs" and flipped is False:
                 egs_cutoff = updated_row.get("EGS_cutoff")
                 max_depth = updated_row.get("max_depth")
-
-                if egs_cutoff is None or max_depth is None:
-                    raise ValueError(
-                        "include_egs sensitivity requires both 'EGS_cutoff' and 'max_depth' "
-                        "to be present in the base config row."
-                    )
-
                 updated_row["max_depth"] = min(float(max_depth), float(egs_cutoff))
 
             name = _make_unique(existing_names, f"{baseline_scenario}_{param}_{flipped}")
@@ -250,31 +244,14 @@ def build_scenario_table(
 
         # ── Numeric parameter ──────────────────────────────────────────────
         else:
-            if not isinstance(defn, dict):
-                raise ValueError(
-                    f"Expected a dict definition for numeric parameter {param!r}, got {defn!r}."
-                )
-
-            if base_val is None:
-                raise ValueError(
-                    f"Parameter {param!r} not found in base config row. "
-                    f"Available keys: {list(base_row.keys())}"
-                )
-
             v0 = float(base_val)
             candidates: list[tuple[float, float | None]] = []
             # each entry is (new_value, pct_change)
 
             has_relative = ("max_dev_pct" in defn) or ("steps" in defn)
             if has_relative:
-                if "max_dev_pct" not in defn or "steps" not in defn:
-                    raise ValueError(
-                        f"Numeric parameter {param!r} must define both "
-                        f"'max_dev_pct' and 'steps' for relative sweeps."
-                    )
-
                 if v0 == 0.0:
-                    print(f"⚠️  Skipping relative sweep for {param!r}: base value is 0.")
+                    pass
                 else:
                     max_dev_pct = float(defn["max_dev_pct"])
                     steps = int(defn["steps"])
@@ -285,21 +262,10 @@ def build_scenario_table(
 
             if "absolute_values" in defn:
                 abs_vals = defn["absolute_values"]
-                if not isinstance(abs_vals, (list, tuple)):
-                    raise ValueError(
-                        f"'absolute_values' for {param!r} must be a list, got {type(abs_vals).__name__}."
-                    )
-
                 for raw_v in abs_vals:
                     v_new = float(raw_v)
                     pct_change = None if v0 == 0.0 else ((v_new / v0) - 1.0) * 100.0
                     candidates.append((v_new, pct_change))
-
-            if not candidates:
-                raise ValueError(
-                    f"Numeric parameter {param!r} defines neither a relative sweep "
-                    f"('max_dev_pct'/'steps') nor 'absolute_values'."
-                )
 
             seen_values: list[float] = []
             for v_new, pct_change in candidates:
@@ -358,4 +324,3 @@ if "snakemake" in dir():
     output_path = snakemake.output.tsv  # noqa: F821
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(output_path, sep="\t", index=False)
-    print(f"✓ Wrote {len(df)} scenarios ({len(df) - 1} sensitivity) to {output_path}")

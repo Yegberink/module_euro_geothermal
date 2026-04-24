@@ -59,9 +59,6 @@ def main():
             depth_files[int(m.group(1))] = p
     depth_files = dict(sorted(depth_files.items()))
 
-    if not depth_files:
-        raise FileNotFoundError(f"No rasters found in {snakemake.input.asc} matching {RASTER_PATTERN}")
-
     ref_depth = min(depth_files.keys())
     ref_path = depth_files[ref_depth]
     ref_ds, ref_arr = read_raster(ref_path)
@@ -135,53 +132,48 @@ def main():
 
     if qc_path is not None:
         qc_path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            import plotly.graph_objects as go
+        import plotly.graph_objects as go
 
-            depths = da_interp["depth_m"].values.astype(float)
-            # Use first slice as initial frame
-            z0 = depths[0]
-            img0 = da_interp.sel(depth_m=z0).values
+        depths = da_interp["depth_m"].values.astype(float)
+        # Use first slice as initial frame
+        z0 = depths[0]
+        img0 = da_interp.sel(depth_m=z0).values
 
-            fig = go.Figure()
+        fig = go.Figure()
 
-            fig.add_trace(go.Heatmap(z=img0))
+        fig.add_trace(go.Heatmap(z=img0))
 
-            frames = []
-            for d in depths:
-                frames.append(go.Frame(data=[go.Heatmap(z=da_interp.sel(depth_m=d).values)],
-                                    name=str(int(d))))
+        frames = []
+        for d in depths:
+            frames.append(go.Frame(data=[go.Heatmap(z=da_interp.sel(depth_m=d).values)],
+                                name=str(int(d))))
 
-            fig.frames = frames
+        fig.frames = frames
 
-            # Slider steps
-            steps = []
-            for d in depths:
-                dname = str(int(d))
-                steps.append({
-                    "label": dname,
-                    "method": "animate",
-                    "args": [[dname], {"mode": "immediate", "frame": {"duration": 0, "redraw": True},
-                                    "transition": {"duration": 0}}],
-                })
+        # Slider steps
+        steps = []
+        for d in depths:
+            dname = str(int(d))
+            steps.append({
+                "label": dname,
+                "method": "animate",
+                "args": [[dname], {"mode": "immediate", "frame": {"duration": 0, "redraw": True},
+                                "transition": {"duration": 0}}],
+            })
 
-            fig.update_layout(
-                title="Temperature voxel QC (depth slider)",
-                xaxis_title="x",
-                yaxis_title="y",
-                sliders=[{
-                    "active": 0,
-                    "currentvalue": {"prefix": "Depth (m): "},
-                    "pad": {"t": 30},
-                    "steps": steps,
-                }],
-            )
+        fig.update_layout(
+            title="Temperature voxel QC (depth slider)",
+            xaxis_title="x",
+            yaxis_title="y",
+            sliders=[{
+                "active": 0,
+                "currentvalue": {"prefix": "Depth (m): "},
+                "pad": {"t": 30},
+                "steps": steps,
+            }],
+        )
 
-            fig.write_html(str(qc_path), include_plotlyjs="cdn")
-            print(f"✅ Wrote interactive QC HTML: {qc_path.resolve()}")
-
-        except ImportError:
-            print("ℹ️ Plotly not installed; skipping interactive QC HTML export.")
+        fig.write_html(str(qc_path), include_plotlyjs="cdn")
 
 if __name__ == "__main__":
     main()

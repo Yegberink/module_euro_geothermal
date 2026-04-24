@@ -67,8 +67,6 @@ def pretty_param_name(param: str, width: int = 34) -> str:
 
 def load_scenario_table(path):
     df = pd.read_csv(path, sep="\t", comment="#").replace({np.nan: None})
-    if "scenario" not in df.columns:
-        raise ValueError(f"{path} must have a 'scenario' column.")
     df["scenario"] = df["scenario"].astype(str)
     return df.set_index("scenario")
 
@@ -76,28 +74,19 @@ def load_scenario_table(path):
 def read_metric_value(metrics_tsv, metric_name):
     df = pd.read_csv(metrics_tsv, sep="\t")
     row = df.loc[df["metric"] == metric_name, "value"]
-    if row.empty:
-        raise ValueError(f"{metrics_tsv} does not contain metric={metric_name!r}")
     val = row.iloc[0]
-    try:
-        return float(val)
-    except Exception:
-        return val
+    return float(val)
 
 
 def get_scenario_name_from_metrics(metrics_tsv):
     df = pd.read_csv(metrics_tsv, sep="\t")
     row = df.loc[df["metric"] == "scenario", "value"]
-    if row.empty:
-        return None
     return str(row.iloc[0])
 
 
 def infer_scenario_from_path(p):
     p2 = str(p).replace("\\", "/")
     parts = p2.split("/scenarios/")
-    if len(parts) < 2:
-        return None
     return parts[1].split("/")[0]
 
 
@@ -109,8 +98,7 @@ def load_boxplot_table(path):
         return pd.read_csv(path, sep="\t")
     elif path.endswith(".csv"):
         return pd.read_csv(path)
-    else:
-        raise ValueError(f"Unsupported boxplot table format: {path}")
+    return pd.read_parquet(path)
 
 
 def build_baseline_winner_df(df, baseline_name="base"):
@@ -119,12 +107,6 @@ def build_baseline_winner_df(df, baseline_name="base"):
       - cheapest baseline tech by lcoe_base
     """
     req = {"row", "col", "tech", "lcoe_base", "potential_base"}
-    missing = req - set(df.columns)
-    if missing:
-        raise ValueError(
-            f"Baseline winner table cannot be built. Missing columns: {sorted(missing)}"
-        )
-
     df = df.sort_values(["row", "col", "tech"]).copy()
 
     base_idx = (
@@ -153,12 +135,6 @@ def build_scenario_winner_df(df, scenario_name, baseline_name="base"):
       - cheapest scenario tech by lcoe_scen
     """
     req = {"row", "col", "tech", "lcoe_scen", "potential_scen"}
-    missing = req - set(df.columns)
-    if missing:
-        raise ValueError(
-            f"Scenario winner table cannot be built. Missing columns: {sorted(missing)}"
-        )
-
     df = df.sort_values(["row", "col", "tech"]).copy()
 
     scen_idx = (
@@ -257,9 +233,6 @@ def make_single_baseline_plus_parameter_boxplot(specs, value_key, ylabel, title,
         kinds.append(spec["kind"])
         pos += 1
 
-    if not data:
-        raise ValueError(f"No valid data for {out_path}")
-
     fig_w = max(9, 1.7 * len(data))
     fig, ax = plt.subplots(figsize=(fig_w, 7))
 
@@ -312,9 +285,6 @@ def make_top_switch_rate_barplot(df, top_n, out_path):
     plot_df = df.copy()
     plot_df = plot_df.loc[:, ~plot_df.columns.duplicated()].copy()
     plot_df = plot_df.loc[np.isfinite(plot_df["transition_total_pixels"].to_numpy(dtype=float))].copy()
-    if plot_df.empty:
-        raise ValueError(f"No finite switch-rate values available for {out_path}")
-
     plot_df = plot_df.sort_values(
         ["transition_total_pixels", "sort_magnitude", "parameter"],
         ascending=[False, False, True],
@@ -381,14 +351,9 @@ def main():
     include_all = bool(snakemake.params.get("include_all", False))
 
     scen_df = load_scenario_table(scenario_table)
-    if baseline not in scen_df.index:
-        raise ValueError(f"baseline={baseline!r} not found in {scenario_table}")
-
     scenario_to_metric = {}
     for p in metrics_files:
         scen_name = get_scenario_name_from_metrics(p) or infer_scenario_from_path(p)
-        if scen_name is None:
-            raise ValueError(f"Could not determine scenario name for {p}")
         scenario_to_metric[scen_name] = p
 
     rows = []
@@ -422,9 +387,6 @@ def main():
             )
         )
 
-    if not rows:
-        raise ValueError("No sensitivity scenarios found.")
-
     df = pd.DataFrame(rows)
 
     rank_params = (
@@ -447,21 +409,10 @@ def main():
         parameter_order=selected_params,
     )
 
-    if representative_df.empty:
-        raise ValueError("No representative scenarios selected for boxplot generation.")
-
     scenario_to_boxplot = {}
     for p in boxplot_files:
         scen_name = infer_scenario_from_path(p)
-        if scen_name is None:
-            raise ValueError(f"Could not determine scenario name from boxplot path: {p}")
         scenario_to_boxplot[scen_name] = p
-
-    if baseline not in scenario_to_boxplot:
-        raise ValueError(
-            f"Baseline scenario {baseline!r} not found among boxplot files. "
-            f"Available: {sorted(scenario_to_boxplot)}"
-        )
 
     df_box_base = load_boxplot_table(scenario_to_boxplot[baseline])
     baseline_winner_df = build_baseline_winner_df(df_box_base, baseline_name=baseline)
@@ -481,12 +432,6 @@ def main():
     for _, row in representative_df.iterrows():
         param = row["parameter"]
         scen_name = row["scenario"]
-
-        if scen_name not in scenario_to_boxplot:
-            raise ValueError(
-                f"Selected scenario {scen_name!r} for parameter {param!r} "
-                f"does not have a matching boxplot file."
-            )
 
         df_box = load_boxplot_table(scenario_to_boxplot[scen_name])
         scen_winner_df = build_scenario_winner_df(

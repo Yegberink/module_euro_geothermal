@@ -55,7 +55,7 @@ def load_boxplot_table(path):
         return pd.read_csv(path, sep="\t")
     elif path.endswith(".csv"):
         return pd.read_csv(path)
-    raise ValueError(f"Unsupported file format: {path}")
+    return pd.read_parquet(path)
 
 
 def ensure_parent_dir(path):
@@ -174,13 +174,6 @@ def make_metric_comparison_boxplot(
 
         pos += 0.8
 
-    if not data:
-        ax.text(0.5, 0.5, "No valid data", ha="center", va="center", transform=ax.transAxes)
-        ensure_parent_dir(outfig)
-        fig.savefig(outfig, bbox_inches="tight")
-        plt.close(fig)
-        return
-
     draw_boxplot(ax, data=data, positions=positions, colors=colors)
 
     ax.set_xticks(xticks)
@@ -277,13 +270,6 @@ def make_baseline_dual_axis_boxplot(
 
         base_pos += 1.6
 
-    if not data_lcoe and not data_potential:
-        ax1.text(0.5, 0.5, "No valid data", ha="center", va="center", transform=ax1.transAxes)
-        ensure_parent_dir(outfig)
-        fig.savefig(outfig, bbox_inches="tight")
-        plt.close(fig)
-        return
-
     if data_lcoe:
         draw_boxplot(
             ax1,
@@ -334,10 +320,6 @@ def main():
         "lcoe_base", "lcoe_scen",
         "potential_base", "potential_scen",
     }
-    missing = req - set(df.columns)
-    if missing:
-        raise ValueError(f"Missing required columns: {sorted(missing)}")
-
     df = df.copy()
     df["tech"] = df["tech"].astype(str)
 

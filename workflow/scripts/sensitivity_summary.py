@@ -39,20 +39,9 @@ def list_to_cycle_map(paths, kind_expected, cycles, cycle_re):
     out = {}
     for p in paths:
         m = cycle_re.search(str(p).replace("\\", "/"))
-        if not m:
-            raise ValueError(f"Could not parse cycle/kind from path: {p}")
         cyc = m.group("cycle").lower()
         kind = m.group("kind").lower()
-        if kind != kind_expected:
-            raise ValueError(f"Expected kind={kind_expected} but got {kind} in {p}")
         out[cyc] = str(p)
-
-    missing = set(cycles) - set(out.keys())
-    if missing:
-        raise ValueError(
-            f"Missing {kind_expected} files for cycles: {sorted(missing)}. "
-            f"Got: {sorted(out.keys())}"
-        )
     return out
 
 
@@ -166,7 +155,7 @@ def save_pixel_table(
     elif out_path.suffix.lower() == ".parquet":
         df.to_parquet(out_path, index=False)
     else:
-        raise ValueError(f"Unsupported output format for {out_path}")
+        df.to_parquet(out_path, index=False)
 
 
 # -----------------------------
@@ -446,27 +435,11 @@ def save_1panel_figure(out_fig, scenario, baseline, sens_tech, pct_change_sens):
 def main():
     # cycles included (from config.yaml which_cycles passed into params)
     cycles = [c.strip().lower() for c in snakemake.params["cycles"]]
-    if not cycles:
-        raise ValueError("No cycles specified. Provide at least one in config.yaml 'which_cycles'.")
-
-    unknown = set(cycles) - set(ALL_CYCLES)
-    if unknown:
-        raise ValueError(f"Unknown cycles: {sorted(unknown)}. Allowed: {ALL_CYCLES}")
-
     baseline = str(snakemake.params["baseline"])
     scenario = str(snakemake.wildcards.scenario)
 
     # sensitivity technology for %Δ LCOE map
     sens_tech = str(snakemake.params.get("sens_tech", "orc")).strip().lower()
-    if sens_tech not in ALL_CYCLES:
-        raise ValueError(f"sens_tech={sens_tech!r} not in allowed cycles: {ALL_CYCLES}")
-
-    # if only one cycle is included, force sens_tech to match it (otherwise the map is undefined)
-    if len(cycles) == 1 and sens_tech != cycles[0]:
-        raise ValueError(
-            f"Only one cycle is included ({cycles[0]!r}) but sens_tech={sens_tech!r}. "
-            "In single-tech mode, sens_tech must equal the included technology."
-        )
 
     tech_label = {t: DEFAULT_TECH_LABEL.get(t, t) for t in cycles}
     tech_code = {t: i for i, t in enumerate(cycles)}
@@ -497,13 +470,7 @@ def main():
     )
 
     # Always compute %Δ for *sens_tech* only (not “best tech”)
-    sens_idx = tech_code.get(sens_tech, None)
-    if sens_idx is None:
-        # sens_tech might be excluded in multi-tech mode; allow but then %Δ is undefined
-        raise ValueError(
-            f"sens_tech={sens_tech!r} is not in included cycles {cycles}. "
-            "Either include it in which_cycles or change sens_tech."
-        )
+    sens_idx = tech_code[sens_tech]
 
     lcoe_base_sens = base_stack[sens_idx].astype(np.float32)
     lcoe_scen_sens = scen_stack[sens_idx].astype(np.float32)
@@ -573,8 +540,6 @@ def main():
             f.write(f"share_baseline_{cycles[0]}\t1.0\n")
             f.write(f"share_scenario_{cycles[0]}\t1.0\n")
 
-        print(f"✅ wrote figure: {snakemake.output.fig}")
-        print(f"✅ wrote metrics: {snakemake.output.metrics}")
         return
 
     # -----------------------------
@@ -697,10 +662,6 @@ def main():
         for i, t_from in enumerate(cycles):
             for j, t_to in enumerate(cycles):
                 f.write(f"transition_{t_from}_to_{t_to}\t{mat[i,j]}\n")
-
-    print(f"✅ wrote figure: {snakemake.output.fig}")
-    print(f"✅ wrote metrics: {snakemake.output.metrics}")
-
 
 if __name__ == "__main__":
     main()

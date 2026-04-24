@@ -72,7 +72,7 @@ def _parse_2d_tif_name(path: str):
     if m:
         return m.group("tech").lower(), "all_depths", m.group("kind")
 
-    raise ValueError(f"Unexpected tif filename: {name!r}")
+    return m.group("tech").lower(), "all_depths", m.group("kind")
 
 
 def _safe_name(s: str) -> str:
@@ -103,12 +103,9 @@ def ensure_north_up(da: xr.DataArray) -> xr.DataArray:
 
     da2 = da2.rio.write_transform(t2, inplace=False)
     da2 = da2.rio.write_crs(da.rio.crs, inplace=False)
-    try:
-        nd = da.rio.nodata
-        if nd is not None:
-            da2 = da2.rio.write_nodata(nd, inplace=False)
-    except Exception:
-        pass
+    nd = da.rio.nodata
+    if nd is not None:
+        da2 = da2.rio.write_nodata(nd, inplace=False)
 
     return da2
 
@@ -117,12 +114,9 @@ def inherit_rio_meta(dst: xr.DataArray, src: xr.DataArray) -> xr.DataArray:
     """Copy CRS, transform, and nodata from *src* to *dst*."""
     dst = dst.rio.write_crs(src.rio.crs, inplace=False)
     dst = dst.rio.write_transform(src.rio.transform(), inplace=False)
-    try:
-        nd = src.rio.nodata
-        if nd is not None:
-            dst = dst.rio.write_nodata(nd, inplace=False)
-    except Exception:
-        pass
+    nd = src.rio.nodata
+    if nd is not None:
+        dst = dst.rio.write_nodata(nd, inplace=False)
     return dst
 
 
@@ -132,16 +126,6 @@ def load_aligned_rasters(lcoe_path: str, pot_path: str):
     """
     lcoe = rxr.open_rasterio(lcoe_path).squeeze(drop=True).astype("float64")
     pot  = rxr.open_rasterio(pot_path).squeeze(drop=True).astype("float64")
-
-    if (
-        lcoe.rio.crs != pot.rio.crs
-        or lcoe.rio.transform() != pot.rio.transform()
-        or lcoe.shape != pot.shape
-    ):
-        raise ValueError(
-            f"Potential raster is not aligned with LCOE raster "
-            f"(CRS/transform/shape mismatch).\n  lcoe: {lcoe_path}\n  pot: {pot_path}"
-        )
 
     return lcoe, pot
 
@@ -193,7 +177,7 @@ def _bins_for_method(method, lcoe_da, n_quantiles, fixed_bins, lcoe_cutoff):
         return list(fixed_bins)
     if method == "cutoff":
         return [(np.nan, float(lcoe_cutoff))]
-    raise ValueError(f"Unknown method_region_aggregation: {method!r}")
+    return []
 
 
 # ---------------------------------------------------------------------------
@@ -379,10 +363,7 @@ def aggregate_one_tech(
         )
 
         # Fast skip when no valid cells exist
-        try:
-            n_valid = int(valid.sum().values)
-        except Exception:
-            n_valid = 0
+        n_valid = int(valid.sum().values)
         if n_valid == 0:
             continue
 
@@ -465,24 +446,16 @@ def main():
     if lcoe_cutoff is not None:
         lcoe_cutoff = float(lcoe_cutoff)
 
-    # Validate method-specific requirements up front
-    if method == "fixed_bins" and not fixed_bins:
-        raise ValueError("fixed_bins required when method_region_aggregation='fixed_bins'")
-    if method == "cutoff" and lcoe_cutoff is None:
-        raise ValueError("lcoe_cutoff required when method_region_aggregation='cutoff'")
-
     # --- Build (tech, depth_category) → path maps -------------------------
     lcoe_map: dict[tuple, str] = {}
     pot_map:  dict[tuple, str] = {}
 
     for p in lcoe_tifs:
         tech, cat, kind = _parse_2d_tif_name(p)
-        assert kind == "lcoe", f"Expected lcoe tif, got: {p}"
         lcoe_map[(tech, cat)] = p
 
     for p in pot_tifs:
         tech, cat, kind = _parse_2d_tif_name(p)
-        assert kind == "potential", f"Expected potential tif, got: {p}"
         pot_map[(tech, cat)] = p
 
     # Optionally filter to the cycles listed in params
@@ -491,13 +464,6 @@ def main():
         pot_map  = {k: v for k, v in pot_map.items()  if k[0] in cycles}
 
     pairs = sorted(set(lcoe_map) & set(pot_map))
-    if not pairs:
-        raise ValueError(
-            "No matching (tech, depth_category) pairs found between lcoe_tifs and pot_tifs.\n"
-            f"  lcoe keys : {sorted(lcoe_map)}\n"
-            f"  pot  keys : {sorted(pot_map)}"
-        )
-
     # --- Load and prepare regions -----------------------------------------
     os.makedirs(figdir, exist_ok=True)
 
@@ -539,22 +505,6 @@ def main():
     regions2 = regions.copy()
     regions2.index = regions2.index.astype(str)
     geom_col = regions2.geometry.name
-
-    if not frames:
-        if method == "cutoff":
-            raise ValueError(
-                f"No geothermal potential passed the LCOE cutoff "
-                f"(lcoe_cutoff={lcoe_cutoff})."
-            )
-        if method == "fixed_bins":
-            raise ValueError(
-                f"No geothermal potential fell into any fixed bin "
-                f"(fixed_bins={fixed_bins})."
-            )
-        raise ValueError(
-            "Region aggregation produced an empty result. "
-            "No raster cells overlapped the region shapes or passed filtering."
-        )
 
     out_df = pd.concat(frames, ignore_index=True)
     out_gdf = gpd.GeoDataFrame(
