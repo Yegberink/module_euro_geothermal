@@ -77,6 +77,7 @@ _NON_MODEL_KEYS = {
     "qc_stride",
     "sens_tech",
     "which_cycles",
+    "drilling_cost_curve_definitions",
 }
 
 # -----------------------------
@@ -262,14 +263,6 @@ all_geothermal_inputs += [
 if PERFORM_SENSITIVITY:
     all_geothermal_inputs += [
         *expand(
-            "results/{shapes}/scenarios/sensitivity/lineplot_mean_abs_pct_change_sens.png",
-            shapes=SHAPES,
-        ),
-        *expand(
-            "results/{shapes}/scenarios/sensitivity/lineplot_mean_abs_pct_change_sens.tsv",
-            shapes=SHAPES,
-        ),
-        *expand(
             "results/{shapes}/scenarios/sensitivity/boxplot_lcoe_top_6_winner.png",
             shapes=SHAPES,
         ),
@@ -353,7 +346,8 @@ rule calculate_LCOE:
         sed_nan_policy               = lambda wc: scen_str(wc,   "SED_NAN_POLICY",               config["SED_NAN_POLICY"]),
         include_egs                  = lambda wc: scen_bool(wc,  "include_egs",                  config["include_egs"]),
         temp_turbine_out             = lambda wc: scen_temp_turbine_out(wc),
-        well_cost_sens               = lambda wc: scen_float(wc, "well_cost_sens",               config.get("well_cost_sens")),
+        drilling_cost_curve          = lambda wc: scen_str(wc,   "drilling_cost_curve",          config.get("drilling_cost_curve", "thermogis")),
+        drilling_cost_curve_definitions = config.get("drilling_cost_curve_definitions", {}),
         max_depth                    = lambda wc: scen_float(wc, "max_depth",                    config["max_depth"]),
         stimulation_cost_per_doublet = lambda wc: scen_float(wc, "stimulation_cost_per_doublet", config.get("stimulation_cost_per_doublet")),
         pump_cost                    = lambda wc: scen_float(wc, "pump_cost",                    config["pump_cost"]),
@@ -500,8 +494,6 @@ if PERFORM_SENSITIVITY:
                 shapes=wc.shapes, scenario=SCENARIOS,
             ),
         output:
-            lineplot_fig                  = "results/{shapes}/scenarios/sensitivity/lineplot_mean_abs_pct_change_sens.png",
-            lineplot_table                = "results/{shapes}/scenarios/sensitivity/lineplot_mean_abs_pct_change_sens.tsv",
             boxplot_lcoe_top6_winner      = "results/{shapes}/scenarios/sensitivity/boxplot_lcoe_top_6_winner.png",
             boxplot_potential_top6_winner = "results/{shapes}/scenarios/sensitivity/boxplot_potential_top_6_winner.png",
             barplot_switch_rate_top6     = "results/{shapes}/scenarios/sensitivity/barplot_switch_rate_top_6.png",

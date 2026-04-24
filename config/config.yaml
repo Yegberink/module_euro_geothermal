@@ -11,7 +11,7 @@
 # Workflow control
 # -----------------------------------------------------------------------------
 target_shapes:
-  - BALK              # folder name(s) under resources/user/
+  - euro_all              # folder name(s) under resources/user/
 
 perform_sensitivity: true     # false → only the baseline scenario is run
 write_qc_sliders: false        # false → skip depth-slider HTML files (saves disk)
@@ -49,8 +49,29 @@ SED_NAN_POLICY: always_egs    # how to treat missing sediment thickness after re
                               #   always_egs  → treat NaN as 0 m sediment → EGS at all depths
                               #   depth_only  → treat NaN as EGS_cutoff   → EGS only below EGS_cutoff
 
-well_cost_sens: 1.0           # multiplicative scaling factor for well costs (1.0 = no adjustment)
+drilling_cost_curve: thermogis  # options configured below; used as the baseline drilling cost relation
 stimulation_cost_per_doublet: 1.03   # EGS stimulation cost per doublet (M€2020)
+
+drilling_cost_curve_definitions:
+  thermogis:
+    curve_type: quadratic_eur2020
+    constant: 250000.0
+    linear: 700.0
+    quadratic: 0.2
+  shamoushaki_2021:
+    curve_type: log_quadratic_usd
+    a: 5.548e5
+    b: 0.2171
+    c: 8.135e5
+    currency_year: 2021
+  getem_2017:
+    curve_type: csv_fit_usd
+    csv_path: resources/automatic/baseline_drilling_2017.csv
+    currency_year: 2017
+  getem_2025:
+    curve_type: csv_fit_usd
+    csv_path: resources/automatic/baseline_drilling_2025.csv
+    currency_year: 2025
 
 
 # -----------------------------------------------------------------------------
@@ -126,7 +147,7 @@ sens_tech: orc                # options: orc, flash, kalina
 active_sensitivity_parameters:
   - max_depth
   - EGS_cutoff
-  - well_cost_sens
+  - drilling_cost_curve
   - stimulation_cost_per_doublet
   - pump_cost
   - lifetime
@@ -158,67 +179,64 @@ sensitivity_parameters:
     absolute_values: [3000, 4000, 5000, 7000, 8000, 9000]  # override percentage-based deviations with absolute values (m)
   EGS_cutoff:
     absolute_values: [2000, 2500, 3500, 4000, 5000]  # override percentage-based deviations with absolute values (m)
-  well_cost_sens:
-    max_dev_pct: 50
-    steps: 5
   stimulation_cost_per_doublet:
-    max_dev_pct: 50
-    steps: 5
+    max_dev_pct: 30
+    steps: 3
   well_spacing:
-    max_dev_pct: 50
-    steps: 5
+    absolute_values: [0.3, 0.8, 1.0, 1.5, 2.0]  # override percentage-based deviations with absolute values (m)
   flowrate_egs:
-    max_dev_pct: 50
-    steps: 5
+    max_dev_pct: 30
+    steps: 3
   flowrate_conventional:
-    max_dev_pct: 50
-    steps: 5
+    max_dev_pct: 30
+    steps: 3
 
   # --- Plant economics ---
   pump_cost:
-    max_dev_pct: 50
-    steps: 5
+    max_dev_pct: 30
+    steps: 3
   lifetime:
-    max_dev_pct: 50
-    steps: 5
+    absolute_values: [20, 25, 35, 40]  # override percentage-based deviations with absolute values (m)
   capacity_factor:
-    max_dev_pct: 50
-    steps: 5
+    absolute_values: [0.6, 0.91]  # override percentage-based deviations with absolute values (m)
   fixed_OM_rate:
-    max_dev_pct: 50
-    steps: 5
+    absolute_values: [0.008, 0.02]  # override percentage-based deviations with absolute values (m)
   parasitic_fraction:
-    max_dev_pct: 50
-    steps: 5
+    absolute_values: [0.02, 0.6]  # override percentage-based deviations with absolute values (m)
   orc_money_per_kw:
-    max_dev_pct: 50
-    steps: 5
+    max_dev_pct: 30
+    steps: 3
   flash_money_per_kw:
-    max_dev_pct: 50
-    steps: 5
+    max_dev_pct: 30
+    steps: 3
   kalina_money_per_kw:
-    max_dev_pct: 50
-    steps: 5
+    max_dev_pct: 30
+    steps: 3
   # --- Turbine outlet temperatures ---
   temp_turbine_out_ORC:
-    max_dev_pct: 50
-    steps: 5
+    max_dev_pct: 30
+    steps: 3
   temp_turbine_out_Flash:
-    max_dev_pct: 50
-    steps: 5
+    max_dev_pct: 30
+    steps: 3
   temp_turbine_out_Kalina:
-    max_dev_pct: 50
-    steps: 5
+    max_dev_pct: 30
+    steps: 3
   # --- Minimum temperature difference ---
   min_dt:
-    max_dev_pct: 50
-    steps: 5
+    max_dev_pct: 30
+    steps: 3
   # --- Boolean (flips the base value) ---
   include_egs: true
-
   # --- Categorical (multiple values explored) ---
-  SED_NAN_POLICY: always_egs
-
+  SED_NAN_POLICY:
+    - always_egs
+    - depth_only
+  drilling_cost_curve:
+    - thermogis
+    - shamoushaki_2021
+    - getem_2017
+    - getem_2025
 # -----------------------------------------------------------------------------
 # Quality-control options
 # -----------------------------------------------------------------------------

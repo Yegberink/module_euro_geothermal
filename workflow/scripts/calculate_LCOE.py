@@ -1,4 +1,5 @@
 import math
+import os
 from pathlib import Path
 
 import numpy as np
@@ -9,6 +10,8 @@ from rasterio.crs import CRS
 from rasterio.transform import from_origin
 from rasterio.warp import reproject, Resampling
 import plotly.graph_objects as go
+from scipy.optimize import curve_fit
+
 def _ensure_parent(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -55,6 +58,127 @@ temp_turbine_out = snakemake.params.get("temp_turbine_out")
 # other configs
 carrier_out = snakemake.params.get("carrier_out")
 include_egs = bool(snakemake.params.get("include_egs"))
+DRILLING_COST_CURVE = str(snakemake.params.get("drilling_cost_curve", "thermogis"))
+DRILLING_COST_CURVE_DEFINITIONS = snakemake.params.get("drilling_cost_curve_definitions", {})
+
+CPI_US = {2017: 245.120, 2020: 258.811, 2021: 270.970}
+CPI_2025_PROXY = 324.368
+EUR_PER_USD_2020 = 1 / 1.1422
+
+
+def _usd_to_eur2020_factor(currency_year):
+    if int(currency_year) == 2025:
+        return (CPI_US[2020] / CPI_2025_PROXY) * EUR_PER_USD_2020
+    if int(currency_year) not in CPI_US:
+        raise ValueError(
+            f"Unsupported drilling curve currency_year={currency_year!r}. "
+            f"Supported years: {sorted(CPI_US)} plus 2025."
+        )
+    return (CPI_US[2020] / CPI_US[int(currency_year)]) * EUR_PER_USD_2020
+
+
+def _log_quadratic_cost_meur(depth_m, a, b, c):
+    depth_m = np.asarray(depth_m, dtype=float)
+    return (a * np.log(depth_m) + b * depth_m**2 + c) / 1e6
+
+
+def _init_log_quadratic_guesses(depth_m, costs):
+    p2 = np.polyfit(depth_m, costs, 2)
+    b0 = max(p2[0], 1e-12)
+    return 1e5, b0, 5e5
+
+
+def _load_curve_from_csv(csv_path, currency_year):
+    csv_file = Path(csv_path)
+    if not csv_file.exists():
+        raise FileNotFoundError(
+            f"Drilling cost curve CSV not found: {csv_file}. "
+            "Provide the file or switch to a built-in curve."
+        )
+
+    df = pd.read_csv(csv_file, header=None)
+    if df.shape[1] < 2:
+        raise ValueError(f"Expected at least 2 columns in {csv_file}, got {df.shape[1]}.")
+
+    depth_m = df.iloc[:, 0].to_numpy(dtype=float)
+    costs = df.iloc[:, 1].to_numpy(dtype=float)
+
+    p0 = _init_log_quadratic_guesses(depth_m, costs)
+    coeffs, _ = curve_fit(_log_quadratic_cost_meur, depth_m, costs, p0=p0, maxfev=10000)
+    return {
+        "curve_type": "log_quadratic_usd",
+        "a": float(coeffs[0]),
+        "b": float(coeffs[1]),
+        "c": float(coeffs[2]),
+        "currency_year": int(currency_year),
+    }
+
+
+def _resolve_drilling_curve_definition(curve_name, definitions):
+    builtins = {
+        "thermogis": {
+            "curve_type": "quadratic_eur2020",
+            "constant": 250000.0,
+            "linear": 700.0,
+            "quadratic": 0.2,
+        },
+        "shamoushaki_2021": {
+            "curve_type": "log_quadratic_usd",
+            "a": 5.548e5,
+            "b": 0.2171,
+            "c": 8.135e5,
+            "currency_year": 2021,
+        },
+    }
+
+    spec = builtins.get(curve_name)
+    if curve_name in definitions:
+        custom_spec = dict(definitions[curve_name])
+        if custom_spec.get("curve_type") == "csv_fit_usd":
+            spec = _load_curve_from_csv(
+                csv_path=custom_spec["csv_path"],
+                currency_year=custom_spec["currency_year"],
+            )
+        else:
+            spec = custom_spec
+
+    if spec is None:
+        known = sorted(set(builtins) | set(definitions))
+        raise ValueError(
+            f"Unknown drilling_cost_curve={curve_name!r}. Available curves: {known}."
+        )
+    return spec
+
+
+DRILLING_COST_CURVE_SPEC = _resolve_drilling_curve_definition(
+    DRILLING_COST_CURVE,
+    DRILLING_COST_CURVE_DEFINITIONS,
+)
+
+
+def _drilling_cost_meur_per_well(depth_m):
+    spec = DRILLING_COST_CURVE_SPEC
+    curve_type = spec["curve_type"]
+
+    if curve_type == "quadratic_eur2020":
+        return (
+            float(spec["constant"])
+            + float(spec["linear"]) * depth_m
+            + float(spec["quadratic"]) * depth_m**2
+        ) / 1e6
+
+    if curve_type == "log_quadratic_usd":
+        cost_meur = _log_quadratic_cost_meur(
+            depth_m,
+            float(spec["a"]),
+            float(spec["b"]),
+            float(spec["c"]),
+        )
+        return cost_meur * _usd_to_eur2020_factor(spec["currency_year"])
+
+    raise ValueError(
+        f"Unsupported drilling curve type {curve_type!r} for curve {DRILLING_COST_CURVE!r}."
+    )
 
 
 def load_efficiency_curve_csv(csv_path, cycle_key):
@@ -203,7 +327,6 @@ def calculate_LCOE_vec(
     orc_money_per_kw,
     flash_money_per_kw,
     kalina_money_per_kw,
-    well_cost_sens,
     min_dt
 ):
     Cp_water = 4250.0
@@ -251,7 +374,7 @@ def calculate_LCOE_vec(
     powerplant_investment = (W * 1000.0 * eur_per_kw) / 1e6
     stimulation_cost = stimulation_cost_per_doublet * n_pairs
 
-    well_cost_no_stim = (250000.0 + 700.0 * depth + 0.2 * depth**2) * nr_wells * well_cost_sens / 1e6
+    well_cost_no_stim = _drilling_cost_meur_per_well(depth) * nr_wells
     well_cost = well_cost_no_stim + stimulation_cost if is_egs else well_cost_no_stim
 
     drill_investment = well_cost + pump_cost * n_pairs
@@ -493,7 +616,6 @@ def main():
                 flash_money_per_kw=snakemake.params.get("flash_money_per_kw"),
                 kalina_money_per_kw=snakemake.params.get("kalina_money_per_kw"),
                 lifetime=snakemake.params.get("lifetime"),
-                well_cost_sens=snakemake.params.get("well_cost_sens"),
                 min_dt=snakemake.params.get("min_dt"),
                 well_spacing=snakemake.params.get("well_spacing"),
                 flowrate_egs=snakemake.params.get("flowrate_egs"),

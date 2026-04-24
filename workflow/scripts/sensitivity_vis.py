@@ -51,8 +51,9 @@ PARAM_LABELS = {
     "orc_money_per_kw": "ORC CAPEX",
     "flash_money_per_kw": "Flash CAPEX",
     "kalina_money_per_kw": "Kalina CAPEX",
-    "well_cost_sens": "Well cost",
+    "drilling_cost_curve": "Drilling cost curve",
     "include_egs": "Include EGS",
+    "SED_NAN_POLICY": "Sediment NaN policy",
 }
 
 
@@ -62,20 +63,6 @@ PARAM_LABELS = {
 def pretty_param_name(param: str, width: int = 34) -> str:
     label = PARAM_LABELS.get(param, param.replace("_", " "))
     return "\n".join(textwrap.wrap(label, width=width))
-
-
-def is_number(x):
-    if isinstance(x, (bool, np.bool_)):
-        return False
-    if x is None:
-        return False
-    if isinstance(x, str) and x.strip().lower() in {"true", "false"}:
-        return False
-    try:
-        float(x)
-        return True
-    except Exception:
-        return False
 
 
 def load_scenario_table(path):
@@ -195,15 +182,9 @@ def build_scenario_winner_df(df, scenario_name, baseline_name="base"):
     return out
 
 
-def format_pct_change(x):
-    x = float(x)
-    if np.isclose(x, round(x), atol=1e-8):
-        return f"{x:+.0f}%"
-    return f"{x:+.1f}%"
-
-
-def make_parameter_box_label(param, pct_change):
-    return f"{pretty_param_name(param, width=18)}\n({format_pct_change(pct_change)})"
+def make_parameter_box_label(param, base_value, scenario_value):
+    change = f"{base_value} -> {scenario_value}"
+    return f"{pretty_param_name(param, width=18)}\n({change})"
 
 
 def select_representative_scenarios_per_parameter(df, parameter_order):
@@ -212,7 +193,7 @@ def select_representative_scenarios_per_parameter(df, parameter_order):
 
     Selection rule:
       - highest metric_value
-      - then largest absolute pct_change
+      - then largest change magnitude
       - then scenario name for deterministic tie-breaking
     """
     selected_rows = []
@@ -222,18 +203,16 @@ def select_representative_scenarios_per_parameter(df, parameter_order):
         if g.empty:
             continue
 
-        g["abs_pct_change"] = g["pct_change"].abs()
-
         g = g.sort_values(
-            ["metric_value", "abs_pct_change", "scenario"],
+            ["metric_value", "sort_magnitude", "scenario"],
             ascending=[False, False, True],
         )
 
         selected_rows.append(g.iloc[0][[
             "parameter",
             "scenario",
-            "pct_change",
-            "pct_change_snapped",
+            "label",
+            "sort_magnitude",
             "metric_value",
             "transition_total_pixels",
         ]])
@@ -242,8 +221,8 @@ def select_representative_scenarios_per_parameter(df, parameter_order):
         return pd.DataFrame(columns=[
             "parameter",
             "scenario",
-            "pct_change",
-            "pct_change_snapped",
+            "label",
+            "sort_magnitude",
             "metric_value",
             "transition_total_pixels",
         ])
@@ -327,23 +306,21 @@ def make_top_switch_rate_barplot(df, top_n, out_path):
 
     Expects one representative scenario per parameter with columns:
       - parameter
-      - pct_change
+      - label
       - transition_total_pixels
     """
     plot_df = df.copy()
-    plot_df = plot_df[np.isfinite(plot_df["transition_total_pixels"])].copy()
+    plot_df = plot_df.loc[:, ~plot_df.columns.duplicated()].copy()
+    plot_df = plot_df.loc[np.isfinite(plot_df["transition_total_pixels"].to_numpy(dtype=float))].copy()
     if plot_df.empty:
         raise ValueError(f"No finite switch-rate values available for {out_path}")
 
     plot_df = plot_df.sort_values(
-        ["transition_total_pixels", "pct_change", "parameter"],
+        ["transition_total_pixels", "sort_magnitude", "parameter"],
         ascending=[False, False, True],
     ).head(top_n)
 
-    labels = [
-        make_parameter_box_label(param, pct_change)
-        for param, pct_change in zip(plot_df["parameter"], plot_df["pct_change"])
-    ]
+    labels = plot_df["label"].tolist()
     values = plot_df["transition_total_pixels"].to_numpy(dtype=float) * 100.0
 
     fig_h = max(5.0, 0.9 * len(plot_df) + 1.8)
@@ -402,13 +379,10 @@ def main():
     metric_name = snakemake.params.get("metric_name", "mean_abs_pct_change_sens")
     top_n = int(snakemake.params.get("top_n", 6))
     include_all = bool(snakemake.params.get("include_all", False))
-    exclude_params = set(snakemake.params.get("exclude_params", ["include_egs"]))
 
     scen_df = load_scenario_table(scenario_table)
     if baseline not in scen_df.index:
         raise ValueError(f"baseline={baseline!r} not found in {scenario_table}")
-
-    base_row = scen_df.loc[baseline]
 
     scenario_to_metric = {}
     for p in metrics_files:
@@ -416,11 +390,6 @@ def main():
         if scen_name is None:
             raise ValueError(f"Could not determine scenario name for {p}")
         scenario_to_metric[scen_name] = p
-
-    numeric_cols = [
-        c for c in scen_df.columns
-        if c not in exclude_params and is_number(base_row.get(c, None))
-    ]
 
     rows = []
     for scen_name, metrics_path in scenario_to_metric.items():
@@ -430,137 +399,44 @@ def main():
             continue
 
         row = scen_df.loc[scen_name]
-
-        diffs = []
-        for c in numeric_cols:
-            try:
-                bf = float(base_row[c])
-                vf = float(row[c])
-            except Exception:
-                continue
-            if not np.isclose(vf, bf, rtol=0, atol=0):
-                diffs.append(c)
-
-        if len(diffs) == 0:
+        param = row.get("sensitivity_parameter")
+        if param is None or pd.isna(param):
             continue
 
         sens_val = read_metric_value(metrics_path, metric_name)
         pixels_val = read_metric_value(metrics_path, "switch_rate_pixels")
+        base_value = row.get("sensitivity_base_value")
+        scenario_value = row.get("sensitivity_scenario_value")
+        sort_magnitude = row.get("sensitivity_sort_magnitude")
 
-        for param in diffs:
-            bf = float(base_row[param])
-            vf = float(row[param])
-            pct_change = (vf / bf - 1.0) * 100.0
-
-            rows.append(
-                dict(
-                    scenario=scen_name,
-                    parameter=param,
-                    pct_change=pct_change,
-                    metric_value=float(sens_val),
-                    transition_total_pixels=float(pixels_val) if pd.notna(pixels_val) else np.nan,
-                )
+        rows.append(
+            dict(
+                scenario=scen_name,
+                parameter=str(param),
+                label=make_parameter_box_label(param, base_value, scenario_value),
+                metric_value=float(sens_val),
+                transition_total_pixels=float(pixels_val) if pd.notna(pixels_val) else np.nan,
+                sort_magnitude=(
+                    float(sort_magnitude) if pd.notna(sort_magnitude) else 1.0
+                ),
             )
+        )
 
     if not rows:
-        raise ValueError("No numeric parameter scenarios found.")
+        raise ValueError("No sensitivity scenarios found.")
 
     df = pd.DataFrame(rows)
-    df["pct_change_snapped"] = df["pct_change"].round(6)
-
-    df_agg = (
-        df.groupby(["parameter", "pct_change_snapped"], as_index=False)
-        .agg(metric_value=("metric_value", "mean"))
-    )
-
-    params = df_agg["parameter"].unique()
-    zero_rows = pd.DataFrame({
-        "parameter": params,
-        "pct_change_snapped": 0.0,
-        "metric_value": 0.0,
-    })
-    df_agg = pd.concat([df_agg, zero_rows], ignore_index=True)
 
     rank_params = (
-        df_agg.groupby("parameter")["metric_value"]
+        df.groupby("parameter")["metric_value"]
         .max()
         .sort_values(ascending=False)
     )
 
     if not include_all:
         selected_params = rank_params.head(top_n).index.tolist()
-        keep_metric = set(selected_params)
-        df_plot = df_agg[df_agg["parameter"].isin(keep_metric)].copy()
     else:
         selected_params = rank_params.index.tolist()
-        keep_metric = set(selected_params)
-        df_plot = df_agg.copy()
-
-    wide = df_agg.pivot_table(
-        index="parameter",
-        columns="pct_change_snapped",
-        values="metric_value",
-        aggfunc="mean",
-    ).reset_index()
-
-    os.makedirs(os.path.dirname(snakemake.output["lineplot_table"]), exist_ok=True)
-    wide.to_csv(snakemake.output["lineplot_table"], sep="\t", index=False)
-
-    long_path = str(snakemake.output["lineplot_table"]).replace(".tsv", "_long.tsv")
-    df_agg.sort_values(["parameter", "pct_change_snapped"]).to_csv(
-        long_path, sep="\t", index=False
-    )
-
-    fig, ax = plt.subplots(figsize=(12, 7))
-    ax.grid(True, which="major", linewidth=0.6, alpha=0.35)
-    ax.grid(True, which="minor", linewidth=0.4, alpha=0.2)
-    ax.minorticks_on()
-
-    for param, g in df_plot.groupby("parameter"):
-        g2 = (
-            g[["pct_change_snapped", "metric_value"]]
-            .drop_duplicates(subset=["pct_change_snapped"])
-            .set_index("pct_change_snapped")
-            .sort_index()
-        )
-
-        g2.loc[0.0] = 0.0
-        g2 = g2.sort_index()
-
-        ax.plot(
-            g2.index.to_numpy(),
-            g2["metric_value"].to_numpy(),
-            marker="o",
-            markersize=4,
-            linewidth=1.8,
-            label=pretty_param_name(param),
-        )
-
-    ax.axvline(0, linewidth=1.0, alpha=0.8)
-    ax.axhline(0, linewidth=0.8, alpha=0.4)
-    ax.set_xlabel("Parameter change (%) vs baseline")
-    ax.set_ylabel(metric_name)
-
-    title_bits = [f"Sensitivity: {metric_name}"]
-    if not include_all:
-        title_bits.append(f"(top {top_n})")
-    ax.set_title(" ".join(title_bits))
-
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-
-    leg = ax.legend(
-        loc="center left",
-        bbox_to_anchor=(1.02, 0.5),
-        frameon=True,
-    )
-    leg.get_frame().set_linewidth(0.6)
-    leg.get_frame().set_alpha(0.9)
-
-    os.makedirs(os.path.dirname(snakemake.output["lineplot_fig"]), exist_ok=True)
-    fig.tight_layout()
-    fig.savefig(snakemake.output["lineplot_fig"])
-    plt.close(fig)
 
     # -----------------------------------
     # Boxplot selection: baseline once +
@@ -605,7 +481,6 @@ def main():
     for _, row in representative_df.iterrows():
         param = row["parameter"]
         scen_name = row["scenario"]
-        pct_change = float(row["pct_change"])
 
         if scen_name not in scenario_to_boxplot:
             raise ValueError(
@@ -625,8 +500,7 @@ def main():
                 "kind": "scenario",
                 "parameter": param,
                 "scenario": scen_name,
-                "pct_change": pct_change,
-                "label": make_parameter_box_label(param, pct_change),
+                "label": row["label"],
                 "lcoe_values": scen_winner_df["winner_lcoe_scen"].to_numpy(),
                 "potential_values": scen_winner_df["winner_potential_scen"].to_numpy(),
             }
@@ -658,7 +532,9 @@ def main():
     switch_df = select_representative_scenarios_per_parameter(
         df=df_switch,
         parameter_order=selected_params,
-    ).rename(columns={"metric_value": "transition_total_pixels"})
+    )
+    switch_df["transition_total_pixels"] = switch_df["metric_value"]
+    switch_df = switch_df.drop(columns=["metric_value"])
 
     make_top_switch_rate_barplot(
         df=switch_df,

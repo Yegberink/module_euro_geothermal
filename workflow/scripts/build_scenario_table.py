@@ -81,22 +81,49 @@ def _flatten_base_config(cfg: dict) -> dict:
             flat[k] = v
     return flat
 
-def _format_abs_tag(value: float) -> str:
-    """Convert an absolute value to a compact filename-safe tag."""
-    if abs(value - round(value)) < 1e-9:
-        s = str(int(round(value)))
-    else:
-        s = f"{value:.6g}".rstrip("0").rstrip(".").replace(".", "_")
-    return f"abs{s}"
+def _format_scalar_for_label(value: Any) -> str:
+    """Return a compact human-readable representation for sensitivity labels."""
+    if isinstance(value, (bool, np.bool_)):
+        return "True" if bool(value) else "False"
+    if value is None:
+        return "None"
+    if isinstance(value, (int, np.integer)):
+        return str(int(value))
+    if isinstance(value, (float, np.floating)):
+        x = float(value)
+        if abs(x - round(x)) < 1e-9:
+            return str(int(round(x)))
+        return f"{x:.6g}"
+    return str(value)
 
 
-def _unique_numeric_values(values: list[float], tol: float = 1e-12) -> list[float]:
-    """Remove near-duplicate numeric values while preserving order."""
-    out = []
-    for v in values:
-        if not any(abs(v - x) < tol for x in out):
-            out.append(v)
-    return out
+def _make_metadata(
+    param: str | None,
+    base_value: Any = None,
+    scenario_value: Any = None,
+    pct_change: float | None = None,
+    sort_magnitude: float | None = None,
+) -> dict[str, Any]:
+    if param is None:
+        return {
+            "sensitivity_parameter": None,
+            "sensitivity_base_value": None,
+            "sensitivity_scenario_value": None,
+            "sensitivity_change_label": None,
+            "sensitivity_pct_change": np.nan,
+            "sensitivity_sort_magnitude": np.nan,
+        }
+
+    return {
+        "sensitivity_parameter": param,
+        "sensitivity_base_value": _format_scalar_for_label(base_value),
+        "sensitivity_scenario_value": _format_scalar_for_label(scenario_value),
+        "sensitivity_change_label": (
+            f"{_format_scalar_for_label(base_value)} -> {_format_scalar_for_label(scenario_value)}"
+        ),
+        "sensitivity_pct_change": np.nan if pct_change is None else float(pct_change),
+        "sensitivity_sort_magnitude": np.nan if sort_magnitude is None else float(sort_magnitude),
+    }
 
 # ============================================================
 # Core logic
@@ -125,7 +152,7 @@ def build_scenario_table(
     baseline_scenario:
         Name of the base scenario row.
     """
-    rows = [{"scenario": baseline_scenario, **base_row}]
+    rows = [{"scenario": baseline_scenario, **base_row, **_make_metadata(None)}]
     existing_names: set[str] = {baseline_scenario}
 
     for param in active_parameters:
@@ -136,14 +163,19 @@ def build_scenario_table(
             )
         defn = parameter_definitions[param]
 
+        base_val = base_row.get(param)
+
         # ── Boolean parameter ──────────────────────────────────────────────
-        if param == "include_egs":
-            base_val = _parse_bool(base_row.get("include_egs", True))
-            flipped = not base_val
+        if isinstance(base_val, bool) or isinstance(defn, bool):
+            base_bool = _parse_bool(base_row.get(param, defn))
+            if not isinstance(base_val, bool) and isinstance(defn, bool):
+                base_val = base_bool
 
-            updated_row = {**base_row, "include_egs": flipped}
+            flipped = not base_bool
 
-            if flipped is False:
+            updated_row = {**base_row, param: flipped}
+
+            if param == "include_egs" and flipped is False:
                 egs_cutoff = updated_row.get("EGS_cutoff")
                 max_depth = updated_row.get("max_depth")
 
@@ -155,22 +187,66 @@ def build_scenario_table(
 
                 updated_row["max_depth"] = min(float(max_depth), float(egs_cutoff))
 
-            name = _make_unique(existing_names, f"{baseline_scenario}_include_egs_{flipped}")
-            rows.append({"scenario": name, **updated_row})
+            name = _make_unique(existing_names, f"{baseline_scenario}_{param}_{flipped}")
+            rows.append(
+                {
+                    "scenario": name,
+                    **updated_row,
+                    **_make_metadata(
+                        param=param,
+                        base_value=base_bool,
+                        scenario_value=flipped,
+                        sort_magnitude=1.0,
+                    ),
+                }
+            )
             existing_names.add(name)
 
         # ── Categorical parameter ──────────────────────────────────────────
+        elif isinstance(defn, (list, tuple)):
+            allowed = [str(v) for v in defn]
+            base_cat = str(base_val)
+            for target in allowed:
+                if target == base_cat:
+                    continue
+                name = _make_unique(existing_names, f"{baseline_scenario}_{param}_{target}")
+                rows.append(
+                    {
+                        "scenario": name,
+                        **base_row,
+                        param: target,
+                        **_make_metadata(
+                            param=param,
+                            base_value=base_cat,
+                            scenario_value=target,
+                            sort_magnitude=1.0,
+                        ),
+                    }
+                )
+                existing_names.add(name)
+
+        # Legacy categorical placeholder support
         elif param == "SED_NAN_POLICY":
             allowed = ["always_egs", "depth_only"]
-            base_val = str(base_row.get("SED_NAN_POLICY", "always_egs"))
+            base_cat = str(base_row.get("SED_NAN_POLICY", "always_egs"))
             for target in allowed:
-                if target != base_val:
-                    name = _make_unique(
-                        existing_names,
-                        f"{baseline_scenario}_SED_NAN_POLICY_{target}",
-                    )
-                    rows.append({"scenario": name, **base_row, "SED_NAN_POLICY": target})
-                    existing_names.add(name)
+                if target == base_cat:
+                    continue
+                name = _make_unique(existing_names, f"{baseline_scenario}_SED_NAN_POLICY_{target}")
+                rows.append(
+                    {
+                        "scenario": name,
+                        **base_row,
+                        "SED_NAN_POLICY": target,
+                        **_make_metadata(
+                            param="SED_NAN_POLICY",
+                            base_value=base_cat,
+                            scenario_value=target,
+                            sort_magnitude=1.0,
+                        ),
+                    }
+                )
+                existing_names.add(name)
 
         # ── Numeric parameter ──────────────────────────────────────────────
         else:
@@ -179,7 +255,6 @@ def build_scenario_table(
                     f"Expected a dict definition for numeric parameter {param!r}, got {defn!r}."
                 )
 
-            base_val = base_row.get(param)
             if base_val is None:
                 raise ValueError(
                     f"Parameter {param!r} not found in base config row. "
@@ -187,17 +262,9 @@ def build_scenario_table(
                 )
 
             v0 = float(base_val)
+            candidates: list[tuple[float, float | None]] = []
+            # each entry is (new_value, pct_change)
 
-            if v0 == 0.0 and "absolute_values" in defn:
-                raise ValueError(
-                    f"Parameter {param!r} has base value 0, so absolute_values cannot "
-                    f"be converted into percentage-based scenario names."
-                )
-
-            candidates: list[tuple[float, float]] = []
-            # each entry is (new_value, delta_fraction)
-
-            # Relative sweep (existing behavior)
             has_relative = ("max_dev_pct" in defn) or ("steps" in defn)
             if has_relative:
                 if "max_dev_pct" not in defn or "steps" not in defn:
@@ -214,9 +281,8 @@ def build_scenario_table(
                     deltas = _build_deltas(max_dev_pct, steps)
                     for delta in deltas:
                         v_new = v0 * (1.0 + delta)
-                        candidates.append((v_new, delta))
+                        candidates.append((v_new, delta * 100.0))
 
-            # Absolute values, but names still use the implied percentage change
             if "absolute_values" in defn:
                 abs_vals = defn["absolute_values"]
                 if not isinstance(abs_vals, (list, tuple)):
@@ -226,8 +292,8 @@ def build_scenario_table(
 
                 for raw_v in abs_vals:
                     v_new = float(raw_v)
-                    delta = (v_new / v0) - 1.0
-                    candidates.append((v_new, delta))
+                    pct_change = None if v0 == 0.0 else ((v_new / v0) - 1.0) * 100.0
+                    candidates.append((v_new, pct_change))
 
             if not candidates:
                 raise ValueError(
@@ -236,18 +302,35 @@ def build_scenario_table(
                 )
 
             seen_values: list[float] = []
-            for v_new, delta in candidates:
-                # skip base value
+            for v_new, pct_change in candidates:
                 if abs(v_new - v0) < 1e-12:
                     continue
-                # deduplicate by resulting numeric value
                 if any(abs(v_new - x) < 1e-12 for x in seen_values):
                     continue
                 seen_values.append(v_new)
 
-                tag = _format_delta_tag(delta)
+                tag = (
+                    _format_delta_tag(pct_change / 100.0)
+                    if pct_change is not None
+                    else f"v{_format_scalar_for_label(v_new).replace('.', '_')}"
+                )
                 name = _make_unique(existing_names, f"{baseline_scenario}_{param}{tag}")
-                rows.append({"scenario": name, **base_row, param: v_new})
+                rows.append(
+                    {
+                        "scenario": name,
+                        **base_row,
+                        param: v_new,
+                        **_make_metadata(
+                            param=param,
+                            base_value=v0,
+                            scenario_value=v_new,
+                            pct_change=pct_change,
+                            sort_magnitude=(
+                                abs(pct_change) if pct_change is not None else abs(v_new - v0)
+                            ),
+                        ),
+                    }
+                )
                 existing_names.add(name)
     return pd.DataFrame(rows)
 
