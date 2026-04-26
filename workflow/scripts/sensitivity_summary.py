@@ -376,12 +376,6 @@ def save_4panel_figure(
     for leg in (leg1, leg2, leg3):
         leg.set_in_layout(False)
 
-    # Title: place explicitly (avoids layout trying to “help”)
-    fig.suptitle(
-        f"Sensitivity summary — scenario '{scenario}' vs baseline '{baseline}'",
-        fontsize=14, y=0.965
-    )
-
     fig.savefig(out_fig, dpi=240)
     plt.close(fig)
 
@@ -418,11 +412,6 @@ def save_1panel_figure(out_fig, scenario, baseline, sens_tech, pct_change_sens):
         ha="left", va="top",
         fontsize=13, fontweight="bold",
         bbox=dict(boxstyle="round,pad=0.2", facecolor="white", edgecolor="none", alpha=0.85),
-    )
-
-    fig.suptitle(
-        f"%Δ LCOE for {sens_tech.upper()} — scenario '{scenario}' vs baseline '{baseline}'",
-        fontsize=13,
     )
 
     fig.savefig(out_fig, dpi=240)

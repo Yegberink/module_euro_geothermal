@@ -35,6 +35,29 @@ MW_PER_GW = 1000.0
 
 TECH_ORDER = ["orc", "flash", "kalina"]
 TECH_LABELS = {"orc": "ORC", "flash": "Flash", "kalina": "Kalina"}
+SCENARIO_LABELS = {
+    "EGS_cutoff": "EGS cutoff",
+    "stimulation_cost_per_doublet": "Stimulation cost",
+    "pump_cost": "Pump cost",
+    "lifetime": "Lifetime",
+    "capacity_factor": "Capacity factor",
+    "fixed_OM_rate": "Fixed O&M rate",
+    "parasitic_fraction": "Parasitic fraction",
+    "orc_money_per_kw": "ORC CAPEX",
+    "flash_money_per_kw": "Flash CAPEX",
+    "kalina_money_per_kw": "Kalina CAPEX",
+    "drilling_cost_curve": "Drilling cost curve",
+    "include_egs": "Include EGS",
+    "SED_NAN_POLICY": "Sediment NaN policy",
+    "max_depth": "Max depth",
+    "well_spacing": "Well spacing",
+    "flowrate_egs": "EGS flow rate",
+    "flowrate_conventional": "Conventional flow rate",
+    "temp_turbine_out_ORC": "ORC outlet temp",
+    "temp_turbine_out_Flash": "Flash outlet temp",
+    "temp_turbine_out_Kalina": "Kalina outlet temp",
+    "min_dt": "Minimum dT",
+}
 
 STATE_COLORS = {
     "Baseline": "#9E9E9E",
@@ -58,6 +81,25 @@ def load_boxplot_table(path):
     return pd.read_parquet(path)
 
 
+def load_scenario_table(path):
+    df = pd.read_csv(path, sep="\t", comment="#").replace({np.nan: None})
+    df["scenario"] = df["scenario"].astype(str)
+    return df.set_index("scenario")
+
+
+def pretty_scenario_label(scen_df, scenario_name, baseline_name):
+    if scenario_name == baseline_name:
+        return "Baseline"
+    row = scen_df.loc[scenario_name]
+    param = row.get("sensitivity_parameter")
+    base_value = row.get("sensitivity_base_value")
+    scenario_value = row.get("sensitivity_scenario_value")
+    if param is None or pd.isna(param):
+        return scenario_name
+    param_label = SCENARIO_LABELS.get(param, str(param).replace("_", " "))
+    return f"{param_label} ({base_value} -> {scenario_value})"
+
+
 def ensure_parent_dir(path):
     outdir = os.path.dirname(str(path))
     if outdir:
@@ -66,7 +108,7 @@ def ensure_parent_dir(path):
 
 def style_axes(ax, add_grid=True):
     ax.spines["top"].set_visible(True)
-    ax.spines["right"].set_visible(False)
+    ax.spines["right"].set_visible(True)
     if add_grid:
         ax.grid(True, axis="y", linewidth=0.5, alpha=0.25)
     ax.set_axisbelow(True)
@@ -198,7 +240,7 @@ def make_metric_comparison_boxplot(
     add_top_padding(ax)
 
     legend_handles = [
-        Patch(facecolor=STATE_COLORS["Baseline"], edgecolor="#4D4D4D", label=f"Baseline: {baseline_label}"),
+        Patch(facecolor=STATE_COLORS["Baseline"], edgecolor="#4D4D4D", label=baseline_label),
         Patch(facecolor=STATE_COLORS["Scenario"], edgecolor="#4D4D4D", label=f"Scenario: {scenario_label}"),
     ]
     ax.legend(handles=legend_handles, loc="upper right")
@@ -312,6 +354,7 @@ def make_baseline_dual_axis_boxplot(
 
 
 def main():
+    scen_df = load_scenario_table(snakemake.input["scenario_table"])
     inpath = snakemake.input["boxplot_data"]
     df = load_boxplot_table(inpath)
 
@@ -326,9 +369,11 @@ def main():
     scenario = str(df["scenario"].iloc[0])
     baseline = str(df["baseline"].iloc[0])
     is_baseline_case = scenario == baseline
+    baseline_label = pretty_scenario_label(scen_df, baseline, baseline)
+    scenario_label = pretty_scenario_label(scen_df, scenario, baseline)
     make_baseline_dual_axis_boxplot(
         df=df,
-        scenario_label=scenario,
+        scenario_label=scenario_label,
         is_baseline_case=is_baseline_case,
         outfig=snakemake.output["base_fig"],
     )
@@ -338,8 +383,8 @@ def main():
         value_base="lcoe_base",
         value_scen="lcoe_scen",
         ylabel=LCOE_LABEL,
-        scenario_label=scenario,
-        baseline_label=baseline,
+        scenario_label=scenario_label,
+        baseline_label=baseline_label,
         outfig=snakemake.output["lcoe_fig"],
         value_scale=1.0,
     )
@@ -349,8 +394,8 @@ def main():
         value_base="potential_base",
         value_scen="potential_scen",
         ylabel=POTENTIAL_LABEL,
-        scenario_label=scenario,
-        baseline_label=baseline,
+        scenario_label=scenario_label,
+        baseline_label=baseline_label,
         outfig=snakemake.output["potential_fig"],
         value_scale=MW_PER_GW,
     )

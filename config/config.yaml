@@ -132,7 +132,7 @@ fixed_bins:
   - "200-250"
 
 # Used only when method_region_aggregation: cutoff (€2020/MWh)
-lcoe_cutoff: 100.0
+lcoe_cutoff: 75.0
 
 # -----------------------------------------------------------------------------
 # Sensitivity analysis
@@ -145,27 +145,27 @@ sens_tech: orc                # options: orc, flash, kalina
 # Comment out any line to exclude that parameter from the current run.
 # Ranges and step counts are defined in `sensitivity_parameters` below.
 active_sensitivity_parameters:
-#  - max_depth
-#  - EGS_cutoff
-#  - drilling_cost_curve
-#  - stimulation_cost_per_doublet
-#  - pump_cost
-#  - lifetime
-#  - capacity_factor
-#  - fixed_OM_rate
+  - max_depth
+  - EGS_cutoff
+  - drilling_cost_curve
+  - stimulation_cost_per_doublet
+  - pump_cost
+  - lifetime
+  - capacity_factor
+  - fixed_OM_rate
   - parasitic_fraction
-#  - orc_money_per_kw
-#  - flash_money_per_kw
-#  - kalina_money_per_kw
-#  - temp_turbine_out_ORC
-#  - temp_turbine_out_Flash
-#  - temp_turbine_out_Kalina
-#  - include_egs
-#  - SED_NAN_POLICY
-#  - min_dt
-#  - well_spacing
-#  - flowrate_egs
-#  - flowrate_conventional
+  - orc_money_per_kw
+  - flash_money_per_kw
+  - kalina_money_per_kw
+  - temp_turbine_out_ORC
+  - temp_turbine_out_Flash
+  - temp_turbine_out_Kalina
+  - include_egs
+  - SED_NAN_POLICY
+  - min_dt
+  - well_spacing
+  - flowrate_egs
+  - flowrate_conventional
 
 # Sensitivity ranges.
 # For numeric parameters: max_dev_pct is the maximum deviation in percent from
@@ -176,27 +176,27 @@ active_sensitivity_parameters:
 sensitivity_parameters:
   # --- Reservoir & drilling ---
   max_depth:
-    absolute_values: [3000, 4000, 5000, 7000, 8000, 9000]  # override percentage-based deviations with absolute values (m)
+    absolute_values: [3000, 9000]  # override percentage-based deviations with absolute values (m)
   EGS_cutoff:
-    absolute_values: [2000, 2500, 3500, 4000, 5000]  # override percentage-based deviations with absolute values (m)
+    absolute_values: [2000, 5000]  # override percentage-based deviations with absolute values (m)
   stimulation_cost_per_doublet:
     max_dev_pct: 30
-    steps: 3
+    steps: 1
   well_spacing:
-    absolute_values: [0.3, 0.8, 1.0, 1.5, 2.0]  # override percentage-based deviations with absolute values (m)
+    absolute_values: [0.8, 2.0]  # override percentage-based deviations with absolute values (m)
   flowrate_egs:
     max_dev_pct: 30
-    steps: 3
+    steps: 1
   flowrate_conventional:
     max_dev_pct: 30
-    steps: 3
+    steps: 1
 
   # --- Plant economics ---
   pump_cost:
     max_dev_pct: 30
-    steps: 3
+    steps: 1
   lifetime:
-    absolute_values: [20, 25, 35, 40]  # override percentage-based deviations with absolute values (m)
+    absolute_values: [20, 40]  # override percentage-based deviations with absolute values (m)
   capacity_factor:
     absolute_values: [0.6, 0.91]  # override percentage-based deviations with absolute values (m)
   fixed_OM_rate:
@@ -205,27 +205,27 @@ sensitivity_parameters:
     absolute_values: [0.02, 0.6]  # override percentage-based deviations with absolute values (m)
   orc_money_per_kw:
     max_dev_pct: 30
-    steps: 3
+    steps: 1
   flash_money_per_kw:
     max_dev_pct: 30
-    steps: 3
+    steps: 1
   kalina_money_per_kw:
     max_dev_pct: 30
-    steps: 3
+    steps: 1
   # --- Turbine outlet temperatures ---
   temp_turbine_out_ORC:
     max_dev_pct: 30
-    steps: 3
+    steps: 1
   temp_turbine_out_Flash:
     max_dev_pct: 30
-    steps: 3
+    steps: 1
   temp_turbine_out_Kalina:
     max_dev_pct: 30
-    steps: 3
+    steps: 1
   # --- Minimum temperature difference ---
   min_dt:
     max_dev_pct: 30
-    steps: 3
+    steps: 1
   # --- Boolean (flips the base value) ---
   include_egs: true
   # --- Categorical (multiple values explored) ---

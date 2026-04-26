@@ -506,12 +506,19 @@ def main():
     regions2.index = regions2.index.astype(str)
     geom_col = regions2.geometry.name
 
-    out_df = pd.concat(frames, ignore_index=True)
-    out_gdf = gpd.GeoDataFrame(
-        out_df.join(regions2[[geom_col]], on="region_id"),
-        geometry=geom_col,
-        crs=regions2.crs,
-    )
+    if frames:
+        out_df = pd.concat(frames, ignore_index=True)
+        out_gdf = gpd.GeoDataFrame(
+            out_df.join(regions2[[geom_col]], on="region_id"),
+            geometry=geom_col,
+            crs=regions2.crs,
+        )
+    else:
+        out_gdf = gpd.GeoDataFrame(
+            {**{c: pd.Series(dtype="object") for c in _EMPTY_COLS}, geom_col: []},
+            geometry=geom_col,
+            crs=regions2.crs,
+        )
 
     out_gdf.to_parquet(out_path, index=False)
 

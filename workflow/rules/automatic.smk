@@ -99,6 +99,7 @@ SCENARIOS = list(SCEN.keys())
 
 SCENARIOS_NO_BASE = [s for s in SCENARIOS if s != BASELINE_SCENARIO]
 TARGET_SCENARIOS  = SCENARIOS if PERFORM_SENSITIVITY else [BASELINE_SCENARIO]
+BASELINE_ONLY_SCENARIOS = [BASELINE_SCENARIO]
 
 # -----------------------------
 # Scenario helpers
@@ -185,56 +186,56 @@ all_geothermal_inputs = [*_2d_files("lcoe"), *_2d_files("potential")]
 if METHOD_2D == "LCOE_minimization":
     all_geothermal_inputs += expand(
         "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/lcoe_overview.png",
-        shapes=SHAPES, scenario=TARGET_SCENARIOS,
+        shapes=SHAPES, scenario=BASELINE_ONLY_SCENARIOS,
     )
     all_geothermal_inputs += expand(
         "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/lcoe_vs_potential_scatter.png",
-        shapes=SHAPES, scenario=TARGET_SCENARIOS,
+        shapes=SHAPES, scenario=BASELINE_ONLY_SCENARIOS,
     )
     all_geothermal_inputs += expand(
         "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/average_potential_per_cell_by_depth.png",
-        shapes=SHAPES, scenario=TARGET_SCENARIOS,
+        shapes=SHAPES, scenario=BASELINE_ONLY_SCENARIOS,
     )
     all_geothermal_inputs += expand(
         "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/cumulative_potential_vs_lcoe.png",
-        shapes=SHAPES, scenario=TARGET_SCENARIOS,
+        shapes=SHAPES, scenario=BASELINE_ONLY_SCENARIOS,
     )
     all_geothermal_inputs += expand(
         "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/cumulative_potential_vs_depth.png",
-        shapes=SHAPES, scenario=TARGET_SCENARIOS,
+        shapes=SHAPES, scenario=BASELINE_ONLY_SCENARIOS,
     )
     all_geothermal_inputs += expand(
         "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/cumulative_potential_vs_temperature.png",
-        shapes=SHAPES, scenario=TARGET_SCENARIOS,
+        shapes=SHAPES, scenario=BASELINE_ONLY_SCENARIOS,
     )
     all_geothermal_inputs += expand(
         "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/potential_temperature_lcoe_heatmap.png",
-        shapes=SHAPES, scenario=TARGET_SCENARIOS,
+        shapes=SHAPES, scenario=BASELINE_ONLY_SCENARIOS,
     )
     all_geothermal_inputs += expand(
         "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/temperature_vs_lcoe_scatter.png",
-        shapes=SHAPES, scenario=TARGET_SCENARIOS,
+        shapes=SHAPES, scenario=BASELINE_ONLY_SCENARIOS,
     )
     all_geothermal_inputs += expand(
         "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/temperature_lcoe_isopotential_contours.png",
-        shapes=SHAPES, scenario=TARGET_SCENARIOS,
+        shapes=SHAPES, scenario=BASELINE_ONLY_SCENARIOS,
     )
     all_geothermal_inputs += expand(
         "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/temperature_lcoe_potential_scatter.png",
-        shapes=SHAPES, scenario=TARGET_SCENARIOS,
+        shapes=SHAPES, scenario=BASELINE_ONLY_SCENARIOS,
     )
     all_geothermal_inputs += expand(
         "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/potential_overview.png",
-        shapes=SHAPES, scenario=TARGET_SCENARIOS,
+        shapes=SHAPES, scenario=BASELINE_ONLY_SCENARIOS,
     )
     all_geothermal_inputs += expand(
         "results/{shapes}/scenarios/{scenario}/2d_potential_cost/figures/depth_at_min_overview.png",
-        shapes=SHAPES, scenario=TARGET_SCENARIOS,
+        shapes=SHAPES, scenario=BASELINE_ONLY_SCENARIOS,
     )
 
 all_geothermal_inputs += expand(
     "results/{shapes}/scenarios/{scenario}/region_aggregation/geothermal_regions.parquet",
-    shapes=SHAPES, scenario=TARGET_SCENARIOS,
+    shapes=SHAPES, scenario=BASELINE_ONLY_SCENARIOS,
 )
 
 _sens_target = lambda pattern, scenarios=TARGET_SCENARIOS: expand(
@@ -273,6 +274,8 @@ if PERFORM_SENSITIVITY:
 rule all_geothermal:
     input: all_geothermal_inputs
     default_target: True
+
+ruleorder: make_2d_base > make_2d_scenario
 
 # -----------------------------
 # Rules
@@ -357,7 +360,7 @@ rule calculate_LCOE:
         "../scripts/calculate_LCOE.py"
 
 
-rule make_2d:
+rule make_2d_base:
     input:
         cubes=lambda wc: expand(
             "results/{shapes}/scenarios/{scenario}/geothermal_lcoe/{cycle}_lcoe_cube.nc",
@@ -409,6 +412,48 @@ rule make_2d:
         depth_categories      = config.get("depth_categories"),
         depthcat_labels       = DEPTHCAT_LABELS,
         cycles                = CYCLES,
+    wildcard_constraints:
+        scenario = BASELINE_SCENARIO,
+    script:
+        "../scripts/make_2d.py"
+
+
+rule make_2d_scenario:
+    input:
+        cubes=lambda wc: expand(
+            "results/{shapes}/scenarios/{scenario}/geothermal_lcoe/{cycle}_lcoe_cube.nc",
+            shapes=wc.shapes, scenario=wc.scenario, cycle=CYCLES,
+        )
+    output:
+        lcoe_tifs=(
+            expand(
+                "results/{{shapes}}/scenarios/{{scenario}}/2d_potential_cost/{cycle}_2d_lcoe.tif",
+                cycle=CYCLES,
+            )
+            if METHOD_2D == "LCOE_minimization" else
+            expand(
+                "results/{{shapes}}/scenarios/{{scenario}}/2d_potential_cost/{cycle}_2d_{cat}_lcoe.tif",
+                cycle=CYCLES, cat=DEPTHCAT_LABELS,
+            )
+        ),
+        pot_tifs=(
+            expand(
+                "results/{{shapes}}/scenarios/{{scenario}}/2d_potential_cost/{cycle}_2d_potential.tif",
+                cycle=CYCLES,
+            )
+            if METHOD_2D == "LCOE_minimization" else
+            expand(
+                "results/{{shapes}}/scenarios/{{scenario}}/2d_potential_cost/{cycle}_2d_{cat}_potential.tif",
+                cycle=CYCLES, cat=DEPTHCAT_LABELS,
+            )
+        ),
+    params:
+        method_2d_aggregation = METHOD_2D,
+        depth_categories      = config.get("depth_categories"),
+        depthcat_labels       = DEPTHCAT_LABELS,
+        cycles                = CYCLES,
+    wildcard_constraints:
+        scenario = "(?!base$).+"
     script:
         "../scripts/make_2d.py"
 
@@ -428,6 +473,8 @@ rule aggregate_to_regions:
         n_quantiles               = N_QUANTILES,
         fixed_bins                = FIXED_BINS,
         lcoe_cutoff               = LCOE_CUTOFF,
+    wildcard_constraints:
+        scenario = BASELINE_SCENARIO,
     script:
         "../scripts/aggregate_to_regions.py"
 
@@ -463,6 +510,7 @@ rule scenario_summary_fig:
 
 rule sensitivity_boxplot_per_scenario:
     input:
+        scenario_table = SCENARIO_TABLE,
         boxplot_data = "results/{shapes}/scenarios/{scenario}/sensitivity/boxplot_data.parquet",
     output:
         base_fig      = "results/{shapes}/scenarios/{scenario}/sensitivity/boxplot_base_dual_axis.png",

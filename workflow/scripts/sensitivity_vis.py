@@ -4,6 +4,7 @@ import textwrap
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.transforms as mtransforms
 from cycler import cycler
 
 
@@ -163,6 +164,38 @@ def make_parameter_box_label(param, base_value, scenario_value):
     return f"{pretty_param_name(param, width=18)}\n({change})"
 
 
+def summarise_lcoe(values):
+    vals = np.asarray(values, dtype=float)
+    vals = vals[np.isfinite(vals)]
+    return f"{np.round(np.nanmean(vals), 0):.0f} €/MWh" if vals.size else ""
+
+
+def summarise_potential_tw(values):
+    vals = np.asarray(values, dtype=float)
+    vals = vals[np.isfinite(vals)]
+    return f"{(np.nansum(vals) / 1e6):.2f} TW" if vals.size else ""
+
+
+def mean_absolute_change(base_values, scenario_values):
+    base_vals = np.asarray(base_values, dtype=float)
+    scen_vals = np.asarray(scenario_values, dtype=float)
+    base_vals = base_vals[np.isfinite(base_vals)]
+    scen_vals = scen_vals[np.isfinite(scen_vals)]
+    if base_vals.size == 0 or scen_vals.size == 0:
+        return np.nan
+    return abs(float(np.nanmean(scen_vals)) - float(np.nanmean(base_vals)))
+
+
+def total_potential_change_pct(base_values, scenario_values):
+    base_vals = np.asarray(base_values, dtype=float)
+    scen_vals = np.asarray(scenario_values, dtype=float)
+    base_total = float(np.nansum(base_vals[np.isfinite(base_vals)]))
+    scen_total = float(np.nansum(scen_vals[np.isfinite(scen_vals)]))
+    if np.isclose(base_total, 0.0):
+        return abs(scen_total - base_total)
+    return abs((scen_total - base_total) / base_total) * 100.0
+
+
 def select_representative_scenarios_per_parameter(df, parameter_order):
     """
     Select at most one scenario per parameter for box plotting.
@@ -206,7 +239,22 @@ def select_representative_scenarios_per_parameter(df, parameter_order):
     return pd.DataFrame(selected_rows).reset_index(drop=True)
 
 
-def make_single_baseline_plus_parameter_boxplot(specs, value_key, ylabel, title, out_path):
+def sort_representative_scenarios(df):
+    if df.empty:
+        return df
+    return df.sort_values(
+        ["metric_value", "sort_magnitude", "parameter", "scenario"],
+        ascending=[False, False, True, True],
+    ).reset_index(drop=True)
+
+
+def make_single_baseline_plus_parameter_boxplot(
+    specs,
+    value_key,
+    ylabel,
+    out_path,
+    summary_fn=None,
+):
     """
     Plot one baseline box plus one box per selected parameter.
 
@@ -219,6 +267,7 @@ def make_single_baseline_plus_parameter_boxplot(specs, value_key, ylabel, title,
     data = []
     labels = []
     kinds = []
+    summaries = []
 
     pos = 1
     for spec in specs:
@@ -231,6 +280,7 @@ def make_single_baseline_plus_parameter_boxplot(specs, value_key, ylabel, title,
         data.append(vals)
         labels.append(spec["label"])
         kinds.append(spec["kind"])
+        summaries.append(summary_fn(vals) if summary_fn is not None else None)
         pos += 1
 
     fig_w = max(9, 1.7 * len(data))
@@ -261,11 +311,30 @@ def make_single_baseline_plus_parameter_boxplot(specs, value_key, ylabel, title,
     ax.set_xticks(positions)
     ax.set_xticklabels(labels, rotation=0)
     ax.set_ylabel(ylabel)
-    ax.set_title(title)
-    ax.grid(True, axis="y", linewidth=0.6, alpha=0.35)
+    ax.grid(False)
 
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
+    for spine in ax.spines.values():
+        spine.set_visible(True)
+
+    ymin, ymax = ax.get_ylim()
+    yrange = ymax - ymin if ymax > ymin else 1.0
+    ax.set_ylim(ymin, ymax + 0.04 * yrange)
+
+    text_transform = mtransforms.blended_transform_factory(ax.transData, ax.transAxes)
+
+    for x, summary in zip(positions, summaries):
+        if not summary:
+            continue
+        ax.text(
+            x,
+            1.03,
+            summary,
+            transform=text_transform,
+            ha="center",
+            va="bottom",
+            fontsize=10,
+            clip_on=False,
+        )
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     fig.tight_layout()
@@ -309,9 +378,8 @@ def make_top_switch_rate_barplot(df, top_n, out_path):
     ax.set_yticks(y)
     ax.set_yticklabels(labels)
     ax.invert_yaxis()
-    ax.set_xlabel("Pixels with changed winning technology (%)")
-    ax.set_title(f"Top {len(plot_df)} parameter scenarios by technology switch rate")
-    ax.grid(True, axis="x", linewidth=0.6, alpha=0.35)
+    ax.set_xlabel("Pixels with changed cheapest technology (%)")
+    ax.grid(False)
 
     xmax = float(np.nanmax(values)) if len(values) else 0.0
     if not np.isfinite(xmax):
@@ -328,8 +396,8 @@ def make_top_switch_rate_barplot(df, top_n, out_path):
             fontsize=10,
         )
 
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
+    for spine in ax.spines.values():
+        spine.set_visible(True)
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     fig.tight_layout()
@@ -348,6 +416,7 @@ def main():
     baseline = snakemake.params["baseline"]
     metric_name = snakemake.params.get("metric_name", "mean_abs_pct_change_sens")
     top_n = int(snakemake.params.get("top_n", 6))
+    bar_top_n = int(snakemake.params.get("bar_top_n", 4))
     include_all = bool(snakemake.params.get("include_all", False))
 
     scen_df = load_scenario_table(scenario_table)
@@ -404,11 +473,6 @@ def main():
     # Boxplot selection: baseline once +
     # one representative scenario/parameter
     # -----------------------------------
-    representative_df = select_representative_scenarios_per_parameter(
-        df=df,
-        parameter_order=selected_params,
-    )
-
     scenario_to_boxplot = {}
     for p in boxplot_files:
         scen_name = infer_scenario_from_path(p)
@@ -416,20 +480,11 @@ def main():
 
     df_box_base = load_boxplot_table(scenario_to_boxplot[baseline])
     baseline_winner_df = build_baseline_winner_df(df_box_base, baseline_name=baseline)
+    baseline_lcoe_values = baseline_winner_df["winner_lcoe_base"].to_numpy()
+    baseline_potential_values = baseline_winner_df["winner_potential_base"].to_numpy()
 
-    box_specs = [
-        {
-            "kind": "baseline",
-            "parameter": None,
-            "scenario": baseline,
-            "pct_change": 0.0,
-            "label": "Baseline",
-            "lcoe_values": baseline_winner_df["winner_lcoe_base"].to_numpy(),
-            "potential_values": baseline_winner_df["winner_potential_base"].to_numpy(),
-        }
-    ]
-
-    for _, row in representative_df.iterrows():
+    scenario_specs = []
+    for _, row in df.iterrows():
         param = row["parameter"]
         scen_name = row["scenario"]
 
@@ -440,7 +495,7 @@ def main():
             baseline_name=baseline,
         )
 
-        box_specs.append(
+        scenario_specs.append(
             {
                 "kind": "scenario",
                 "parameter": param,
@@ -448,28 +503,165 @@ def main():
                 "label": row["label"],
                 "lcoe_values": scen_winner_df["winner_lcoe_scen"].to_numpy(),
                 "potential_values": scen_winner_df["winner_potential_scen"].to_numpy(),
+                "lcoe_metric_value": mean_absolute_change(
+                    baseline_lcoe_values,
+                    scen_winner_df["winner_lcoe_scen"].to_numpy(),
+                ),
+                "potential_metric_value": mean_absolute_change(
+                    baseline_potential_values,
+                    scen_winner_df["winner_potential_scen"].to_numpy(),
+                ),
+                "potential_total_metric_value": total_potential_change_pct(
+                    baseline_potential_values,
+                    scen_winner_df["winner_potential_scen"].to_numpy(),
+                ),
+                "sort_magnitude": float(row["sort_magnitude"]),
+                "transition_total_pixels": float(row["transition_total_pixels"]),
             }
         )
 
-    if include_all:
-        title_suffix = f"Baseline + one representative scenario per parameter (n={len(representative_df)})"
+    rank_params_lcoe = (
+        pd.DataFrame(
+            [
+                {
+                    "parameter": spec["parameter"],
+                    "metric_value": spec["lcoe_metric_value"],
+                }
+                for spec in scenario_specs
+            ]
+        )
+        .groupby("parameter")["metric_value"]
+        .max()
+        .sort_values(ascending=False)
+    )
+    if not include_all:
+        selected_params_lcoe = rank_params_lcoe.head(top_n).index.tolist()
     else:
-        title_suffix = f"Baseline + one representative scenario for top {len(representative_df)} parameters"
+        selected_params_lcoe = rank_params_lcoe.index.tolist()
+
+    df_lcoe_rank = pd.DataFrame(
+        [
+            {
+                "parameter": spec["parameter"],
+                "scenario": spec["scenario"],
+                "label": spec["label"],
+                "sort_magnitude": spec["sort_magnitude"],
+                "metric_value": spec["lcoe_metric_value"],
+                "transition_total_pixels": spec["transition_total_pixels"],
+            }
+            for spec in scenario_specs
+        ]
+    )
+    representative_lcoe_df = select_representative_scenarios_per_parameter(
+        df=df_lcoe_rank,
+        parameter_order=selected_params_lcoe,
+    )
+    representative_lcoe_df = sort_representative_scenarios(representative_lcoe_df)
+
+    rank_params_potential = (
+        pd.DataFrame(
+            [
+                {
+                    "parameter": spec["parameter"],
+                    "metric_value": spec["potential_metric_value"],
+                }
+                for spec in scenario_specs
+            ]
+        )
+        .groupby("parameter")["metric_value"]
+        .max()
+        .sort_values(ascending=False)
+    )
+    if not include_all:
+        selected_params_potential = rank_params_potential.head(top_n).index.tolist()
+    else:
+        selected_params_potential = rank_params_potential.index.tolist()
+
+    df_potential_rank = pd.DataFrame(
+        [
+            {
+                "parameter": spec["parameter"],
+                "scenario": spec["scenario"],
+                "label": spec["label"],
+                "sort_magnitude": spec["sort_magnitude"],
+                "metric_value": spec["potential_metric_value"],
+                "transition_total_pixels": spec["transition_total_pixels"],
+            }
+            for spec in scenario_specs
+        ]
+    )
+    representative_potential_df = select_representative_scenarios_per_parameter(
+        df=df_potential_rank,
+        parameter_order=selected_params_potential,
+    )
+    representative_potential_df = sort_representative_scenarios(representative_potential_df)
+
+    box_specs_lcoe = [
+        {
+            "kind": "baseline",
+            "parameter": None,
+            "scenario": baseline,
+            "pct_change": 0.0,
+            "label": "Baseline",
+            "lcoe_values": baseline_lcoe_values,
+            "potential_values": baseline_potential_values,
+        }
+    ]
+
+    spec_by_scenario = {spec["scenario"]: spec for spec in scenario_specs}
+
+    for _, row in representative_lcoe_df.iterrows():
+        spec = spec_by_scenario[row["scenario"]]
+        box_specs_lcoe.append(
+            {
+                "kind": "scenario",
+                "parameter": spec["parameter"],
+                "scenario": spec["scenario"],
+                "label": spec["label"],
+                "lcoe_values": spec["lcoe_values"],
+                "potential_values": spec["potential_values"],
+            }
+        )
+
+    box_specs_potential = [
+        {
+            "kind": "baseline",
+            "parameter": None,
+            "scenario": baseline,
+            "pct_change": 0.0,
+            "label": "Baseline",
+            "lcoe_values": baseline_lcoe_values,
+            "potential_values": baseline_potential_values,
+        }
+    ]
+
+    for _, row in representative_potential_df.iterrows():
+        spec = spec_by_scenario[row["scenario"]]
+        box_specs_potential.append(
+            {
+                "kind": "scenario",
+                "parameter": spec["parameter"],
+                "scenario": spec["scenario"],
+                "label": spec["label"],
+                "lcoe_values": spec["lcoe_values"],
+                "potential_values": spec["potential_values"],
+            }
+        )
 
     make_single_baseline_plus_parameter_boxplot(
-        specs=box_specs,
+        specs=box_specs_lcoe,
         value_key="lcoe_values",
-        ylabel="LCOE",
-        title=f"LCOE distributions for cheapest technology per pixel\n{title_suffix}",
+        ylabel="LCOE (€/MWh)",
         out_path=snakemake.output["boxplot_lcoe_top6_winner"],
+        summary_fn=summarise_lcoe,
     )
 
     make_single_baseline_plus_parameter_boxplot(
-        specs=box_specs,
+        specs=box_specs_potential,
         value_key="potential_values",
-        ylabel="Potential",
-        title=f"Potential distributions for cheapest technology per pixel\n{title_suffix}",
+        ylabel="Potential (GW)",
         out_path=snakemake.output["boxplot_potential_top6_winner"],
+        summary_fn=summarise_potential_tw,
     )
 
     df_switch = df.copy()
@@ -483,7 +675,7 @@ def main():
 
     make_top_switch_rate_barplot(
         df=switch_df,
-        top_n=top_n,
+        top_n=bar_top_n,
         out_path=snakemake.output["barplot_switch_rate_top6"],
     )
 
