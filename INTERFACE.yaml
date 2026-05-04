@@ -14,22 +14,6 @@ pathvars:
     shapes:
       default: "<resources>/user/{shapes}/shapes.parquet"
       description: GeoParquet polygons used to crop and aggregate geothermal potential.
-  automatic_resources:
-    temperature_grid:
-      default: "<resources>/automatic/grids_depth/temperature{depth}.asc"
-      description: Limberger et al. temperature raster for one depth level.
-    sediment_thickness:
-      default: "<resources>/automatic/Global_sedmap_1deg.nc"
-      description: Global sediment-thickness raster used to distinguish conventional and EGS resources.
-    efficiency_curves:
-      default: "<resources>/automatic/efficiency_curves.csv"
-      description: Conversion efficiency curves for geothermal power cycles.
-    baseline_drilling_2017:
-      default: "<resources>/automatic/baseline_drilling_2017.csv"
-      description: GETEM 2017 drilling-cost reference curve.
-    baseline_drilling_2025:
-      default: "<resources>/automatic/baseline_drilling_2025.csv"
-      description: GETEM 2025 drilling-cost reference curve.
   intermediates:
     scenario_table:
       default: "<resources>/automatic/scenario_table.tsv"
