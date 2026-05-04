@@ -1,7 +1,7 @@
 # =============================================================================
 # Geothermal potential & LCOE module — configuration
 # =============================================================================
-# Quick-start: the only keys you normally need to change are in the first 
+# Quick-start: the only keys you normally need to change are in the first
 # section ("Workflow control"). Everything else has sensible
 # defaults that the sensitivity analysis will vary for you (if you want that).
 # =============================================================================
@@ -10,22 +10,18 @@
 # -----------------------------------------------------------------------------
 # Workflow control
 # -----------------------------------------------------------------------------
-target_shapes:
-  - BALK              # folder name(s) under resources/user/
-
 baseline_scenario: base
-scenario_table: <resources>/automatic/scenario_table.tsv
 
 perform_sensitivity: true     # false → only the baseline scenario is run
 write_qc_sliders: false        # false → skip depth-slider HTML files (saves disk)
 
-method_region_aggregation: cutoff 
+method_region_aggregation: cutoff
 # options:
 #   quantiles    → divide LCOE distribution into n_quantiles cost classes per region
 #   fixed_bins   → user-defined LCOE bins (€2020/MWh) applied uniformly
 #   cutoff       → single capacity figure below lcoe_cutoff and average LCOE of that capacity
 
-# for sensitivity runs cutoff is advised to speed up processing; 
+# for sensitivity runs cutoff is advised to speed up processing;
 # for detailed LCOE distributions used in an energy system model, use quantiles or fixed_bins
 
 # -----------------------------------------------------------------------------

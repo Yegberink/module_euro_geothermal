@@ -1,15 +1,13 @@
-import math
 import os
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import plotly.graph_objects as go
 import xarray as xr
-import rasterio
 from rasterio.crs import CRS
 from rasterio.transform import from_origin
-from rasterio.warp import reproject, Resampling
-import plotly.graph_objects as go
+from rasterio.warp import Resampling, reproject
 from scipy.optimize import curve_fit
 
 def _ensure_parent(path: Path) -> None:
@@ -23,9 +21,7 @@ def atomic_replace(src: Path, dst: Path) -> None:
     os.replace(src, dst)
 
 def atomic_write_bytes(dst: Path, data: bytes) -> None:
-    """
-    Atomic write for small-ish files (html/tsv/json/etc).
-    """
+    """Atomic write for small-ish files (html/tsv/json/etc)."""
     _ensure_parent(dst)
     tmp = dst.with_suffix(dst.suffix + ".tmp")
     with open(tmp, "wb") as f:
@@ -37,6 +33,58 @@ def atomic_write_bytes(dst: Path, data: bytes) -> None:
 def atomic_write_text(dst: Path, text: str, encoding: str = "utf-8") -> None:
     atomic_write_bytes(dst, text.encode(encoding))
 
+
+def _parse_scalar(value):
+    if value is None or pd.isna(value):
+        return None
+    if isinstance(value, (bool, int, float)):
+        return value
+
+    text = str(value).strip()
+    if text.lower() in ("true", "yes", "y", "1"):
+        return True
+    if text.lower() in ("false", "no", "n", "0"):
+        return False
+    try:
+        return float(text)
+    except ValueError:
+        return text
+
+
+def _scenario_row():
+    rows = pd.read_csv(snakemake.input.scenario_table, sep="\t")
+    row = rows.loc[rows["scenario"].astype(str) == str(snakemake.wildcards.scenario)]
+    return {key: _parse_scalar(value) for key, value in row.iloc[0].items()}
+
+
+SCENARIO = _scenario_row()
+
+
+def cfg(key, default=None):
+    value = SCENARIO.get(key)
+    if value is not None:
+        return value
+
+    if key.startswith("temp_turbine_out_"):
+        cycle = key.removeprefix("temp_turbine_out_")
+        return snakemake.config["temp_turbine_out"][cycle]
+
+    if default is not None:
+        return snakemake.config.get(key, default)
+    return snakemake.config[key]
+
+
+def drilling_cost_curve_definitions():
+    definitions = dict(snakemake.config["drilling_cost_curve_definitions"])
+    if "getem_2017" in definitions:
+        definitions["getem_2017"] = dict(definitions["getem_2017"])
+        definitions["getem_2017"]["csv_path"] = snakemake.input.drilling_costs_2017
+    if "getem_2025" in definitions:
+        definitions["getem_2025"] = dict(definitions["getem_2025"])
+        definitions["getem_2025"]["csv_path"] = snakemake.input.drilling_costs_2025
+    return definitions
+
+
 VOXEL_NC = snakemake.input.nc
 VAR = "temperature"
 
@@ -47,19 +95,22 @@ SED_NC = snakemake.input.sed  # has thk1/thk2/thk3 on latitude/longitude grid (k
 CSV_PATH = snakemake.input.eff
 
 # EGS cutoff rule:
-Z_THR_M = float(snakemake.params.get("egs_cutoff"))
+Z_THR_M = float(cfg("EGS_cutoff"))
 
 # How to handle NaNs in sed thickness after resampling:
-SED_NAN_POLICY = snakemake.params.get("sed_nan_policy")
+SED_NAN_POLICY = cfg("SED_NAN_POLICY")
 
 # Turbine outlet temps (°C), dict like {"ORC": 70.0, "Flash": 150.0, "Kalina": 80.0}
-temp_turbine_out = snakemake.params.get("temp_turbine_out")
+temp_turbine_out = {
+    cycle: float(cfg(f"temp_turbine_out_{cycle}"))
+    for cycle in ("ORC", "Flash", "Kalina")
+}
 
 # other configs
-carrier_out = snakemake.params.get("carrier_out")
-include_egs = bool(snakemake.params.get("include_egs"))
-DRILLING_COST_CURVE = str(snakemake.params.get("drilling_cost_curve", "thermogis"))
-DRILLING_COST_CURVE_DEFINITIONS = snakemake.params.get("drilling_cost_curve_definitions", {})
+carrier_out = cfg("carrier_out")
+include_egs = bool(cfg("include_egs"))
+DRILLING_COST_CURVE = str(cfg("drilling_cost_curve", "thermogis"))
+DRILLING_COST_CURVE_DEFINITIONS = drilling_cost_curve_definitions()
 
 CPI_US = {2017: 245.120, 2020: 258.811, 2021: 270.970}
 CPI_2025_PROXY = 324.368
@@ -499,9 +550,9 @@ def main():
 
     T = ds[VAR]  # (depth_m, y, x)
 
-    max_depth = float(snakemake.params.get("max_depth", np.inf))
-    include_egs = bool(snakemake.params.get("include_egs", True))
-    egs_cutoff = float(snakemake.params.get("egs_cutoff", np.inf))
+    max_depth = float(cfg("max_depth", np.inf))
+    include_egs = bool(cfg("include_egs", True))
+    egs_cutoff = float(cfg("EGS_cutoff", np.inf))
 
     # Determine effective depth limit
     effective_max = max_depth
@@ -560,19 +611,19 @@ def main():
             keep_attrs=True,
             kwargs=dict(
                 cycle_type=cycle,
-                stimulation_cost_per_doublet=snakemake.params.get("stimulation_cost_per_doublet"),
-                pump_cost=snakemake.params.get("pump_cost"),
-                fixed_OM_rate=snakemake.params.get("fixed_OM_rate"),
-                parasitic_fraction=snakemake.params.get("parasitic_fraction"),
-                capacity_factor=snakemake.params.get("capacity_factor"),
-                orc_money_per_kw=snakemake.params.get("orc_money_per_kw"),
-                flash_money_per_kw=snakemake.params.get("flash_money_per_kw"),
-                kalina_money_per_kw=snakemake.params.get("kalina_money_per_kw"),
-                lifetime=snakemake.params.get("lifetime"),
-                min_dt=snakemake.params.get("min_dt"),
-                well_spacing=snakemake.params.get("well_spacing"),
-                flowrate_egs=snakemake.params.get("flowrate_egs"),
-                flowrate_conventional=snakemake.params.get("flowrate_conventional"),
+                stimulation_cost_per_doublet=cfg("stimulation_cost_per_doublet"),
+                pump_cost=cfg("pump_cost"),
+                fixed_OM_rate=cfg("fixed_OM_rate"),
+                parasitic_fraction=cfg("parasitic_fraction"),
+                capacity_factor=cfg("capacity_factor"),
+                orc_money_per_kw=cfg("orc_money_per_kw"),
+                flash_money_per_kw=cfg("flash_money_per_kw"),
+                kalina_money_per_kw=cfg("kalina_money_per_kw"),
+                lifetime=cfg("lifetime"),
+                min_dt=cfg("min_dt"),
+                well_spacing=cfg("well_spacing"),
+                flowrate_egs=cfg("flowrate_egs"),
+                flowrate_conventional=cfg("flowrate_conventional"),
                 area_available=100,
             ),
         )
@@ -595,11 +646,11 @@ def main():
             output_dtypes=[np.float32],
             keep_attrs=True,
             kwargs=dict(
-                min_dt=snakemake.params.get("min_dt"),
-                parasitic_fraction=snakemake.params.get("parasitic_fraction"),
-                well_spacing=snakemake.params.get("well_spacing"),
-                flowrate_egs=snakemake.params.get("flowrate_egs"),
-                flowrate_conventional=snakemake.params.get("flowrate_conventional"),
+                min_dt=cfg("min_dt"),
+                parasitic_fraction=cfg("parasitic_fraction"),
+                well_spacing=cfg("well_spacing"),
+                flowrate_egs=cfg("flowrate_egs"),
+                flowrate_conventional=cfg("flowrate_conventional"),
                 area_available=100,
             ),
         )
