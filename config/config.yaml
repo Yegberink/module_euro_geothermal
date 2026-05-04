@@ -11,7 +11,10 @@
 # Workflow control
 # -----------------------------------------------------------------------------
 target_shapes:
-  - euro_all              # folder name(s) under resources/user/
+  - BALK              # folder name(s) under resources/user/
+
+baseline_scenario: base
+scenario_table: <resources>/automatic/scenario_table.tsv
 
 perform_sensitivity: true     # false → only the baseline scenario is run
 write_qc_sliders: false        # false → skip depth-slider HTML files (saves disk)
@@ -66,11 +69,11 @@ drilling_cost_curve_definitions:
     currency_year: 2021
   getem_2017:
     curve_type: csv_fit_usd
-    csv_path: resources/automatic/baseline_drilling_2017.csv
+    csv_path: <resources>/automatic/baseline_drilling_2017.csv
     currency_year: 2017
   getem_2025:
     curve_type: csv_fit_usd
-    csv_path: resources/automatic/baseline_drilling_2025.csv
+    csv_path: <resources>/automatic/baseline_drilling_2025.csv
     currency_year: 2025
 
 

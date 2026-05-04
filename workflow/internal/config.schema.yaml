@@ -2,7 +2,7 @@ $schema: "https://json-schema.org/draft/2020-12/schema"
 $id: "file://workflow/internal/config.schema.yaml"
 title: "Geothermal module config"
 type: object
-additionalProperties: true
+additionalProperties: false
 
 properties:
   target_shapes:
@@ -15,6 +15,32 @@ properties:
   perform_sensitivity:
     type: boolean
     description: "Whether to run the sensitivity analysis in addition to the baseline scenario."
+
+  baseline_scenario:
+    type: string
+    description: "Name of the baseline scenario."
+
+  scenario_table:
+    type: string
+    description: "Path where the generated scenario table should be written."
+
+  scenarios:
+    description: "Optional explicit scenarios for module users. Mapping keys or list entries define scenario names; values override baseline model settings."
+    oneOf:
+      - type: object
+        additionalProperties:
+          type: object
+          additionalProperties: true
+      - type: array
+        items:
+          type: object
+          required: ["scenario"]
+          additionalProperties: true
+          properties:
+            scenario:
+              type: string
+            name:
+              type: string
 
   write_qc_sliders:
     type: boolean
@@ -96,6 +122,12 @@ properties:
     type: number
     exclusiveMinimum: 0
     description: "Project lifetime (years)."
+
+  capacity_factor:
+    type: number
+    minimum: 0
+    maximum: 1
+    description: "Annual availability factor for electricity generation."
 
   fixed_OM_rate:
     type: number
@@ -234,6 +266,8 @@ properties:
 
 required:
   - target_shapes
+  - baseline_scenario
+  - scenario_table
   - perform_sensitivity
   - write_qc_sliders
   - include_egs
@@ -246,6 +280,7 @@ required:
   - stimulation_cost_per_doublet
   - pump_cost
   - lifetime
+  - capacity_factor
   - fixed_OM_rate
   - parasitic_fraction
   - orc_money_per_kw

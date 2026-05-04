@@ -1,7 +1,7 @@
 # Configuration
 
-This workflow is part of the [clio project](https://clio.readthedocs.io/en/latest/).
-Please consult our documentation for more details.
+This data module is part of the [Modelblocks](https://www.modelblocks.org/) project.
+Please consult the [Modelblocks documentation](https://modelblocks.readthedocs.io/) for more details.
 Other useful resources are:
 
 - `INTERFACE.yaml`: user input files (placed in `resources/user`) and module output files (placed in `results`).

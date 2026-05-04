@@ -1049,15 +1049,9 @@ def main():
     for cycle in cycles:
         pass
 
-    # Choose an outdir for extra products (depth_at_min.tif, PNGs).
-    # Keep it scenario-specific so different scenarios do not overwrite one another.
-    extra_outdir = (
-        Path("results")
-        / snakemake.wildcards["shapes"]
-        / "scenarios"
-        / snakemake.wildcards["scenario"]
-        / "2d_potential_cost"
-    )
+    # Choose an outdir for extra products (depth_at_min.tif, PNGs) from declared outputs.
+    # This keeps module pathvars in control of where products are written.
+    extra_outdir = Path(next(iter(lcoe_tifs))).parent
     (extra_outdir / "figures").mkdir(parents=True, exist_ok=True)
 
     for cycle in cycles:

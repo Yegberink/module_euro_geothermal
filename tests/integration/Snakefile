@@ -1,36 +1,28 @@
-# Emulate a user configuring the module.
-configfile: workflow.source_path("./test_config.yaml")
+import yaml
 
-# Emulate how another workflow might create inputs for this module.
-rule create_external_input:
-    message: "Example of a rule external to your module."
-    output:
-        text_file = "results/integration_test/resources/user/user_message.md"
-    run:
-        from pathlib import Path
-        from textwrap import dedent
-        text = dedent("""Modular workflows can be used by more than one project!
-            For example, this text comes from a file external to the module.
-            Try your best to make this workflow reusable so that others may benefit from your methods."""
-        )
-        file_path = Path(output.text_file)
-        with file_path.open("w") as f:
-            f.write(text)
+module_config = {}
+with open(workflow.source_path("../../config/config.yaml"), "r") as f:
+    module_config["module_geothermal"] = yaml.safe_load(f.read())
 
-# Import the module and configure it.
-# `snakefile:` specifies the module. It can use file paths and special github(...) / gitlab(...) markers
-# `prefix:` re-routes all input/output paths of the module, helping to avoid file conflicts.
-module geo_module:
-    snakefile: "../../workflow/Snakefile"
-    config: config["geo_module"]
-    prefix: "results/integration_test/"
 
-# rename all module rules with a prefix, to avoid naming conflicts.
-use rule * from geo_module as geo_module_*
+module module_geothermal:
+    snakefile:
+        "../../workflow/Snakefile"
+    config:
+        module_config["module_geothermal"]
+    pathvars:
+        logs="results/integration_test/logs",
+        resources="results/integration_test/resources",
+        results="results/integration_test/results",
+        shapes="results/integration_test/resources/user/{shapes}/shapes.parquet",
 
-# Request something from the module
+
+use rule * from module_geothermal as module_geothermal_*
+
+
 rule all:
-    message: "A generic test case for your module."
+    message:
+        "A generic test case for the geothermal module."
     default_target: True
     input:
-        "results/integration_test/results/combined_text.md"
+        "results/integration_test/results/euro_all/scenarios/base/region_aggregation/geothermal_regions.parquet",
