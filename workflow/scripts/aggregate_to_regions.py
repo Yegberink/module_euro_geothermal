@@ -14,7 +14,6 @@ Supported aggregation methods (method_region_aggregation):
 
 import os
 import re
-import sys
 import numpy as np
 import pandas as pd
 import geopandas as gpd
@@ -200,8 +199,6 @@ def composite_choropleth_png(
     ]
     if not valid_specs:
         return
-
-    os.makedirs(os.path.dirname(path), exist_ok=True)
 
     values = []
     for spec in valid_specs:
@@ -435,7 +432,8 @@ def main():
     pot_tifs   = list(snakemake.input.pot_tifs)
     shapes_path = snakemake.input["shapes"]
     out_path   = snakemake.output["geoparquet"]
-    figdir     = snakemake.output["figdir"]
+    figdir     = snakemake.params["figdir"]
+    public_potential_overview = snakemake.output["potential_overview"]
 
     # --- Parameters -------------------------------------------------------
     cycles     = [str(c).strip().lower() for c in (snakemake.params.get("cycles") or [])]
@@ -465,7 +463,6 @@ def main():
 
     pairs = sorted(set(lcoe_map) & set(pot_map))
     # --- Load and prepare regions -----------------------------------------
-    os.makedirs(figdir, exist_ok=True)
 
     gdf = gpd.read_parquet(shapes_path)
     if "shape_class" in gdf.columns:
@@ -529,14 +526,21 @@ def main():
 
     for (depth_category, price_bin), specs in grouped_specs.items():
         specs = sorted(specs, key=lambda s: list(TECH_LABELS).index(s["tech"]) if s["tech"] in TECH_LABELS else 999)
-        composite_choropleth_png(
-            panel_specs=specs,
-            path=os.path.join(
-                figdir,
-                f"potential_overview_{_safe_name(depth_category)}_bin_{_safe_name(price_bin)}.png",
-            ),
-            title_suffix=f"Potential per region — {depth_category}, LCOE bin {price_bin}",
-        )
+        if method == "cutoff" and depth_category == "all_depths" and price_bin == f"<= {lcoe_cutoff:g}":
+            composite_choropleth_png(
+                panel_specs=specs,
+                path=public_potential_overview,
+                title_suffix=f"Potential per region — {depth_category}, LCOE bin {price_bin}",
+            )
+        else:
+            composite_choropleth_png(
+                panel_specs=specs,
+                path=os.path.join(
+                    figdir,
+                    f"potential_overview_{_safe_name(depth_category)}_bin_{_safe_name(price_bin)}.png",
+                ),
+                title_suffix=f"Potential per region — {depth_category}, LCOE bin {price_bin}",
+            )
 
 
 if "snakemake" in dir():

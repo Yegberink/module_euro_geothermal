@@ -12,15 +12,6 @@ CRS_STRING = "EPSG:3857"
 
 RASTER_PATTERN = r"temperature(\d{4,5})\.asc"  # temperature0000.asc ... temperature10000.asc
 
-def list_depth_rasters(data_dir: Path, pattern=RASTER_PATTERN):
-    rasters = {}
-    for p in data_dir.glob("*.asc"):
-        m = re.match(pattern, p.name, flags=re.IGNORECASE)
-        if m:
-            depth_m = int(m.group(1))
-            rasters[depth_m] = p
-    return dict(sorted(rasters.items()))
-
 def read_raster(path: Path):
     ds = rasterio.open(path)
     arr = ds.read(1)
@@ -123,7 +114,6 @@ def main():
     })
     ds_out["temperature"].encoding["_FillValue"] = np.nan
 
-    out_nc.parent.mkdir(parents=True, exist_ok=True)
     ds_out.to_netcdf(out_nc)
 
     ref_ds.close()
@@ -131,7 +121,6 @@ def main():
     qc_path = Path(snakemake.output.qc_html)
 
     if qc_path is not None:
-        qc_path.parent.mkdir(parents=True, exist_ok=True)
         import plotly.graph_objects as go
 
         depths = da_interp["depth_m"].values.astype(float)

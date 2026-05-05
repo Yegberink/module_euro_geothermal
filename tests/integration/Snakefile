@@ -12,9 +12,9 @@ module module_geothermal:
         module_config["module_geothermal"]
     pathvars:
         logs="results/integration_test/logs",
-        resources="results/integration_test/resources",
+        resources="../../resources",
         results="results/integration_test/results",
-        shapes="results/integration_test/resources/user/{shapes}/shapes.parquet",
+        shapes="../../resources/user/{shapes}/shapes.parquet",
 
 
 use rule * from module_geothermal as module_geothermal_*
@@ -25,4 +25,4 @@ rule all:
         "A generic test case for the geothermal module."
     default_target: True
     input:
-        "results/integration_test/results/euro_all/scenarios/base/region_aggregation/geothermal_regions.parquet",
+        "results/integration_test/results/euro_all/base/geothermal_regions.parquet",

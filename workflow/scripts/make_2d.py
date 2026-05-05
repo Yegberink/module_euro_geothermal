@@ -90,48 +90,7 @@ def write_geotiff(
     else:
         da2 = da2.rio.write_nodata(nodata, inplace=False)
 
-    out_path.parent.mkdir(parents=True, exist_ok=True)
     da2.rio.to_raster(str(out_path), compress="deflate")
-
-
-def quick_map_png(
-    da: xr.DataArray,
-    out_path: Path,
-    *,
-    title: str = "",
-    x_name: str = "x",
-    y_name: str = "y",
-    vmin=None,
-    vmax=None,
-):
-    import matplotlib.pyplot as plt
-
-    if da.dims != (y_name, x_name):
-        da = da.transpose(y_name, x_name)
-
-    x = da[x_name].values
-    y = da[y_name].values
-    extent = [x.min(), x.max(), y.min(), y.max()]
-
-    fig = plt.figure()
-    ax = plt.gca()
-    im = ax.imshow(
-        da.values,
-        origin="lower",
-        extent=extent,
-        vmin=vmin,
-        vmax=vmax,
-        interpolation="nearest",
-        cmap=MAP_CMAP,
-    )
-    ax.set_title(title)
-    ax.set_xlabel(x_name)
-    ax.set_ylabel(y_name)
-    plt.colorbar(im, ax=ax, label=da.name or "")
-
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_path, dpi=150, bbox_inches="tight")
-    plt.close(fig)
 
 
 def _map_extent(da: xr.DataArray, x_name: str = "x", y_name: str = "y") -> list[float]:
@@ -276,7 +235,6 @@ def make_three_panel_map_figure(
     cbar.set_label(colorbar_label)
     cbar.ax.tick_params(length=0, labelsize=9)
 
-    out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
 
@@ -362,7 +320,6 @@ def make_cumulative_potential_figure(
     ax.spines["right"].set_visible(True)
     ax.grid(False)
 
-    out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
 
@@ -402,7 +359,6 @@ def make_average_potential_by_depth_figure(
     ax.spines["right"].set_visible(True)
     ax.grid(False)
 
-    out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
 
@@ -444,7 +400,6 @@ def make_lcoe_vs_potential_scatter_figure(
     ax.spines["right"].set_visible(True)
     ax.grid(False)
 
-    out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
 
@@ -552,7 +507,6 @@ def make_temperature_lcoe_potential_heatmap_figure(
     cbar = fig.colorbar(mesh, ax=axes, shrink=0.9, pad=0.04)
     cbar.set_label("Total potential per bin (GW)")
 
-    out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
 
@@ -594,7 +548,6 @@ def make_temperature_vs_lcoe_scatter_figure(
     ax.spines["right"].set_visible(True)
     ax.grid(False)
 
-    out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
 
@@ -670,7 +623,6 @@ def make_temperature_lcoe_potential_scatter_figure(
     cbar = fig.colorbar(scatter, ax=axes, shrink=0.9, pad=0.04)
     cbar.set_label("Potential per grid cell (GW)")
 
-    out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
 
@@ -795,7 +747,6 @@ def make_temperature_lcoe_isopotential_figure(
     cbar = fig.colorbar(contourf, ax=axes, shrink=0.9, pad=0.04)
     cbar.set_label("Cumulative potential above temperature and below LCOE (GW)")
 
-    out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
 
@@ -915,7 +866,6 @@ def make_lcoe_overview_figure(
         edgecolor="#AAAAAA", fontsize=8,
     )
 
-    out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
 # --------------------------
@@ -1052,7 +1002,6 @@ def main():
     # Choose an outdir for extra products (depth_at_min.tif, PNGs) from declared outputs.
     # This keeps module pathvars in control of where products are written.
     extra_outdir = Path(next(iter(lcoe_tifs))).parent
-    (extra_outdir / "figures").mkdir(parents=True, exist_ok=True)
 
     for cycle in cycles:
         cube_path = cubes_by_cycle.get(cycle)

@@ -1,6 +1,3 @@
-import os
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -98,12 +95,6 @@ def pretty_scenario_label(scen_df, scenario_name, baseline_name):
         return scenario_name
     param_label = SCENARIO_LABELS.get(param, str(param).replace("_", " "))
     return f"{param_label} ({base_value} -> {scenario_value})"
-
-
-def ensure_parent_dir(path):
-    outdir = os.path.dirname(str(path))
-    if outdir:
-        os.makedirs(outdir, exist_ok=True)
 
 
 def style_axes(ax, add_grid=True):
@@ -245,7 +236,6 @@ def make_metric_comparison_boxplot(
     ]
     ax.legend(handles=legend_handles, loc="upper right")
 
-    ensure_parent_dir(outfig)
     fig.savefig(outfig, bbox_inches="tight")
     plt.close(fig)
 
@@ -348,7 +338,6 @@ def make_baseline_dual_axis_boxplot(
     ]
     ax1.legend(handles=legend_handles, loc="upper left")
 
-    ensure_parent_dir(outfig)
     fig.savefig(outfig, bbox_inches="tight")
     plt.close(fig)
 

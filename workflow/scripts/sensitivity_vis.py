@@ -1,4 +1,3 @@
-import os
 import textwrap
 
 import pandas as pd
@@ -336,7 +335,6 @@ def make_single_baseline_plus_parameter_boxplot(
             clip_on=False,
         )
 
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
     fig.tight_layout()
     fig.savefig(out_path)
     plt.close(fig)
@@ -399,7 +397,6 @@ def make_top_switch_rate_barplot(df, top_n, out_path):
     for spine in ax.spines.values():
         spine.set_visible(True)
 
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
     fig.tight_layout()
     fig.savefig(out_path)
     plt.close(fig)

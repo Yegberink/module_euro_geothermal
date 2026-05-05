@@ -31,8 +31,6 @@ def crop_ds_bbox_projected(ds, x_name="x", y_name="y", bbox=None, pad_m=20_000):
     return ds.sel({x_name: x_slice, y_name: y_slice})
 
 def write_depth_slider_html(da, qc_path: Path, title="Cropped temperature voxel QC (depth slider)"):
-    qc_path.parent.mkdir(parents=True, exist_ok=True)
-
     import plotly.graph_objects as go
 
     depths = da["depth_m"].values.astype(float)
@@ -90,7 +88,6 @@ def main():
 
     ds_small = crop_ds_bbox_projected(ds, x_name="x", y_name="y", bbox=bbox, pad_m=pad_m)
 
-    out_nc.parent.mkdir(parents=True, exist_ok=True)
     ds_small.to_netcdf(out_nc)
     # QC plot (if requested by rule)
     qc_path = Path(snakemake.output.qc_html)

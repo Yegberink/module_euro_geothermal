@@ -10,7 +10,6 @@ pathvars:
     resources="resources",
     results="results",
     shapes="resources/user/{shapes}/shapes.parquet",
-    geothermal_regions="<results>/{shapes}/scenarios/{scenario}/region_aggregation/geothermal_regions.parquet",
 
 
 # Load the example configuration. This will be overridden by users.
@@ -27,7 +26,6 @@ with open(workflow.source_path("internal/settings.yaml"), "r") as f:
 
 # Add all your includes here.
 include: "rules/automatic.smk"
-include: "rules/dummy.smk"
 
 
 # Add additional files to be delivered alongside the workflow here.

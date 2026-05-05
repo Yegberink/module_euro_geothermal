@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 import rasterio
 import matplotlib.pyplot as plt
-from matplotlib.colors import ListedColormap, BoundaryNorm, to_hex, TwoSlopeNorm
+from matplotlib.colors import ListedColormap, BoundaryNorm, TwoSlopeNorm
 from matplotlib.patches import Patch
 from matplotlib.gridspec import GridSpec
 import matplotlib as mpl
@@ -105,8 +105,6 @@ def save_pixel_table(
       lcoe_base, lcoe_scen, potential_base, potential_scen, pct_change_lcoe
     """
     out_path = Path(out_path)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-
     rows = []
 
     ntech, ny, nx = base_lcoe_stack.shape
@@ -271,8 +269,6 @@ def save_4panel_figure(
     pct_change_sens,
 ):
     out_fig = Path(out_fig)
-    out_fig.parent.mkdir(parents=True, exist_ok=True)
-
     base_img = np.where(w_base >= 0, w_base.astype(np.float32), np.nan)
     scen_img = np.where(w_scen >= 0, w_scen.astype(np.float32), np.nan)
 
@@ -382,8 +378,6 @@ def save_4panel_figure(
 
 def save_1panel_figure(out_fig, scenario, baseline, sens_tech, pct_change_sens):
     out_fig = Path(out_fig)
-    out_fig.parent.mkdir(parents=True, exist_ok=True)
-
     fig = plt.figure(figsize=(6.8, 6.0), constrained_layout=False)
 
     L, R = 0.08, 0.88
@@ -492,7 +486,6 @@ def main():
         )
 
         out_metrics = Path(snakemake.output.metrics)
-        out_metrics.parent.mkdir(parents=True, exist_ok=True)
         with out_metrics.open("w") as f:
             f.write("metric\tvalue\n")
             f.write(f"scenario\t{scenario}\n")
@@ -606,7 +599,6 @@ def main():
 
     # Metrics TSV
     out_metrics = Path(snakemake.output.metrics)
-    out_metrics.parent.mkdir(parents=True, exist_ok=True)
 
     with out_metrics.open("w") as f:
         f.write("metric\tvalue\n")

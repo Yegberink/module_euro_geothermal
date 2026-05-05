@@ -74,7 +74,6 @@ def build_scenario_rows(cfg: dict[str, Any]) -> list[dict[str, Any]]:
 def write_scenario_table(rows: list[dict[str, Any]], output_path: str | Path) -> None:
     """Write scenario rows as a tab-separated table."""
     output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = _fieldnames(rows)
     with output_path.open("w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter="\t")

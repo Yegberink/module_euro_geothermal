@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 
 import numpy as np
@@ -9,30 +8,6 @@ from rasterio.crs import CRS
 from rasterio.transform import from_origin
 from rasterio.warp import Resampling, reproject
 from scipy.optimize import curve_fit
-
-def _ensure_parent(path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-def atomic_replace(src: Path, dst: Path) -> None:
-    """
-    Atomically replace dst with src (src must be on same filesystem).
-    """
-    _ensure_parent(dst)
-    os.replace(src, dst)
-
-def atomic_write_bytes(dst: Path, data: bytes) -> None:
-    """Atomic write for small-ish files (html/tsv/json/etc)."""
-    _ensure_parent(dst)
-    tmp = dst.with_suffix(dst.suffix + ".tmp")
-    with open(tmp, "wb") as f:
-        f.write(data)
-        f.flush()
-        os.fsync(f.fileno())
-    atomic_replace(tmp, dst)
-
-def atomic_write_text(dst: Path, text: str, encoding: str = "utf-8") -> None:
-    atomic_write_bytes(dst, text.encode(encoding))
-
 
 def _parse_scalar(value):
     if value is None or pd.isna(value):
@@ -475,8 +450,6 @@ def calculate_capacity_vec(
 
 
 def write_depth_slider_html(da3d, qc_path: Path, title: str, stride: int = 1):
-    qc_path.parent.mkdir(parents=True, exist_ok=True)
-
     da = da3d
     if stride and stride > 1:
         da = da.isel(y=slice(None, None, stride), x=slice(None, None, stride))
@@ -538,12 +511,6 @@ def main():
     cube_nc = Path(snakemake.output.cube)
     qc_lcoe = Path(snakemake.output.qc_lcoe) if hasattr(snakemake.output, "qc_lcoe") else None
     qc_pot = Path(snakemake.output.qc_potential) if hasattr(snakemake.output, "qc_potential") else None
-
-    cube_nc.parent.mkdir(parents=True, exist_ok=True)
-    if qc_lcoe is not None:
-        qc_lcoe.parent.mkdir(parents=True, exist_ok=True)
-    if qc_pot is not None:
-        qc_pot.parent.mkdir(parents=True, exist_ok=True)
 
     ds = xr.open_dataset(VOXEL_NC)
     crs_str = str(ds.attrs.get("crs", "")).strip() or "EPSG:3857"

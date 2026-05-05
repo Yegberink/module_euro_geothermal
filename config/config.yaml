@@ -147,24 +147,24 @@ active_sensitivity_parameters:
   - max_depth
   - EGS_cutoff
   - drilling_cost_curve
-  - stimulation_cost_per_doublet
-  - pump_cost
-  - lifetime
-  - capacity_factor
-  - fixed_OM_rate
-  - parasitic_fraction
-  - orc_money_per_kw
-  - flash_money_per_kw
-  - kalina_money_per_kw
-  - temp_turbine_out_ORC
-  - temp_turbine_out_Flash
-  - temp_turbine_out_Kalina
-  - include_egs
-  - SED_NAN_POLICY
-  - min_dt
-  - well_spacing
-  - flowrate_egs
-  - flowrate_conventional
+  # - stimulation_cost_per_doublet
+  # - pump_cost
+  # - lifetime
+  # - capacity_factor
+  # - fixed_OM_rate
+  # - parasitic_fraction
+  # - orc_money_per_kw
+  # - flash_money_per_kw
+  # - kalina_money_per_kw
+  # - temp_turbine_out_ORC
+  # - temp_turbine_out_Flash
+  # - temp_turbine_out_Kalina
+  # - include_egs
+  # - SED_NAN_POLICY
+  # - min_dt
+  # - well_spacing
+  # - flowrate_egs
+  # - flowrate_conventional
 
 # Sensitivity ranges.
 # For numeric parameters: max_dev_pct is the maximum deviation in percent from
