@@ -14,38 +14,10 @@ pathvars:
     shapes:
       default: "<resources>/user/{shapes}/shapes.parquet"
       description: GeoParquet polygons used to crop and aggregate geothermal potential.
-  intermediates:
-    scenario_table:
-      default: "<resources>/automatic/scenario_table.tsv"
-      description: Generated table of baseline and sensitivity scenarios.
-    temp_voxel:
-      default: "<results>/{shapes}/temp_voxel.nc"
-      description: Temperature voxel assembled from depth rasters.
-    clipped_temp_voxel:
-      default: "<results>/{shapes}/clipped_temp_voxel.nc"
-      description: Temperature voxel clipped to the requested shape extent.
-    lcoe_cube:
-      default: "<results>/{shapes}/scenarios/{scenario}/geothermal_lcoe/{cycle}_lcoe_cube.nc"
-      description: 3D geothermal LCOE and potential cube for a scenario and power cycle.
   results:
-    lcoe_2d:
-      default: "<results>/{shapes}/scenarios/{scenario}/2d_potential_cost/{cycle}_2d_lcoe.tif"
-      description: 2D LCOE raster for a scenario and power cycle.
-    potential_2d:
-      default: "<results>/{shapes}/scenarios/{scenario}/2d_potential_cost/{cycle}_2d_potential.tif"
-      description: 2D geothermal potential raster for a scenario and power cycle.
-    lcoe_2d_depth_category:
-      default: "<results>/{shapes}/scenarios/{scenario}/2d_potential_cost/{cycle}_2d_{cat}_lcoe.tif"
-      description: 2D LCOE raster for one depth category.
-    potential_2d_depth_category:
-      default: "<results>/{shapes}/scenarios/{scenario}/2d_potential_cost/{cycle}_2d_{cat}_potential.tif"
-      description: 2D geothermal potential raster for one depth category.
     geothermal_regions:
       default: "<results>/{shapes}/scenarios/{scenario}/region_aggregation/geothermal_regions.parquet"
       description: Geothermal LCOE and potential aggregated to user-provided polygons.
 wildcards:
   shapes: Name of the provided shape set.
   scenario: Scenario name; defaults to "base" and can include sensitivity scenarios.
-  cycle: Geothermal conversion cycle. Options are "orc", "flash", and "kalina".
-  cat: Depth category label used when method_2d_aggregation is "depth_categories".
-  depth: Temperature-grid depth token from the automatic resources.
