@@ -273,9 +273,8 @@ rule aggregate_to_regions:
         shapes="<shapes>",
     output:
         geoparquet="<results>/{shapes}/{scenario}/geothermal_regions.parquet",
-        potential_overview="<results>/{shapes}/{scenario}/potential_overview_all_depths_bin_75.png",
+        manifest="<results>/{shapes}/{scenario}/geothermal_region_outputs.tsv",
     params:
-        figdir="<resources>/automatic/{shapes}/scenarios/{scenario}/figures",
         cycles=cycles,
         method_region_aggregation=config["method_region_aggregation"],
         n_quantiles=config.get("n_quantiles", 5),
@@ -358,11 +357,6 @@ if config["perform_sensitivity"]:
             ),
             geothermal_regions=lambda wc: expand(
                 "<results>/{shapes}/{scenario}/geothermal_regions.parquet",
-                shapes=wc.shapes,
-                scenario=scenarios,
-            ),
-            potential_overviews=lambda wc: expand(
-                "<results>/{shapes}/{scenario}/potential_overview_all_depths_bin_75.png",
                 shapes=wc.shapes,
                 scenario=scenarios,
             ),

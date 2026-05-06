@@ -6,6 +6,7 @@ import rasterio
 from rasterio.crs import CRS
 from rasterio.warp import reproject, Resampling
 import xarray as xr
+import _schemas
 
 DEFAULT_NODATA = -9999.0
 CRS_STRING = "EPSG:3857"
@@ -41,6 +42,7 @@ def main():
     z_max = float(snakemake.params["z_max"])
     z_step = float(snakemake.params.get("z_step", 250))
     vert_interp_kind = snakemake.params.get("vert_interp_kind", "linear")
+    target_depths = np.arange(z_min, z_max + z_step, z_step, dtype=np.float32)
 
     depth_files = {}
     for f in snakemake.input.asc:
@@ -49,6 +51,25 @@ def main():
         if m:
             depth_files[int(m.group(1))] = p
     depth_files = dict(sorted(depth_files.items()))
+    if not depth_files:
+        da_interp = xr.DataArray(
+            np.full((len(target_depths), 1, 1), np.nan, dtype=np.float32),
+            coords={"depth_m": target_depths, "y": [0.0], "x": [0.0]},
+            dims=("depth_m", "y", "x"),
+            name="temperature",
+            attrs={"units": "degree_Celsius"},
+        )
+        ds_out = da_interp.to_dataset()
+        ds_out.attrs.update({
+            "description": "3D temperature voxel built from depth rasters",
+            "vertical_sampling_m": z_step,
+            "source_files": "",
+            "crs": CRS_STRING,
+        })
+        ds_out["temperature"].encoding["_FillValue"] = np.nan
+        ds_out.to_netcdf(out_nc)
+        _schemas.write_empty_html(snakemake.output.qc_html)
+        return
 
     ref_depth = min(depth_files.keys())
     ref_path = depth_files[ref_depth]
@@ -102,7 +123,6 @@ def main():
         attrs={"units": "degree_Celsius"},
     )
 
-    target_depths = np.arange(z_min, z_max + z_step, z_step, dtype=np.float32)
     da_interp = da.interp(depth_m=target_depths, method=vert_interp_kind)
 
     ds_out = da_interp.to_dataset()
@@ -124,6 +144,9 @@ def main():
         import plotly.graph_objects as go
 
         depths = da_interp["depth_m"].values.astype(float)
+        if depths.size == 0:
+            _schemas.write_empty_html(qc_path)
+            return
         # Use first slice as initial frame
         z0 = depths[0]
         img0 = da_interp.sel(depth_m=z0).values

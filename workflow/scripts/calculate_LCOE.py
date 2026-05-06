@@ -8,6 +8,7 @@ from rasterio.crs import CRS
 from rasterio.transform import from_origin
 from rasterio.warp import Resampling, reproject
 from scipy.optimize import curve_fit
+import _schemas
 
 def _parse_scalar(value):
     if value is None or pd.isna(value):
@@ -455,6 +456,9 @@ def write_depth_slider_html(da3d, qc_path: Path, title: str, stride: int = 1):
         da = da.isel(y=slice(None, None, stride), x=slice(None, None, stride))
 
     depths = da["depth_m"].values.astype(float)
+    if depths.size == 0 or da.sizes.get("x", 1) == 0 or da.sizes.get("y", 1) == 0:
+        _schemas.write_empty_html(qc_path)
+        return
     z0 = depths[0]
     img0 = da.sel(depth_m=z0).values
 

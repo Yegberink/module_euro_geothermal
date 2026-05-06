@@ -14,6 +14,7 @@ dependencies:
   - matplotlib=3.10.8
   - numpy
   - pandas=2.3.0
+  - pandera-geopandas=0.24.0
   - plotly=6.5.2
   - pyarrow=23.0.0
   - rasterio=1.5.0

@@ -5,8 +5,16 @@ from snakemake.utils import min_version, validate
 min_version("9.19")
 
 
+def deep_update(base, overrides):
+    for key, value in (overrides or {}).items():
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            deep_update(base[key], value)
+        else:
+            base[key] = value
+    return base
+
+
 pathvars:
-    logs="logs",
     resources="resources",
     results="results",
     shapes="resources/user/{shapes}/shapes.parquet",
@@ -14,6 +22,16 @@ pathvars:
 
 # Load the example configuration. This will be overridden by users.
 configfile: workflow.source_path("../config/config.yaml")
+
+
+# Fill stable module defaults before validation. This lets external workflows
+# provide only the settings that matter for their requested target.
+with open(workflow.source_path("internal/defaults.yaml"), "r") as f:
+    default_config = yaml.safe_load(f) or {}
+
+merged_config = deep_update(default_config, config)
+config.clear()
+config.update(merged_config)
 
 
 # Validate the configuration using the schema file.
@@ -32,6 +50,7 @@ include: "rules/automatic.smk"
 # This is needed e.g. for python code files that are never
 # explicitly used as a script or input in a snakemake rule.
 workflow.source_path("scripts/scenario_config.py")
+workflow.source_path("scripts/_schemas.py")
 
 
 rule all:

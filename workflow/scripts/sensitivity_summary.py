@@ -8,6 +8,7 @@ from matplotlib.colors import ListedColormap, BoundaryNorm, TwoSlopeNorm
 from matplotlib.patches import Patch
 from matplotlib.gridspec import GridSpec
 import matplotlib as mpl
+import _schemas
 
 # set some global style parameters for consistent, publication-quality figures
 mpl.rcParams["font.family"] = "serif"
@@ -144,16 +145,8 @@ def save_pixel_table(
 
         rows.append(df_i)
 
-    df = pd.concat(rows, ignore_index=True)
-
-    if out_path.suffix.lower() == ".tsv":
-        df.to_csv(out_path, sep="\t", index=False)
-    elif out_path.suffix.lower() == ".csv":
-        df.to_csv(out_path, index=False)
-    elif out_path.suffix.lower() == ".parquet":
-        df.to_parquet(out_path, index=False)
-    else:
-        df.to_parquet(out_path, index=False)
+    df = pd.concat(rows, ignore_index=True) if rows else _schemas.empty_boxplot_table()
+    _schemas.write_boxplot_table(df, out_path)
 
 
 # -----------------------------
@@ -522,6 +515,7 @@ def main():
             f.write(f"share_baseline_{cycles[0]}\t1.0\n")
             f.write(f"share_scenario_{cycles[0]}\t1.0\n")
 
+        _schemas.SensitivityMetricsSchema.validate(pd.read_csv(out_metrics, sep="\t", dtype=str))
         return
 
     # -----------------------------
@@ -643,6 +637,8 @@ def main():
         for i, t_from in enumerate(cycles):
             for j, t_to in enumerate(cycles):
                 f.write(f"transition_{t_from}_to_{t_to}\t{mat[i,j]}\n")
+
+    _schemas.SensitivityMetricsSchema.validate(pd.read_csv(out_metrics, sep="\t", dtype=str))
 
 if __name__ == "__main__":
     main()

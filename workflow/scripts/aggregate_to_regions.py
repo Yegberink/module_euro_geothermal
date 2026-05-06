@@ -25,6 +25,7 @@ import matplotlib.pyplot as plt
 
 import gregor
 import affine
+import _schemas
 
 
 plt.rcParams.update({
@@ -37,6 +38,28 @@ plt.rcParams.update({
 TECH_LABELS = {"orc": "ORC", "flash": "Flash", "kalina": "Kalina"}
 PANEL_LETTERS = "abcdefghijklmnopqrstuvwxyz"
 MAP_CMAP = "viridis"
+
+
+def write_empty_outputs(out_path: str, manifest_path: str, crs=None):
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    out_gdf = _schemas.GeothermalRegionsSchema.validate(
+        _schemas.empty_geothermal_regions(crs)
+    )
+    out_gdf.to_parquet(out_path, index=False)
+    _schemas.write_manifest(
+        pd.DataFrame(
+            [
+                {
+                    "kind": "combined_parquet",
+                    "depth_category": "all",
+                    "bin_id": "all",
+                    "price_bin": "all",
+                    "path": out_path,
+                }
+            ]
+        ),
+        manifest_path,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -198,6 +221,7 @@ def composite_choropleth_png(
         and spec["gdf"][spec["column"]].notna().sum() > 0
     ]
     if not valid_specs:
+        _schemas.write_blank_png(path)
         return
 
     values = []
@@ -207,6 +231,7 @@ def composite_choropleth_png(
         if len(vals):
             values.append(vals)
     if not values:
+        _schemas.write_blank_png(path)
         return
 
     vmin = float(min(v.min() for v in values))
@@ -280,6 +305,7 @@ def composite_choropleth_png(
     cbar.ax.tick_params(length=0, labelsize=9)
 
     fig.suptitle(title_suffix, y=0.96, fontsize=12)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     fig.savefig(path, dpi=200, bbox_inches="tight")
     plt.close(fig)
 
@@ -340,6 +366,7 @@ def aggregate_one_tech(
         if method == "cutoff":
             in_bin      = lcoe <= bin_right
             bin_label   = f"<= {bin_right:g}"
+            bin_id      = f"cutoff_{bin_right:g}"
             bin_left_v  = np.nan
             bin_right_v = float(bin_right)
         else:
@@ -349,6 +376,7 @@ def aggregate_one_tech(
             else:
                 in_bin = (lcoe >= bin_left) & (lcoe <= bin_right)
             bin_label   = f"{bin_left:g}-{bin_right:g}"
+            bin_id      = f"quantile_{bi + 1:02d}" if method == "quantiles" else f"bin_{bin_label}"
             bin_left_v  = float(bin_left)
             bin_right_v = float(bin_right)
 
@@ -386,6 +414,7 @@ def aggregate_one_tech(
             {
                 "tech": tech,
                 "depth_category": str(depth_category),
+                "bin_id": bin_id,
                 "price_bin": bin_label,
                 "column": "sum",
                 "gdf": agg_p.copy(),
@@ -396,6 +425,7 @@ def aggregate_one_tech(
             {
                 "technology":    tech,
                 "depth_category": str(depth_category),
+                "bin_id":        bin_id,
                 "region_id":     agg_p.index.astype(str),
                 "price_bin":     bin_label,
                 "bin_left":      bin_left_v,
@@ -414,7 +444,7 @@ def aggregate_one_tech(
     else:
         out_df = pd.DataFrame(
             columns=[
-                "technology", "depth_category", "region_id", "price_bin",
+                "technology", "depth_category", "bin_id", "region_id", "price_bin",
                 "bin_left", "bin_right", "potential", "mean_lcoe", "n_cells",
             ]
         )
@@ -432,8 +462,9 @@ def main():
     pot_tifs   = list(snakemake.input.pot_tifs)
     shapes_path = snakemake.input["shapes"]
     out_path   = snakemake.output["geoparquet"]
-    figdir     = snakemake.params["figdir"]
-    public_potential_overview = snakemake.output["potential_overview"]
+    manifest_path = snakemake.output["manifest"]
+    resultdir = os.path.dirname(out_path)
+    figdir = os.path.join(resultdir, "figures")
 
     # --- Parameters -------------------------------------------------------
     cycles     = [str(c).strip().lower() for c in (snakemake.params.get("cycles") or [])]
@@ -449,11 +480,11 @@ def main():
     pot_map:  dict[tuple, str] = {}
 
     for p in lcoe_tifs:
-        tech, cat, kind = _parse_2d_tif_name(p)
+        tech, cat, _ = _parse_2d_tif_name(p)
         lcoe_map[(tech, cat)] = p
 
     for p in pot_tifs:
-        tech, cat, kind = _parse_2d_tif_name(p)
+        tech, cat, _ = _parse_2d_tif_name(p)
         pot_map[(tech, cat)] = p
 
     # Optionally filter to the cycles listed in params
@@ -464,19 +495,24 @@ def main():
     pairs = sorted(set(lcoe_map) & set(pot_map))
     # --- Load and prepare regions -----------------------------------------
 
-    gdf = gpd.read_parquet(shapes_path)
+    gdf = _schemas.ShapeSchema.validate(gpd.read_parquet(shapes_path))
     if "shape_class" in gdf.columns:
         gdf = gdf[gdf["shape_class"] != "maritime"].copy()
+    if gdf.empty:
+        write_empty_outputs(out_path, manifest_path, gdf.crs)
+        return
 
     regions = dissolve_regions(gdf, region_id_col="shape_id")
+    if regions.empty:
+        write_empty_outputs(out_path, manifest_path, gdf.crs)
+        return
 
     # --- Aggregate each (tech, depth_category) pair -----------------------
     frames  = []
-    out_crs = None
     figure_specs_all = []
 
     for tech, depth_cat in pairs:
-        df, crs, fig_specs = aggregate_one_tech(
+        df, _, fig_specs = aggregate_one_tech(
             tech           = tech,
             lcoe_path      = lcoe_map[(tech, depth_cat)],
             pot_path       = pot_map[(tech, depth_cat)],
@@ -491,14 +527,8 @@ def main():
         if not df.empty:
             frames.append(df)
         figure_specs_all.extend(fig_specs)
-        out_crs = out_crs or crs
 
     # --- Assemble output GeoDataFrame -------------------------------------
-    _EMPTY_COLS = [
-        "technology", "depth_category", "region_id", "price_bin",
-        "bin_left", "bin_right", "potential", "mean_lcoe", "n_cells",
-    ]
-
     regions2 = regions.copy()
     regions2.index = regions2.index.astype(str)
     geom_col = regions2.geometry.name
@@ -511,36 +541,74 @@ def main():
             crs=regions2.crs,
         )
     else:
-        out_gdf = gpd.GeoDataFrame(
-            {**{c: pd.Series(dtype="object") for c in _EMPTY_COLS}, geom_col: []},
-            geometry=geom_col,
-            crs=regions2.crs,
-        )
+        write_empty_outputs(out_path, manifest_path, regions2.crs)
+        return
 
+    os.makedirs(resultdir, exist_ok=True)
+    out_gdf = _schemas.GeothermalRegionsSchema.validate(out_gdf)
     out_gdf.to_parquet(out_path, index=False)
+    output_rows = [
+        {
+            "kind": "combined_parquet",
+            "depth_category": "all",
+            "bin_id": "all",
+            "price_bin": "all",
+            "path": out_path,
+        }
+    ]
+
+    for (depth_category, bin_id), group in out_gdf.groupby(
+        ["depth_category", "bin_id"],
+        dropna=False,
+    ):
+        price_bin = ", ".join(sorted(group["price_bin"].astype(str).unique()))
+        split_path = os.path.join(
+            resultdir,
+            f"geothermal_regions_{_safe_name(depth_category)}_{_safe_name(bin_id)}.parquet",
+        )
+        group = _schemas.GeothermalRegionsSchema.validate(group)
+        group.to_parquet(
+            split_path,
+            index=False,
+        )
+        output_rows.append(
+            {
+                "kind": "split_parquet",
+                "depth_category": depth_category,
+                "bin_id": bin_id,
+                "price_bin": price_bin,
+                "path": split_path,
+            }
+        )
 
     grouped_specs: dict[tuple[str, str], list[dict]] = {}
     for spec in figure_specs_all:
-        key = (spec["depth_category"], spec["price_bin"])
+        key = (spec["depth_category"], spec["bin_id"])
         grouped_specs.setdefault(key, []).append(spec)
 
-    for (depth_category, price_bin), specs in grouped_specs.items():
+    for (depth_category, bin_id), specs in grouped_specs.items():
         specs = sorted(specs, key=lambda s: list(TECH_LABELS).index(s["tech"]) if s["tech"] in TECH_LABELS else 999)
-        if method == "cutoff" and depth_category == "all_depths" and price_bin == f"<= {lcoe_cutoff:g}":
-            composite_choropleth_png(
-                panel_specs=specs,
-                path=public_potential_overview,
-                title_suffix=f"Potential per region — {depth_category}, LCOE bin {price_bin}",
-            )
-        else:
-            composite_choropleth_png(
-                panel_specs=specs,
-                path=os.path.join(
-                    figdir,
-                    f"potential_overview_{_safe_name(depth_category)}_bin_{_safe_name(price_bin)}.png",
-                ),
-                title_suffix=f"Potential per region — {depth_category}, LCOE bin {price_bin}",
-            )
+        price_bin = ", ".join(sorted({str(spec["price_bin"]) for spec in specs}))
+        figure_path = os.path.join(
+            figdir,
+            f"potential_overview_{_safe_name(depth_category)}_{_safe_name(bin_id)}.png",
+        )
+        composite_choropleth_png(
+            panel_specs=specs,
+            path=figure_path,
+            title_suffix=f"Potential per region — {depth_category}, {bin_id}",
+        )
+        output_rows.append(
+            {
+                "kind": "figure",
+                "depth_category": depth_category,
+                "bin_id": bin_id,
+                "price_bin": price_bin,
+                "path": figure_path,
+            }
+        )
+
+    _schemas.write_manifest(pd.DataFrame(output_rows), manifest_path)
 
 
 if "snakemake" in dir():

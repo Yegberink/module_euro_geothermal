@@ -5,6 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.transforms as mtransforms
 from cycler import cycler
+import _schemas
 
 
 # =========================
@@ -454,6 +455,11 @@ def main():
         )
 
     df = pd.DataFrame(rows)
+    if df.empty:
+        _schemas.write_blank_png(snakemake.output["boxplot_lcoe_top6_winner"])
+        _schemas.write_blank_png(snakemake.output["boxplot_potential_top6_winner"])
+        _schemas.write_blank_png(snakemake.output["barplot_switch_rate_top6"])
+        return
 
     rank_params = (
         df.groupby("parameter")["metric_value"]
@@ -475,7 +481,12 @@ def main():
         scen_name = infer_scenario_from_path(p)
         scenario_to_boxplot[scen_name] = p
 
-    df_box_base = load_boxplot_table(scenario_to_boxplot[baseline])
+    df_box_base = _schemas.SensitivityBoxplotSchema.validate(load_boxplot_table(scenario_to_boxplot[baseline]))
+    if df_box_base.empty:
+        _schemas.write_blank_png(snakemake.output["boxplot_lcoe_top6_winner"])
+        _schemas.write_blank_png(snakemake.output["boxplot_potential_top6_winner"])
+        _schemas.write_blank_png(snakemake.output["barplot_switch_rate_top6"])
+        return
     baseline_winner_df = build_baseline_winner_df(df_box_base, baseline_name=baseline)
     baseline_lcoe_values = baseline_winner_df["winner_lcoe_base"].to_numpy()
     baseline_potential_values = baseline_winner_df["winner_potential_base"].to_numpy()
@@ -485,7 +496,9 @@ def main():
         param = row["parameter"]
         scen_name = row["scenario"]
 
-        df_box = load_boxplot_table(scenario_to_boxplot[scen_name])
+        df_box = _schemas.SensitivityBoxplotSchema.validate(load_boxplot_table(scenario_to_boxplot[scen_name]))
+        if df_box.empty:
+            continue
         scen_winner_df = build_scenario_winner_df(
             df_box,
             scenario_name=scen_name,
@@ -516,6 +529,12 @@ def main():
                 "transition_total_pixels": float(row["transition_total_pixels"]),
             }
         )
+
+    if not scenario_specs:
+        _schemas.write_blank_png(snakemake.output["boxplot_lcoe_top6_winner"])
+        _schemas.write_blank_png(snakemake.output["boxplot_potential_top6_winner"])
+        _schemas.write_blank_png(snakemake.output["barplot_switch_rate_top6"])
+        return
 
     rank_params_lcoe = (
         pd.DataFrame(

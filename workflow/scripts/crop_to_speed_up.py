@@ -1,6 +1,7 @@
 from pathlib import Path
 import geopandas as gpd
 import xarray as xr
+import _schemas
 
 CRS_TARGET = "EPSG:3857"
 
@@ -9,7 +10,7 @@ def load_shapes(path: Path) -> gpd.GeoDataFrame:
         gdf = gpd.read_parquet(path)
     else:
         gdf = gpd.read_file(path)
-    return gdf
+    return _schemas.ShapeSchema.validate(gdf)
 
 def bbox_3857_from_shapes(gdf: gpd.GeoDataFrame):
     gdf_3857 = gdf.to_crs(CRS_TARGET)
@@ -34,6 +35,9 @@ def write_depth_slider_html(da, qc_path: Path, title="Cropped temperature voxel 
     import plotly.graph_objects as go
 
     depths = da["depth_m"].values.astype(float)
+    if depths.size == 0 or da.sizes.get("x", 1) == 0 or da.sizes.get("y", 1) == 0:
+        _schemas.write_empty_html(qc_path)
+        return
     z0 = depths[0]
     img0 = da.sel(depth_m=z0).values
 
@@ -87,6 +91,8 @@ def main():
     bbox = bbox_3857_from_shapes(gdf)
 
     ds_small = crop_ds_bbox_projected(ds, x_name="x", y_name="y", bbox=bbox, pad_m=pad_m)
+    if ds_small.sizes.get("x", 1) == 0 or ds_small.sizes.get("y", 1) == 0:
+        ds_small = _schemas.empty_dataset_like(ds.isel(x=slice(0, 1), y=slice(0, 1)))
 
     ds_small.to_netcdf(out_nc)
     # QC plot (if requested by rule)

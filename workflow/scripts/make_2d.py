@@ -9,6 +9,7 @@ import re
 import matplotlib.pyplot as plt
 from matplotlib.colors import BoundaryNorm, ListedColormap
 from matplotlib.patches import Patch
+import _schemas
 
 
 plt.rcParams.update({
@@ -83,6 +84,8 @@ def write_geotiff(
     x_name: str = "x",
     y_name: str = "y",
 ):
+    if da.sizes.get(y_name, 1) == 0 or da.sizes.get(x_name, 1) == 0:
+        da = _schemas.empty_raster_dataarray(da, x_name=x_name, y_name=y_name)
     da2 = _ensure_raster_metadata(da, x_name=x_name, y_name=y_name, crs=crs)
 
     if np.isnan(nodata):
@@ -426,6 +429,7 @@ def make_temperature_lcoe_potential_heatmap_figure(
             all_lcoe.append(lcoe[mask])
 
     if not all_temp or not all_lcoe:
+        _schemas.write_blank_png(out_path)
         return
 
     temp_all = np.concatenate(all_temp)
@@ -437,8 +441,10 @@ def make_temperature_lcoe_potential_heatmap_figure(
     lcoe_max = float(np.nanmax(lcoe_all))
 
     if not np.isfinite(temp_min) or not np.isfinite(temp_max) or temp_min == temp_max:
+        _schemas.write_blank_png(out_path)
         return
     if not np.isfinite(lcoe_min) or not np.isfinite(lcoe_max) or lcoe_min == lcoe_max:
+        _schemas.write_blank_png(out_path)
         return
 
     temp_edges = np.linspace(temp_min, temp_max, n_temp_bins + 1)
@@ -466,6 +472,7 @@ def make_temperature_lcoe_potential_heatmap_figure(
         vmax = max(vmax, float(np.nanmax(heatmap)))
 
     if vmax <= 0:
+        _schemas.write_blank_png(out_path)
         return
 
     fig, axes = plt.subplots(1, len(cycles), figsize=(4.8 * len(cycles), 4.2), sharex=True, sharey=True)
@@ -567,10 +574,12 @@ def make_temperature_lcoe_potential_scatter_figure(
             potential_arrays.append(pot)
 
     if not potential_arrays:
+        _schemas.write_blank_png(out_path)
         return
 
     vmax = float(max(np.nanmax(p) for p in potential_arrays))
     if not np.isfinite(vmax) or vmax <= 0:
+        _schemas.write_blank_png(out_path)
         return
 
     fig, axes = plt.subplots(1, len(cycles), figsize=(4.8 * len(cycles), 4.2), sharex=True, sharey=True)
@@ -617,6 +626,7 @@ def make_temperature_lcoe_potential_scatter_figure(
 
     if scatter is None:
         plt.close(fig)
+        _schemas.write_blank_png(out_path)
         return
 
     axes[0].set_ylabel("Minimized LCOE (€/MWh$_e$)")
@@ -649,6 +659,7 @@ def make_temperature_lcoe_isopotential_figure(
             all_lcoe.append(lcoe[mask])
 
     if not all_temp or not all_lcoe:
+        _schemas.write_blank_png(out_path)
         return
 
     temp_all = np.concatenate(all_temp)
@@ -660,8 +671,10 @@ def make_temperature_lcoe_isopotential_figure(
     lcoe_max = float(np.nanmax(lcoe_all))
 
     if not np.isfinite(temp_min) or not np.isfinite(temp_max) or temp_min == temp_max:
+        _schemas.write_blank_png(out_path)
         return
     if not np.isfinite(lcoe_min) or not np.isfinite(lcoe_max) or lcoe_min == lcoe_max:
+        _schemas.write_blank_png(out_path)
         return
 
     temp_edges = np.linspace(temp_min, temp_max, n_temp_bins + 1)
@@ -692,11 +705,13 @@ def make_temperature_lcoe_isopotential_figure(
         vmax = max(vmax, float(np.nanmax(surface)))
 
     if vmax <= 0:
+        _schemas.write_blank_png(out_path)
         return
 
     n_levels = 7
     levels = np.linspace(0.0, vmax, n_levels + 1)
     if np.allclose(levels[0], levels[-1]):
+        _schemas.write_blank_png(out_path)
         return
 
     fig, axes = plt.subplots(1, len(cycles), figsize=(4.8 * len(cycles), 4.2), sharex=True, sharey=True)

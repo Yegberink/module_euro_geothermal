@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
+import _schemas
 
 
 plt.rcParams.update({
@@ -207,6 +208,11 @@ def make_metric_comparison_boxplot(
 
         pos += 0.8
 
+    if not data:
+        plt.close(fig)
+        _schemas.write_blank_png(outfig)
+        return
+
     draw_boxplot(ax, data=data, positions=positions, colors=colors)
 
     ax.set_xticks(xticks)
@@ -345,13 +351,13 @@ def make_baseline_dual_axis_boxplot(
 def main():
     scen_df = load_scenario_table(snakemake.input["scenario_table"])
     inpath = snakemake.input["boxplot_data"]
-    df = load_boxplot_table(inpath)
+    df = _schemas.SensitivityBoxplotSchema.validate(load_boxplot_table(inpath))
+    if df.empty:
+        _schemas.write_blank_png(snakemake.output["base_fig"])
+        _schemas.write_blank_png(snakemake.output["lcoe_fig"])
+        _schemas.write_blank_png(snakemake.output["potential_fig"])
+        return
 
-    req = {
-        "scenario", "baseline", "tech",
-        "lcoe_base", "lcoe_scen",
-        "potential_base", "potential_scen",
-    }
     df = df.copy()
     df["tech"] = df["tech"].astype(str)
 
