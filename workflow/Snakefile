@@ -15,9 +15,7 @@ def deep_update(base, overrides):
 
 
 pathvars:
-    resources="resources",
-    results="results",
-    shapes="resources/user/{shapes}/shapes.parquet",
+    shapes="<resources>/user/{shapes}/shapes.parquet",
 
 
 # Load the example configuration. This will be overridden by users.
@@ -26,9 +24,10 @@ configfile: workflow.source_path("../config/config.yaml")
 
 # Fill stable module defaults before validation. This lets external workflows
 # provide only the settings that matter for their requested target.
-with open(workflow.source_path("internal/defaults.yaml"), "r") as f:
-    default_config = yaml.safe_load(f) or {}
+with open(workflow.source_path("internal/settings.yaml"), "r") as f:
+    internal = yaml.safe_load(f) or {}
 
+default_config = internal.get("defaults", {})
 merged_config = deep_update(default_config, config)
 config.clear()
 config.update(merged_config)
@@ -36,10 +35,6 @@ config.update(merged_config)
 
 # Validate the configuration using the schema file.
 validate(config, workflow.source_path("internal/config.schema.yaml"))
-
-# Load internal settings separately so users cannot modify them.
-with open(workflow.source_path("internal/settings.yaml"), "r") as f:
-    internal = yaml.safe_load(f)
 
 
 # Add all your includes here.
