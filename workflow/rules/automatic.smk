@@ -27,8 +27,14 @@ scenarios_no_base = [s for s in scenarios if s != baseline_scenario]
 make_2d_figure_outputs = (
     {
         "overview_fig": "<results>/{shapes}/{scenario}/lcoe_overview.png",
+        "potential_presentation_fig": "<results>/{shapes}/{scenario}/potential_overview_presentation.png",
         "scatter_fig": "<resources>/automatic/{shapes}/scenarios/{scenario}/figures/lcoe_vs_potential_scatter.png",
+        "technology_boxplot_fig": "<resources>/automatic/{shapes}/scenarios/{scenario}/figures/lcoe_potential_boxplots.png",
         "avg_potential_depth_fig": "<resources>/automatic/{shapes}/scenarios/{scenario}/figures/average_potential_per_cell_by_depth.png",
+        "depth_profile_figs": expand(
+            "<resources>/automatic/{{shapes}}/scenarios/{{scenario}}/figures/depth_profile_{cycle}.png",
+            cycle=cycles,
+        ),
         "cumulative_curve_fig": "<resources>/automatic/{shapes}/scenarios/{scenario}/figures/cumulative_potential_vs_lcoe.png",
         "cumulative_depth_fig": "<resources>/automatic/{shapes}/scenarios/{scenario}/figures/cumulative_potential_vs_depth.png",
         "cumulative_temperature_fig": "<resources>/automatic/{shapes}/scenarios/{scenario}/figures/cumulative_potential_vs_temperature.png",
@@ -127,6 +133,7 @@ rule calculate_LCOE:
 
 rule make_2d_base:
     input:
+        shapes="<shapes>",
         cubes=lambda wc: expand(
             rules.calculate_LCOE.output.cube,
             shapes=wc.shapes,
@@ -167,11 +174,24 @@ rule make_2d_base:
                 cat=depth_categories_labels,
             )
         ),
+        temp_tifs=(
+            expand(
+                "<resources>/automatic/{shapes}/scenarios/{scenario}/documents/{cycle}_2d_temperature_at_min.tif",
+                shapes="{shapes}",
+                scenario="{scenario}",
+                cycle=cycles,
+            )
+            if config["method_2d_aggregation"] == "LCOE_minimization"
+            else []
+        ),
     params:
         method_2d_aggregation=config["method_2d_aggregation"],
         depth_categories=config.get("depth_categories"),
         depthcat_labels=depth_categories_labels,
         cycles=cycles,
+        max_depth=lambda wc: next(
+            row["max_depth"] for row in scenario_rows if row["scenario"] == wc.scenario
+        ),
     conda:
         "../envs/module_geothermal.yaml"
     wildcard_constraints:
@@ -182,6 +202,7 @@ rule make_2d_base:
 
 rule make_2d_scenario:
     input:
+        shapes="<shapes>",
         cubes=lambda wc: expand(
             rules.calculate_LCOE.output.cube,
             shapes=wc.shapes,
@@ -227,6 +248,9 @@ rule make_2d_scenario:
         depth_categories=config.get("depth_categories"),
         depthcat_labels=depth_categories_labels,
         cycles=cycles,
+        max_depth=lambda wc: next(
+            row["max_depth"] for row in scenario_rows if row["scenario"] == wc.scenario
+        ),
     conda:
         "../envs/module_geothermal.yaml"
     wildcard_constraints:
@@ -341,6 +365,31 @@ rule sensitivity_boxplot_per_scenario:
 
 
 if config["perform_sensitivity"]:
+
+    rule orc_temperature_bin_overview:
+        input:
+            scenario_table=rules.build_scenario_table.output.tsv,
+            shapes="<shapes>",
+            temperatures=lambda wc: expand(
+                "<resources>/automatic/{shapes}/scenarios/{scenario}/documents/orc_2d_temperature_at_min.tif",
+                shapes=wc.shapes,
+                scenario=scenarios,
+            ),
+            potentials=lambda wc: expand(
+                "<resources>/automatic/{shapes}/scenarios/{scenario}/documents/orc_2d_potential.tif",
+                shapes=wc.shapes,
+                scenario=scenarios,
+            ),
+        output:
+            fig="<results>/{shapes}/orc_potential_temperature_bins_by_scenario.png",
+            data="<results>/{shapes}/orc_potential_temperature_bins_by_scenario.tsv",
+        params:
+            scenarios=scenarios,
+            bin_width=10,
+        conda:
+            "../envs/module_geothermal.yaml"
+        script:
+            "../scripts/orc_temperature_bin_overview.py"
 
     rule sensitivity_vis:
         input:

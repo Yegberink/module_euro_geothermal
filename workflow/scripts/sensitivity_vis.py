@@ -18,10 +18,10 @@ plt.rcParams.update({
     "font.serif": ["Times New Roman"],
     "mathtext.fontset": "stix",
     "axes.unicode_minus": False,
-    "font.size": 11,
-    "axes.labelsize": 12,
-    "axes.titlesize": 13,
-    "legend.fontsize": 10,
+    "font.size": 12,
+    "axes.labelsize": 14,
+    "axes.titlesize": 15,
+    "legend.fontsize": 11,
     "axes.linewidth": 0.8,
     "xtick.direction": "out",
     "ytick.direction": "out",
@@ -43,6 +43,7 @@ PARAM_LABELS = {
     "temp_turbine_out_Flash": "Flash turbine outlet temp",
     "temp_turbine_out_Kalina": "Kalina turbine outlet temp",
     "stimulation_cost_per_doublet": "Stimulation cost per doublet",
+    "well_spacing": "Well spacing",
     "pump_cost": "Pump cost",
     "lifetime": "Lifetime",
     "capacity_factor": "Capacity factor",
@@ -167,13 +168,19 @@ def make_parameter_box_label(param, base_value, scenario_value):
 def summarise_lcoe(values):
     vals = np.asarray(values, dtype=float)
     vals = vals[np.isfinite(vals)]
-    return f"{np.round(np.nanmean(vals), 0):.0f} €/MWh" if vals.size else ""
+    return f"Mean: {np.round(np.nanmean(vals), 0):.0f} €/MWh" if vals.size else ""
 
 
-def summarise_potential_tw(values):
+def summarise_potential_tw(values, baseline_total=None):
     vals = np.asarray(values, dtype=float)
     vals = vals[np.isfinite(vals)]
-    return f"{(np.nansum(vals) / 1e6):.2f} TW" if vals.size else ""
+    if not vals.size:
+        return ""
+    total = float(np.nansum(vals))
+    label = f"Total: {total / 1e6:.2f} TW"
+    if baseline_total is not None and not np.isclose(float(baseline_total), 0.0):
+        label += f"\n({100.0 * total / float(baseline_total):.0f}% of baseline)"
+    return label
 
 
 def mean_absolute_change(base_values, scenario_values):
@@ -248,6 +255,14 @@ def sort_representative_scenarios(df):
     ).reset_index(drop=True)
 
 
+def include_required_parameters(selected, available, required):
+    out = list(selected)
+    for param in required:
+        if param in available.index and param not in out:
+            out.append(param)
+    return out
+
+
 def make_single_baseline_plus_parameter_boxplot(
     specs,
     value_key,
@@ -283,8 +298,8 @@ def make_single_baseline_plus_parameter_boxplot(
         summaries.append(summary_fn(vals) if summary_fn is not None else None)
         pos += 1
 
-    fig_w = max(9, 1.7 * len(data))
-    fig, ax = plt.subplots(figsize=(fig_w, 7))
+    fig_w = max(12, 2.25 * len(data))
+    fig, ax = plt.subplots(figsize=(fig_w, 8.5))
 
     bp = ax.boxplot(
         data,
@@ -309,8 +324,9 @@ def make_single_baseline_plus_parameter_boxplot(
             item.set_linewidth(0.8)
 
     ax.set_xticks(positions)
-    ax.set_xticklabels(labels, rotation=0)
-    ax.set_ylabel(ylabel)
+    ax.set_xticklabels(labels, rotation=0, fontsize=15)
+    ax.set_ylabel(ylabel, fontsize=18)
+    ax.tick_params(axis="y", labelsize=16)
     ax.grid(False)
 
     for spine in ax.spines.values():
@@ -318,7 +334,7 @@ def make_single_baseline_plus_parameter_boxplot(
 
     ymin, ymax = ax.get_ylim()
     yrange = ymax - ymin if ymax > ymin else 1.0
-    ax.set_ylim(ymin, ymax + 0.04 * yrange)
+    ax.set_ylim(ymin, ymax + 0.08 * yrange)
 
     text_transform = mtransforms.blended_transform_factory(ax.transData, ax.transAxes)
 
@@ -332,7 +348,7 @@ def make_single_baseline_plus_parameter_boxplot(
             transform=text_transform,
             ha="center",
             va="bottom",
-            fontsize=10,
+            fontsize=14,
             clip_on=False,
         )
 
@@ -341,7 +357,7 @@ def make_single_baseline_plus_parameter_boxplot(
     plt.close(fig)
 
 
-def make_top_switch_rate_barplot(df, top_n, out_path):
+def make_top_switch_rate_barplot(df, top_n, out_path, required_params=None):
     """
     Plot a horizontal bar chart for the scenarios with the largest pixel switch rate.
 
@@ -356,7 +372,17 @@ def make_top_switch_rate_barplot(df, top_n, out_path):
     plot_df = plot_df.sort_values(
         ["transition_total_pixels", "sort_magnitude", "parameter"],
         ascending=[False, False, True],
-    ).head(top_n)
+    )
+    required_params = required_params or []
+    required_df = plot_df.loc[plot_df["parameter"].isin(required_params)]
+    plot_df = (
+        pd.concat([plot_df.head(top_n), required_df], ignore_index=True)
+        .drop_duplicates(subset=["parameter"], keep="first")
+        .sort_values(
+            ["transition_total_pixels", "sort_magnitude", "parameter"],
+            ascending=[False, False, True],
+        )
+    )
 
     labels = plot_df["label"].tolist()
     values = plot_df["transition_total_pixels"].to_numpy(dtype=float) * 100.0
@@ -416,6 +442,7 @@ def main():
     top_n = int(snakemake.params.get("top_n", 6))
     bar_top_n = int(snakemake.params.get("bar_top_n", 4))
     include_all = bool(snakemake.params.get("include_all", False))
+    required_params = ["well_spacing", "stimulation_cost_per_doublet"]
 
     scen_df = load_scenario_table(scenario_table)
     scenario_to_metric = {}
@@ -471,6 +498,7 @@ def main():
         selected_params = rank_params.head(top_n).index.tolist()
     else:
         selected_params = rank_params.index.tolist()
+    selected_params = include_required_parameters(selected_params, rank_params, required_params)
 
     # -----------------------------------
     # Boxplot selection: baseline once +
@@ -490,6 +518,8 @@ def main():
     baseline_winner_df = build_baseline_winner_df(df_box_base, baseline_name=baseline)
     baseline_lcoe_values = baseline_winner_df["winner_lcoe_base"].to_numpy()
     baseline_potential_values = baseline_winner_df["winner_potential_base"].to_numpy()
+    finite_baseline_potential = baseline_potential_values[np.isfinite(baseline_potential_values)]
+    baseline_potential_total = float(np.nansum(finite_baseline_potential))
 
     scenario_specs = []
     for _, row in df.iterrows():
@@ -675,9 +705,12 @@ def main():
     make_single_baseline_plus_parameter_boxplot(
         specs=box_specs_potential,
         value_key="potential_values",
-        ylabel="Potential (GW)",
+        ylabel="Potential (GW per 10x10km grid cell)",
         out_path=snakemake.output["boxplot_potential_top6_winner"],
-        summary_fn=summarise_potential_tw,
+        summary_fn=lambda values: summarise_potential_tw(
+            values,
+            baseline_total=baseline_potential_total,
+        ),
     )
 
     df_switch = df.copy()
@@ -693,6 +726,7 @@ def main():
         df=switch_df,
         top_n=bar_top_n,
         out_path=snakemake.output["barplot_switch_rate_top6"],
+        required_params=required_params,
     )
 
 

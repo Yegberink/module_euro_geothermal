@@ -6,7 +6,10 @@ from pathlib import Path
 import rioxarray
 import os
 import re
+import shutil
 import matplotlib.pyplot as plt
+import geopandas as gpd
+from rasterio.features import geometry_mask
 from matplotlib.colors import BoundaryNorm, ListedColormap
 from matplotlib.patches import Patch
 import _schemas
@@ -17,6 +20,12 @@ plt.rcParams.update({
     "font.serif": ["Times New Roman"],
     "mathtext.fontset": "stix",
     "axes.unicode_minus": False,
+    "font.size": 12,
+    "axes.labelsize": 13,
+    "axes.titlesize": 14,
+    "legend.fontsize": 11,
+    "xtick.labelsize": 11,
+    "ytick.labelsize": 11,
 })
 
 TECH_LABELS = {"orc": "ORC", "flash": "Flash", "kalina": "Kalina"}
@@ -25,8 +34,12 @@ PANEL_LETTERS = "abcdefghijklmnopqrstuvwxyz"
 LCOE_BOUNDS = [0.0, 100.0, 200.0, 400.0, 600.0, 1.0e9]
 LCOE_TICKS = [50.0, 150.0, 300.0, 500.0, 800.0]
 LCOE_TICKLABELS = ["0-100", "100-200", "200-400", "400-600", "≥600"]
-LCOE_COLORS = ["#481567", "#414487", "#2A788E", "#22A884", "#FDE725"]
+LCOE_COLORS = ["#B2182B", "#EF8A62", "#FDDBC7", "#F0F0F0", "#D9D9D9"]
 MAP_CMAP = "viridis"
+MAP_BACKGROUND_COLOR = "#DCEEF4"
+UNAVAILABLE_COLOR = "#D9D9D9"
+LCOE_UNAVAILABLE_COLOR = "#BDBDBD"
+COUNTRY_EDGE_COLOR = "#4D5960"
 
 # --------------------------
 # Data classes
@@ -113,6 +126,83 @@ def _clean_map_axes(ax):
         spine.set_edgecolor("#666666")
 
 
+def _map_crs(da: xr.DataArray):
+    """Return a raster CRS without requiring it to be present."""
+    try:
+        return da.rio.crs
+    except (AttributeError, ValueError):
+        return None
+
+
+def _country_layer(shapes_path: Path, reference_da: xr.DataArray) -> gpd.GeoDataFrame:
+    countries = gpd.read_parquet(shapes_path)
+    if "shape_class" in countries.columns:
+        countries = countries.loc[countries["shape_class"] == "land"].copy()
+    target_crs = _map_crs(reference_da)
+    if target_crs is not None and countries.crs != target_crs:
+        countries = countries.to_crs(target_crs)
+    return countries
+
+
+def _plot_values(
+    da: xr.DataArray,
+    countries: gpd.GeoDataFrame,
+    value_scale: float = 1.0,
+) -> np.ndarray:
+    """Return map values masked to the included land polygons."""
+    raster = da.transpose("y", "x")
+    inside_countries = geometry_mask(
+        countries.geometry,
+        out_shape=(raster.sizes["y"], raster.sizes["x"]),
+        transform=raster.rio.transform(),
+        invert=True,
+    )
+    values = np.asarray(raster.values, dtype=np.float32) / value_scale
+    return np.where(inside_countries, values, np.nan)
+
+
+def _nice_scale_length(extent: list[float], crs) -> tuple[float, str]:
+    width = extent[1] - extent[0]
+    if crs is not None and crs.is_geographic:
+        mean_latitude = 0.5 * (extent[2] + extent[3])
+        width_km = width * 111.32 * max(np.cos(np.deg2rad(mean_latitude)), 0.2)
+        units_per_km = width / width_km
+    else:
+        units_per_km = 1000.0
+        width_km = width / units_per_km
+    target = max(width_km * 0.18, 1e-9)
+    magnitude = 10 ** np.floor(np.log10(target))
+    length_km = max(v for v in (1, 2, 5, 10) if v * magnitude <= target) * magnitude
+    label = f"{length_km:g} km"
+    return length_km * units_per_km, label
+
+
+def _decorate_map(
+    ax,
+    countries: gpd.GeoDataFrame,
+    extent: list[float],
+    crs,
+    unavailable_color: str = UNAVAILABLE_COLOR,
+):
+    ax.set_facecolor(MAP_BACKGROUND_COLOR)
+    countries.plot(ax=ax, facecolor=unavailable_color, edgecolor="none", zorder=1)
+    countries.boundary.plot(ax=ax, color=COUNTRY_EDGE_COLOR, linewidth=0.35, zorder=3)
+
+    scale_length, scale_label = _nice_scale_length(extent, crs)
+    x0 = extent[0] + 0.055 * (extent[1] - extent[0])
+    y0 = extent[2] + 0.055 * (extent[3] - extent[2])
+    ax.plot([x0, x0 + scale_length], [y0, y0], color="#202020", lw=2.2, zorder=5)
+    ax.plot([x0, x0], [y0, y0 + 0.012 * (extent[3] - extent[2])], color="#202020", lw=1, zorder=5)
+    ax.plot([x0 + scale_length, x0 + scale_length], [y0, y0 + 0.012 * (extent[3] - extent[2])], color="#202020", lw=1, zorder=5)
+    ax.text(x0 + scale_length / 2, y0 + 0.018 * (extent[3] - extent[2]), scale_label,
+            ha="center", va="bottom", fontsize=11, color="#202020", zorder=5)
+    ax.annotate("N", xy=(0.94, 0.91), xytext=(0.94, 0.78), xycoords="axes fraction",
+                ha="center", va="center", fontsize=11, fontweight="bold",
+                arrowprops=dict(arrowstyle="-|>", color="#202020", lw=1.2), zorder=5)
+    ax.set_xlim(extent[0], extent[1])
+    ax.set_ylim(extent[2], extent[3])
+
+
 def _winner_map(lcoe_maps: dict[str, xr.DataArray], cycles: list[str]) -> np.ndarray:
     stack = np.stack([lcoe_maps[cycle].values for cycle in cycles], axis=0).astype(np.float32)
     finite = np.isfinite(stack)
@@ -172,6 +262,7 @@ def make_three_panel_map_figure(
     colorbar_label: str,
     cmap: str,
     value_scale: float = 1.0,
+    countries: gpd.GeoDataFrame,
 ):
     n_panels = len(cycles)
     ncols = n_panels
@@ -181,35 +272,33 @@ def make_three_panel_map_figure(
     extent = _map_extent(reference_da)
     data_aspect = (extent[3] - extent[2]) / (extent[1] - extent[0])
 
-    panel_w = 4.5
-    panel_h = panel_w * data_aspect
+    # Widescreen PowerPoint canvas (16:9), with three equal map panels.
+    fig_w = 13.333
+    fig_h = 7.5
+    panel_w = 4.25
+    panel_h = min(panel_w * data_aspect, 6.35)
     gap = 0.15
-    margin_l = 0.1
-    margin_r = 0.1
-    margin_t = 0.1
+    margin_l = (fig_w - ncols * panel_w - (ncols - 1) * gap) / 2
     margin_b = 0.9
-
-    fig_w = margin_l + ncols * panel_w + (ncols - 1) * gap + margin_r
-    fig_h = margin_t + nrows * panel_h + (nrows - 1) * gap + margin_b
 
     fig = plt.figure(figsize=(fig_w, fig_h))
 
     def make_ax(col):
         x0 = (margin_l + col * (panel_w + gap)) / fig_w
-        y0 = margin_b / fig_h
+        y0 = (margin_b + (fig_h - margin_b - panel_h) / 2) / fig_h
         w = panel_w / fig_w
         h = panel_h / fig_h
         return fig.add_axes([x0, y0, w, h])
 
     axes = [make_ax(i) for i in range(n_panels)]
-    scaled_arrays = [(maps[cycle].values / value_scale).astype(np.float32) for cycle in cycles]
+    scaled_arrays = [_plot_values(maps[cycle], countries, value_scale) for cycle in cycles]
     vmin, vmax = _finite_limits(scaled_arrays)
     map_cmap = plt.get_cmap(cmap).copy()
-    map_cmap.set_bad("#D9D9D9")
+    map_cmap.set_bad((0, 0, 0, 0))
 
     for idx, cycle in enumerate(cycles):
         ax = axes[idx]
-        ax.set_facecolor("#D9D9D9")
+        _decorate_map(ax, countries, extent, _map_crs(reference_da))
         im = ax.imshow(
             scaled_arrays[idx],
             origin="lower",
@@ -218,6 +307,7 @@ def make_three_panel_map_figure(
             cmap=map_cmap,
             vmin=vmin,
             vmax=vmax,
+            zorder=2,
         )
         ax.text(
             0.02,
@@ -226,19 +316,20 @@ def make_three_panel_map_figure(
             transform=ax.transAxes,
             ha="left",
             va="top",
-            fontsize=11,
+            fontsize=14,
             fontweight="bold",
             color="black",
         )
         _clean_map_axes(ax)
         ax.set_aspect("equal")
 
-    cax = fig.add_axes([0.14, 0.075, 0.72, 0.04])
+    cbar_y0 = max(0.06, axes[0].get_position().y0 - 0.08)
+    cax = fig.add_axes([0.14, cbar_y0, 0.72, 0.045])
     cbar = fig.colorbar(im, cax=cax, orientation="horizontal")
-    cbar.set_label(colorbar_label)
-    cbar.ax.tick_params(length=0, labelsize=9)
+    cbar.set_label(colorbar_label, fontsize=13)
+    cbar.ax.tick_params(length=0, labelsize=12)
 
-    fig.savefig(out_path, dpi=200, bbox_inches="tight")
+    fig.savefig(out_path, dpi=200)
     plt.close(fig)
 
 
@@ -253,7 +344,7 @@ def make_cumulative_potential_figure(
     descending: bool = False,
     ylabel: str = "Cumulative potential below cost (GW)",
 ):
-    fig, ax = plt.subplots(figsize=(6, 4))
+    fig, ax = plt.subplots(figsize=(7, 4.8))
     is_depth_curve = "Depth" in xlabel
     is_temperature_curve = "Temperature" in xlabel
 
@@ -271,7 +362,7 @@ def make_cumulative_potential_figure(
             x,
             y,
             color=TECH_COLORS.get(cycle, "#333333"),
-            linewidth=2.0,
+            linewidth=2.4,
             label=TECH_LABELS.get(cycle, cycle.upper()),
         )
 
@@ -300,7 +391,7 @@ def make_cumulative_potential_figure(
             xytext=(5, 5),
             textcoords="offset points",
             color="black",
-            fontsize=9,
+            fontsize=10,
             bbox=dict(
                 boxstyle="round,pad=0.2",
                 facecolor="white",
@@ -311,7 +402,7 @@ def make_cumulative_potential_figure(
 
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
-    if descending:
+    if descending and not is_temperature_curve:
         ax.invert_xaxis()
     ax.legend(
         loc="center left",
@@ -366,6 +457,186 @@ def make_average_potential_by_depth_figure(
     plt.close(fig)
 
 
+def make_depth_profile_figure(
+    lcoe_map: xr.DataArray,
+    potential_map: xr.DataArray,
+    depth_map: xr.DataArray,
+    cycle: str,
+    out_path: Path,
+):
+    depth = np.asarray(depth_map.values, dtype=np.float64).ravel() / 1000.0
+    lcoe = np.asarray(lcoe_map.values, dtype=np.float64).ravel()
+    potential = np.asarray(potential_map.values, dtype=np.float64).ravel() / 1000.0
+    valid = (
+        np.isfinite(depth)
+        & np.isfinite(potential)
+        & np.isfinite(lcoe)
+        & (potential > 0)
+    )
+
+    if not np.any(valid):
+        _schemas.write_blank_png(out_path)
+        return
+
+    depth = depth[valid]
+    potential = potential[valid]
+    lcoe = lcoe[valid]
+    depth_levels = np.unique(depth[np.isfinite(depth)])
+    mean_potential = np.array(
+        [np.nanmean(potential[np.isclose(depth, level)]) for level in depth_levels],
+        dtype=np.float64,
+    )
+    mean_lcoe = np.array(
+        [np.nanmean(lcoe[np.isclose(depth, level)]) for level in depth_levels],
+        dtype=np.float64,
+    )
+    line_valid = np.isfinite(depth_levels) & np.isfinite(mean_potential) & np.isfinite(mean_lcoe)
+    if not np.any(line_valid):
+        _schemas.write_blank_png(out_path)
+        return
+
+    depth_levels = depth_levels[line_valid]
+    mean_potential = mean_potential[line_valid]
+    mean_lcoe = mean_lcoe[line_valid]
+    color = TECH_COLORS.get(cycle, "#333333")
+    label = TECH_LABELS.get(cycle, cycle.upper())
+
+    fig, ax_potential = plt.subplots(figsize=(6.6, 5.2))
+    ax_lcoe = ax_potential.twiny()
+
+    potential_line = ax_potential.plot(
+        mean_potential,
+        depth_levels,
+        color=color,
+        linewidth=2.4,
+        label="Mean potential",
+    )[0]
+    lcoe_line = ax_lcoe.plot(
+        mean_lcoe,
+        depth_levels,
+        color="#202020",
+        linewidth=2.4,
+        label="Mean LCOE",
+    )[0]
+
+    ax_potential.invert_yaxis()
+    ax_potential.set_ylabel("Depth at minimum LCOE (km)")
+    ax_potential.set_xlabel("Mean potential (GW per 10x10km grid cell)", color=color)
+    ax_lcoe.set_xlabel("Mean LCOE (€/MWh$_e$)", color="#202020")
+    ax_potential.tick_params(axis="x", colors=color)
+    ax_lcoe.tick_params(axis="x", colors="#202020")
+    ax_potential.set_title(f"{label} minimized-depth cells")
+    ax_potential.grid(False)
+
+    for ax in (ax_potential, ax_lcoe):
+        for spine in ax.spines.values():
+            spine.set_visible(True)
+
+    ax_potential.legend(
+        handles=[potential_line, lcoe_line],
+        loc="lower center",
+        bbox_to_anchor=(0.5, -0.26),
+        ncol=2,
+        frameon=False,
+    )
+    fig.subplots_adjust(top=0.86, bottom=0.22)
+    fig.savefig(out_path, dpi=250, bbox_inches="tight")
+    plt.close(fig)
+
+
+def make_lcoe_potential_boxplot_figure(
+    lcoe_maps: dict[str, xr.DataArray],
+    potential_maps: dict[str, xr.DataArray],
+    cycles: list[str],
+    out_path: Path,
+):
+    lcoe_data = []
+    potential_data = []
+    labels = []
+
+    for cycle in cycles:
+        lcoe = np.asarray(lcoe_maps[cycle].values, dtype=np.float64).ravel()
+        potential = np.asarray(potential_maps[cycle].values, dtype=np.float64).ravel() / 1000.0
+        lcoe_mask = np.isfinite(lcoe)
+        potential_mask = np.isfinite(potential) & (potential > 0)
+        if not np.any(lcoe_mask) or not np.any(potential_mask):
+            continue
+        lcoe_data.append(lcoe[lcoe_mask])
+        potential_data.append(potential[potential_mask])
+        labels.append(TECH_LABELS.get(cycle, cycle.upper()))
+
+    if not lcoe_data:
+        _schemas.write_blank_png(out_path)
+        return
+
+    fig, ax_lcoe = plt.subplots(figsize=(10.5, 6.2))
+    ax_potential = ax_lcoe.twinx()
+
+    centers = np.arange(1, len(labels) + 1, dtype=float)
+    offset = 0.18
+    lcoe_positions = centers - offset
+    potential_positions = centers + offset
+
+    lcoe_bp = ax_lcoe.boxplot(
+        lcoe_data,
+        positions=lcoe_positions,
+        widths=0.30,
+        patch_artist=True,
+        showfliers=False,
+    )
+    potential_bp = ax_potential.boxplot(
+        potential_data,
+        positions=potential_positions,
+        widths=0.30,
+        patch_artist=True,
+        showfliers=False,
+    )
+
+    def style_boxplot(bp, facecolor):
+        for box in bp["boxes"]:
+            box.set_facecolor(facecolor)
+            box.set_edgecolor("#707070")
+            box.set_linewidth(1.0)
+        for element in ["whiskers", "caps", "medians"]:
+            for item in bp[element]:
+                item.set_color("#707070" if element != "medians" else "#202020")
+                item.set_linewidth(1.0)
+
+    style_boxplot(lcoe_bp, "#8C8C8C")
+    style_boxplot(potential_bp, "#3F7FBF")
+
+    ax_lcoe.set_xticks(centers)
+    ax_lcoe.set_xticklabels(labels, fontsize=15)
+    ax_lcoe.set_ylabel("LCOE (€/MWh$_e$)", fontsize=18)
+    ax_potential.set_ylabel("Theoretical potential (GW)", fontsize=18)
+    ax_lcoe.tick_params(axis="y", labelsize=16)
+    ax_potential.tick_params(axis="y", labelsize=16)
+    ax_lcoe.tick_params(axis="x", labelsize=15)
+    ax_lcoe.grid(False)
+    ax_potential.grid(False)
+
+    for ax in (ax_lcoe, ax_potential):
+        for spine in ax.spines.values():
+            spine.set_visible(True)
+
+    legend_handles = [
+        Patch(facecolor="#8C8C8C", edgecolor="#707070", label="LCOE"),
+        Patch(facecolor="#3F7FBF", edgecolor="#707070", label="Potential"),
+    ]
+    ax_lcoe.legend(
+        handles=legend_handles,
+        loc="lower left",
+        bbox_to_anchor=(0.0, 1.02),
+        frameon=False,
+        fontsize=15,
+        ncol=2,
+        borderaxespad=0.0,
+    )
+
+    fig.savefig(out_path, dpi=250, bbox_inches="tight")
+    plt.close(fig)
+
+
 def make_lcoe_vs_potential_scatter_figure(
     lcoe_maps: dict[str, xr.DataArray],
     potential_maps: dict[str, xr.DataArray],
@@ -392,7 +663,7 @@ def make_lcoe_vs_potential_scatter_figure(
         )
 
     ax.set_xlabel("Minimized LCOE (€/MWh$_e$)")
-    ax.set_ylabel("Minimized potential (GW)")
+    ax.set_ylabel("Minimized potential (GW per 10x10km grid cell)")
     ax.legend(
         loc="center left",
         bbox_to_anchor=(1.02, 0.5),
@@ -500,7 +771,7 @@ def make_temperature_lcoe_potential_heatmap_figure(
             transform=ax.transAxes,
             ha="left",
             va="top",
-            fontsize=11,
+            fontsize=13,
             fontweight="bold",
             color="black",
         )
@@ -615,7 +886,7 @@ def make_temperature_lcoe_potential_scatter_figure(
             transform=ax.transAxes,
             ha="left",
             va="top",
-            fontsize=11,
+            fontsize=13,
             fontweight="bold",
             color="black",
         )
@@ -740,7 +1011,7 @@ def make_temperature_lcoe_isopotential_figure(
             linewidths=0.8,
             alpha=0.85,
         )
-        ax.clabel(contour, inline=True, fontsize=8, fmt="%.0f")
+        ax.clabel(contour, inline=True, fontsize=10, fmt="%.0f")
         ax.text(
             0.02,
             0.98,
@@ -748,7 +1019,7 @@ def make_temperature_lcoe_isopotential_figure(
             transform=ax.transAxes,
             ha="left",
             va="top",
-            fontsize=11,
+            fontsize=13,
             fontweight="bold",
             color="black",
         )
@@ -770,6 +1041,8 @@ def make_lcoe_overview_figure(
     lcoe_maps: dict[str, xr.DataArray],
     cycles: list[str],
     out_path: Path,
+    countries: gpd.GeoDataFrame,
+    max_depth: float,
 ):
     panels = cycles + ["winner"]
     n_panels = len(panels)
@@ -809,18 +1082,29 @@ def make_lcoe_overview_figure(
         axes.append(make_ax(row, col))
 
     lcoe_cmap = ListedColormap(LCOE_COLORS)
-    lcoe_cmap.set_bad("#D9D9D9")
+    lcoe_cmap.set_bad((0, 0, 0, 0))
     lcoe_norm = BoundaryNorm(LCOE_BOUNDS, lcoe_cmap.N)
 
     winner_cmap = ListedColormap([TECH_COLORS[c] for c in cycles])
-    winner_cmap.set_bad("#D9D9D9")
+    winner_cmap.set_bad((0, 0, 0, 0))
 
-    winner = _winner_map(lcoe_maps, cycles)
+    plot_arrays = {cycle: _plot_values(lcoe_maps[cycle], countries) for cycle in cycles}
+    plot_maps = {
+        cycle: xr.DataArray(values, dims=("y", "x"))
+        for cycle, values in plot_arrays.items()
+    }
+    winner = _winner_map(plot_maps, cycles)
     winner_masked = np.where(winner >= 0, winner, np.nan)
 
     for idx, panel in enumerate(panels):
         ax = axes[idx]
-        ax.set_facecolor("#D9D9D9")
+        _decorate_map(
+            ax,
+            countries,
+            extent,
+            _map_crs(reference_da),
+            unavailable_color=LCOE_UNAVAILABLE_COLOR,
+        )
 
         if panel == "winner":
             ax.imshow(
@@ -832,18 +1116,19 @@ def make_lcoe_overview_figure(
                 vmin=-0.5,
                 vmax=len(cycles) - 0.5,
                 aspect="auto",      # axes box is already the right shape
+                zorder=2,
             )
             title = "Cheapest technology"
         else:
-            da = lcoe_maps[panel]
             ax.imshow(
-                da.values,
+                plot_arrays[panel],
                 origin="lower",
                 extent=extent,
                 interpolation="nearest",
                 cmap=lcoe_cmap,
                 norm=lcoe_norm,
                 aspect="auto",      # axes box is already the right shape
+                zorder=2,
             )
             title = TECH_LABELS.get(panel, panel.upper())
 
@@ -852,7 +1137,7 @@ def make_lcoe_overview_figure(
             f"{PANEL_LETTERS[idx]}) {title}",
             transform=ax.transAxes,
             ha="left", va="top",
-            fontsize=11, fontweight="bold", color="black",
+            fontsize=14, fontweight="bold", color="black",
         )
         _clean_map_axes(ax)
 
@@ -868,17 +1153,20 @@ def make_lcoe_overview_figure(
     cbar.set_ticks(LCOE_TICKS)
     cbar.set_ticklabels(LCOE_TICKLABELS)
     cbar.set_label("Levelized Cost of Electricity (€/MWh$_e$)")
-    cbar.ax.tick_params(length=0, labelsize=9)
+    cbar.ax.tick_params(length=0, labelsize=11)
 
     legend_handles = [
         Patch(facecolor=TECH_COLORS[c], edgecolor="none", label=TECH_LABELS.get(c, c.upper()))
         for c in cycles
     ]
+    depth_label = f"{max_depth / 1000:g} km" if max_depth >= 1000 else f"{max_depth:g} m"
+    legend_handles.append(Patch(facecolor=LCOE_UNAVAILABLE_COLOR, edgecolor=COUNTRY_EDGE_COLOR,
+                                label=f"Not possible below {depth_label}"))
     axes[-1].legend(
         handles=legend_handles,
         loc="upper right",
         frameon=True, facecolor="white", framealpha=0.9,
-        edgecolor="#AAAAAA", fontsize=8,
+        edgecolor="#AAAAAA", fontsize=10,
     )
 
     fig.savefig(out_path, dpi=200, bbox_inches="tight")
@@ -990,11 +1278,17 @@ def main():
 
     # CRS (optional)
     crs = snakemake.config.get("crs") or snakemake.params.get("crs")
+    max_depth = float(snakemake.params.get("max_depth", snakemake.config["max_depth"]))
 
     # Inputs/outputs are lists in the new rule
     cubes: List[str] = list(snakemake.input.cubes)
     lcoe_tifs: List[str] = list(snakemake.output.lcoe_tifs)
     pot_tifs: List[str] = list(snakemake.output.pot_tifs)
+    depth_profile_figs: List[str] = (
+        list(snakemake.output.depth_profile_figs)
+        if hasattr(snakemake.output, "depth_profile_figs")
+        else []
+    )
 
     if len(cubes) != len(cycles):
         # Try to match by filename cycle token instead of position
@@ -1004,6 +1298,10 @@ def main():
 
     out_lcoe_by_cycle = {_cycle_from_tif_name(p, "_2d_lcoe.tif"): p for p in lcoe_tifs}
     out_pot_by_cycle  = {_cycle_from_tif_name(p, "_2d_potential.tif"): p for p in pot_tifs}
+    out_depth_profile_by_cycle = {
+        Path(p).stem.replace("depth_profile_", "").lower(): p
+        for p in depth_profile_figs
+    }
     lcoe_maps_2d: dict[str, xr.DataArray] = {}
     potential_maps_2d: dict[str, xr.DataArray] = {}
     depth_maps_2d: dict[str, xr.DataArray] = {}
@@ -1058,10 +1356,13 @@ def main():
                 write_geotiff(ds_cat["depth_at_min"], extra_outdir / f"{base}_depth_at_min.tif", crs=crs)
 
     if method_2d_aggregation == "LCOE_minimization" and hasattr(snakemake.output, "overview_fig"):
+        countries = _country_layer(Path(snakemake.input.shapes), lcoe_maps_2d[cycles[0]])
         make_lcoe_overview_figure(
             lcoe_maps=lcoe_maps_2d,
             cycles=cycles,
             out_path=Path(snakemake.output.overview_fig),
+            countries=countries,
+            max_depth=max_depth,
         )
         make_lcoe_vs_potential_scatter_figure(
             lcoe_maps=lcoe_maps_2d,
@@ -1069,12 +1370,27 @@ def main():
             cycles=cycles,
             out_path=Path(snakemake.output.scatter_fig),
         )
+        make_lcoe_potential_boxplot_figure(
+            lcoe_maps=lcoe_maps_2d,
+            potential_maps=potential_maps_2d,
+            cycles=cycles,
+            out_path=Path(snakemake.output.technology_boxplot_fig),
+        )
         make_average_potential_by_depth_figure(
             potential_profiles=potential_profiles_3d,
             depths_m=depths_m,
             cycles=cycles,
             out_path=Path(snakemake.output.avg_potential_depth_fig),
         )
+        for cycle in cycles:
+            if cycle in out_depth_profile_by_cycle:
+                make_depth_profile_figure(
+                    lcoe_map=lcoe_maps_2d[cycle],
+                    potential_map=potential_maps_2d[cycle],
+                    depth_map=depth_maps_2d[cycle],
+                    cycle=cycle,
+                    out_path=Path(out_depth_profile_by_cycle[cycle]),
+                )
         make_cumulative_potential_figure(
             x_maps=lcoe_maps_2d,
             potential_maps=potential_maps_2d,
@@ -1131,8 +1447,13 @@ def main():
             cycles=cycles,
             out_path=Path(snakemake.output.potential_overview_fig),
             colorbar_label="Potential (GW)",
-            cmap=MAP_CMAP,
+            cmap="YlOrRd",
             value_scale=1000.0,
+            countries=countries,
+        )
+        shutil.copyfile(
+            snakemake.output.potential_overview_fig,
+            snakemake.output.potential_presentation_fig,
         )
         make_three_panel_map_figure(
             maps=depth_maps_2d,
@@ -1141,6 +1462,7 @@ def main():
             colorbar_label="Depth at minimum LCOE (km)",
             cmap=f"{MAP_CMAP}_r",
             value_scale=1000.0,
+            countries=countries,
         )
 
 

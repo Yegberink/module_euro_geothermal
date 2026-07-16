@@ -301,7 +301,7 @@ def composite_choropleth_png(
     sm = plt.cm.ScalarMappable(cmap=cmap)
     sm.set_clim(vmin, vmax)
     cbar = fig.colorbar(sm, cax=cax, orientation="horizontal")
-    cbar.set_label("Potential (GW)")
+    cbar.set_label("Potential (GW per 10x10km grid cell)")
     cbar.ax.tick_params(length=0, labelsize=9)
 
     fig.suptitle(title_suffix, y=0.96, fontsize=12)
