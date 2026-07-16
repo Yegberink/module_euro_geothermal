@@ -9,8 +9,10 @@ import re
 import shutil
 import matplotlib.pyplot as plt
 import geopandas as gpd
+import pandas as pd
+import seaborn as sns
 from rasterio.features import geometry_mask
-from matplotlib.colors import BoundaryNorm, ListedColormap
+from matplotlib.colors import LinearSegmentedColormap, ListedColormap, Normalize, PowerNorm
 from matplotlib.patches import Patch
 import _schemas
 
@@ -31,11 +33,10 @@ plt.rcParams.update({
 TECH_LABELS = {"orc": "ORC", "flash": "Flash", "kalina": "Kalina"}
 TECH_COLORS = {"orc": "#0072B2", "flash": "#E69F00", "kalina": "#009E73"}
 PANEL_LETTERS = "abcdefghijklmnopqrstuvwxyz"
-LCOE_BOUNDS = [0.0, 100.0, 200.0, 400.0, 600.0, 1.0e9]
-LCOE_TICKS = [50.0, 150.0, 300.0, 500.0, 800.0]
-LCOE_TICKLABELS = ["0-100", "100-200", "200-400", "400-600", "≥600"]
-LCOE_COLORS = ["#B2182B", "#EF8A62", "#FDDBC7", "#F0F0F0", "#D9D9D9"]
-MAP_CMAP = "viridis"
+LCOE_OVERVIEW_CMAP = "YlOrBr_r"
+LCOE_OVERVIEW_COLORBAR_CUTOFF = 600.0
+LCOE_OVERVIEW_NORM_GAMMA = 0.4
+MAP_CMAP = "YlOrBr"
 MAP_BACKGROUND_COLOR = "#DCEEF4"
 UNAVAILABLE_COLOR = "#D9D9D9"
 LCOE_UNAVAILABLE_COLOR = "#BDBDBD"
@@ -161,22 +162,6 @@ def _plot_values(
     return np.where(inside_countries, values, np.nan)
 
 
-def _nice_scale_length(extent: list[float], crs) -> tuple[float, str]:
-    width = extent[1] - extent[0]
-    if crs is not None and crs.is_geographic:
-        mean_latitude = 0.5 * (extent[2] + extent[3])
-        width_km = width * 111.32 * max(np.cos(np.deg2rad(mean_latitude)), 0.2)
-        units_per_km = width / width_km
-    else:
-        units_per_km = 1000.0
-        width_km = width / units_per_km
-    target = max(width_km * 0.18, 1e-9)
-    magnitude = 10 ** np.floor(np.log10(target))
-    length_km = max(v for v in (1, 2, 5, 10) if v * magnitude <= target) * magnitude
-    label = f"{length_km:g} km"
-    return length_km * units_per_km, label
-
-
 def _decorate_map(
     ax,
     countries: gpd.GeoDataFrame,
@@ -188,14 +173,6 @@ def _decorate_map(
     countries.plot(ax=ax, facecolor=unavailable_color, edgecolor="none", zorder=1)
     countries.boundary.plot(ax=ax, color=COUNTRY_EDGE_COLOR, linewidth=0.35, zorder=3)
 
-    scale_length, scale_label = _nice_scale_length(extent, crs)
-    x0 = extent[0] + 0.055 * (extent[1] - extent[0])
-    y0 = extent[2] + 0.055 * (extent[3] - extent[2])
-    ax.plot([x0, x0 + scale_length], [y0, y0], color="#202020", lw=2.2, zorder=5)
-    ax.plot([x0, x0], [y0, y0 + 0.012 * (extent[3] - extent[2])], color="#202020", lw=1, zorder=5)
-    ax.plot([x0 + scale_length, x0 + scale_length], [y0, y0 + 0.012 * (extent[3] - extent[2])], color="#202020", lw=1, zorder=5)
-    ax.text(x0 + scale_length / 2, y0 + 0.018 * (extent[3] - extent[2]), scale_label,
-            ha="center", va="bottom", fontsize=11, color="#202020", zorder=5)
     ax.annotate("N", xy=(0.94, 0.91), xytext=(0.94, 0.78), xycoords="axes fraction",
                 ha="center", va="center", fontsize=11, fontweight="bold",
                 arrowprops=dict(arrowstyle="-|>", color="#202020", lw=1.2), zorder=5)
@@ -316,7 +293,7 @@ def make_three_panel_map_figure(
             transform=ax.transAxes,
             ha="left",
             va="top",
-            fontsize=14,
+            fontsize=16,
             fontweight="bold",
             color="black",
         )
@@ -326,8 +303,8 @@ def make_three_panel_map_figure(
     cbar_y0 = max(0.06, axes[0].get_position().y0 - 0.08)
     cax = fig.add_axes([0.14, cbar_y0, 0.72, 0.045])
     cbar = fig.colorbar(im, cax=cax, orientation="horizontal")
-    cbar.set_label(colorbar_label, fontsize=13)
-    cbar.ax.tick_params(length=0, labelsize=12)
+    cbar.set_label(colorbar_label, fontsize=16)
+    cbar.ax.tick_params(length=0, labelsize=16)
 
     fig.savefig(out_path, dpi=200)
     plt.close(fig)
@@ -633,6 +610,326 @@ def make_lcoe_potential_boxplot_figure(
         borderaxespad=0.0,
     )
 
+    fig.savefig(out_path, dpi=250, bbox_inches="tight")
+    plt.close(fig)
+
+
+def make_lcoe_potential_split_boxplot_figure(
+    lcoe_maps: dict[str, xr.DataArray],
+    potential_maps: dict[str, xr.DataArray],
+    cycles: list[str],
+    out_path: Path,
+    *,
+    max_scatter_points_per_tech: int = 900,
+):
+    lcoe_data = []
+    potential_data = []
+    labels = []
+    colors = []
+    scatter_rows = []
+    rng = np.random.default_rng(42)
+
+    for cycle in cycles:
+        label = TECH_LABELS.get(cycle, cycle.upper())
+
+        lcoe = np.asarray(lcoe_maps[cycle].values, dtype=np.float64).ravel()
+        lcoe = lcoe[np.isfinite(lcoe)]
+
+        potential = np.asarray(potential_maps[cycle].values, dtype=np.float64).ravel() / 1000.0
+        potential = potential[np.isfinite(potential) & (potential > 0)]
+
+        if lcoe.size == 0 or potential.size == 0:
+            continue
+
+        lcoe_data.append(lcoe)
+        potential_data.append(potential)
+        labels.append(label)
+        colors.append(TECH_COLORS.get(cycle, "#333333"))
+
+        for metric, values in (("LCOE", lcoe), ("Potential", potential)):
+            sample_size = min(max_scatter_points_per_tech, values.size)
+            sample_idx = rng.choice(values.size, size=sample_size, replace=False)
+            scatter_rows.extend(
+                {"technology": label, "metric": metric, "value": value}
+                for value in values[sample_idx]
+            )
+
+    if not labels:
+        _schemas.write_blank_png(out_path)
+        return
+
+    scatter_df = pd.DataFrame(scatter_rows)
+    palette = {
+        label: color
+        for label, color in zip(labels, colors)
+    }
+
+    fig, axes = plt.subplots(1, 2, figsize=(12.5, 5.6), sharex=False)
+    metric_specs = [
+        ("LCOE", lcoe_data, "LCOE (€/MWh$_e$)", "a) LCOE"),
+        ("Potential", potential_data, "Theoretical potential (GW per grid cell)", "b) Theoretical potential"),
+    ]
+
+    for ax, (metric, data, ylabel, title) in zip(axes, metric_specs):
+        metric_scatter = scatter_df.loc[scatter_df["metric"] == metric]
+
+        bp = ax.boxplot(
+            data,
+            positions=np.arange(len(labels)),
+            widths=0.48,
+            patch_artist=True,
+            showfliers=False,
+        )
+        for box, color in zip(bp["boxes"], colors):
+            box.set_facecolor(color)
+            box.set_alpha(0.58)
+            box.set_edgecolor("#707070")
+            box.set_linewidth(1.0)
+        for element in ["whiskers", "caps", "medians"]:
+            for item in bp[element]:
+                item.set_color("#707070" if element != "medians" else "#202020")
+                item.set_linewidth(1.0)
+
+        sns.stripplot(
+            data=metric_scatter,
+            x="technology",
+            y="value",
+            order=labels,
+            palette=palette,
+            jitter=0.22,
+            size=1.8,
+            alpha=0.22,
+            linewidth=0,
+            ax=ax,
+        )
+
+        ax.set_xticks(np.arange(len(labels)))
+        ax.set_xticklabels(labels)
+        ax.set_title(title, loc="left", fontweight="bold")
+        ax.set_xlabel("")
+        ax.set_ylabel(ylabel)
+        ax.tick_params(axis="x", labelsize=12)
+        ax.tick_params(axis="y", labelsize=12)
+        ax.grid(False)
+        for spine in ax.spines.values():
+            spine.set_visible(True)
+
+    fig.tight_layout(w_pad=2.6)
+    fig.savefig(out_path, dpi=250, bbox_inches="tight")
+    plt.close(fig)
+
+
+def make_lcoe_potential_cumulative_four_panel_figure(
+    lcoe_maps: dict[str, xr.DataArray],
+    potential_maps: dict[str, xr.DataArray],
+    temperature_maps: dict[str, xr.DataArray],
+    cycles: list[str],
+    out_path: Path,
+    *,
+    max_scatter_points_per_tech: int = 700,
+):
+    lcoe_data = []
+    potential_data = []
+    labels = []
+    colors = []
+    scatter_rows = []
+    rng = np.random.default_rng(42)
+
+    for cycle in cycles:
+        label = TECH_LABELS.get(cycle, cycle.upper())
+        color = TECH_COLORS.get(cycle, "#333333")
+
+        lcoe = np.asarray(lcoe_maps[cycle].values, dtype=np.float64).ravel()
+        lcoe = lcoe[np.isfinite(lcoe)]
+
+        potential = np.asarray(potential_maps[cycle].values, dtype=np.float64).ravel() / 1000.0
+        potential = potential[np.isfinite(potential) & (potential > 0)]
+
+        if lcoe.size == 0 or potential.size == 0:
+            continue
+
+        lcoe_data.append(lcoe)
+        potential_data.append(potential)
+        labels.append(label)
+        colors.append(color)
+
+        for metric, values in (("LCOE", lcoe), ("Potential", potential)):
+            sample_size = min(max_scatter_points_per_tech, values.size)
+            sample_idx = rng.choice(values.size, size=sample_size, replace=False)
+            scatter_rows.extend(
+                {"technology": label, "metric": metric, "value": value}
+                for value in values[sample_idx]
+            )
+
+    if not labels:
+        _schemas.write_blank_png(out_path)
+        return
+
+    scatter_df = pd.DataFrame(scatter_rows)
+    palette = {label: color for label, color in zip(labels, colors)}
+
+    fig, axes = plt.subplots(2, 2, figsize=(8.27, 8.27))
+    ax_lcoe_box, ax_potential_box = axes[0]
+    ax_lcoe_curve, ax_temp_curve = axes[1]
+
+    def add_panel_letter(ax, label: str):
+        ax.text(
+            0.03,
+            0.95,
+            label,
+            transform=ax.transAxes,
+            ha="left",
+            va="top",
+            fontsize=14,
+            fontweight="bold",
+            bbox=dict(facecolor="white", edgecolor="none", alpha=0.82, pad=2.0),
+            zorder=6,
+        )
+
+    box_specs = [
+        (ax_lcoe_box, "LCOE", lcoe_data, "LCOE (€/MWh$_e$)", "a)"),
+        (
+            ax_potential_box,
+            "Potential",
+            potential_data,
+            "Theoretical potential (GW per grid cell)",
+            "b)",
+        ),
+    ]
+
+    for ax, metric, data, ylabel, panel_label in box_specs:
+        metric_scatter = scatter_df.loc[scatter_df["metric"] == metric]
+        bp = ax.boxplot(
+            data,
+            positions=np.arange(len(labels)),
+            widths=0.48,
+            patch_artist=True,
+            showfliers=False,
+        )
+        for box, color in zip(bp["boxes"], colors):
+            box.set_facecolor(color)
+            box.set_alpha(0.58)
+            box.set_edgecolor("#707070")
+            box.set_linewidth(1.0)
+        for element in ["whiskers", "caps", "medians"]:
+            for item in bp[element]:
+                item.set_color("#707070" if element != "medians" else "#202020")
+                item.set_linewidth(1.0)
+
+        sns.stripplot(
+            data=metric_scatter,
+            x="technology",
+            y="value",
+            order=labels,
+            palette=palette,
+            jitter=0.22,
+            size=1.5,
+            alpha=0.20,
+            linewidth=0,
+            ax=ax,
+        )
+
+        ax.set_xticks(np.arange(len(labels)))
+        ax.set_xticklabels(labels)
+        add_panel_letter(ax, panel_label)
+        ax.set_xlabel("")
+        ax.set_ylabel(ylabel)
+        ax.grid(False)
+
+    curve_specs = [
+        (
+            ax_lcoe_curve,
+            lcoe_maps,
+            "LCOE threshold (€/MWh$_e$)",
+            "Cumulative potential (GW)",
+            False,
+            "c)",
+            "lower right",
+            True,
+        ),
+        (
+            ax_temp_curve,
+            temperature_maps,
+            "Temperature threshold (°C)",
+            "Cumulative potential (GW)",
+            True,
+            "d)",
+            "upper right",
+            False,
+        ),
+    ]
+
+    for ax, x_maps, xlabel, ylabel, descending, panel_label, legend_loc, annotate_80pct in curve_specs:
+        for cycle in cycles:
+            x, y = _cumulative_potential_curve(
+                x_maps[cycle],
+                potential_maps[cycle],
+                descending=descending,
+            )
+            if x.size == 0:
+                continue
+
+            ax.plot(
+                x,
+                y,
+                color=TECH_COLORS.get(cycle, "#333333"),
+                linewidth=2.2,
+                label=TECH_LABELS.get(cycle, cycle.upper()),
+            )
+
+            if annotate_80pct:
+                target_y = 0.8 * y[-1]
+                idx = int(np.searchsorted(y, target_y, side="left"))
+                idx = min(idx, len(y) - 1)
+                ax.scatter(
+                    [x[idx]],
+                    [y[idx]],
+                    color=TECH_COLORS.get(cycle, "#333333"),
+                    edgecolor="black",
+                    linewidth=0.45,
+                    s=18,
+                    zorder=4,
+                )
+                ax.annotate(
+                    f"{x[idx]:.0f} €/MWh$_e$",
+                    (x[idx], y[idx]),
+                    xytext=(0, -8),
+                    textcoords="offset points",
+                    color="black",
+                    fontsize=11,
+                    ha="center",
+                    va="top",
+                    bbox=dict(
+                        boxstyle="round,pad=0.18",
+                        facecolor="white",
+                        edgecolor="none",
+                        alpha=0.85,
+                    ),
+                    zorder=5,
+                )
+
+        add_panel_letter(ax, panel_label)
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+        ax.legend(
+            loc=legend_loc,
+            frameon=True,
+            facecolor="white",
+            framealpha=0.88,
+            edgecolor="#BBBBBB",
+            fontsize=11,
+        )
+        ax.grid(False)
+
+    for ax in axes.ravel():
+        ax.set_box_aspect(1)
+        ax.xaxis.label.set_size(11)
+        ax.yaxis.label.set_size(11)
+        ax.tick_params(axis="both", labelsize=11)
+        for spine in ax.spines.values():
+            spine.set_visible(True)
+
+    fig.tight_layout(pad=0.25, w_pad=0.45, h_pad=0.45)
     fig.savefig(out_path, dpi=250, bbox_inches="tight")
     plt.close(fig)
 
@@ -1081,14 +1378,27 @@ def make_lcoe_overview_figure(
         row, col = divmod(i, ncols)
         axes.append(make_ax(row, col))
 
-    lcoe_cmap = ListedColormap(LCOE_COLORS)
+    lcoe_cmap = plt.get_cmap(LCOE_OVERVIEW_CMAP).copy()
     lcoe_cmap.set_bad((0, 0, 0, 0))
-    lcoe_norm = BoundaryNorm(LCOE_BOUNDS, lcoe_cmap.N)
 
     winner_cmap = ListedColormap([TECH_COLORS[c] for c in cycles])
     winner_cmap.set_bad((0, 0, 0, 0))
 
     plot_arrays = {cycle: _plot_values(lcoe_maps[cycle], countries) for cycle in cycles}
+    lcoe_vmin, lcoe_data_vmax = _finite_limits(plot_arrays.values())
+    lcoe_vmax = (
+        min(lcoe_data_vmax, LCOE_OVERVIEW_COLORBAR_CUTOFF)
+        if LCOE_OVERVIEW_COLORBAR_CUTOFF is not None
+        else lcoe_data_vmax
+    )
+    if lcoe_vmin >= lcoe_vmax:
+        lcoe_vmin = 0.0
+    lcoe_norm = lcoe_norm = PowerNorm(
+        gamma=LCOE_OVERVIEW_NORM_GAMMA,
+        vmin=70,
+        vmax=LCOE_OVERVIEW_COLORBAR_CUTOFF,
+    )
+    lcoe_colorbar_extend = "max" if lcoe_data_vmax > lcoe_vmax else "neither"
     plot_maps = {
         cycle: xr.DataArray(values, dims=("y", "x"))
         for cycle, values in plot_arrays.items()
@@ -1149,9 +1459,7 @@ def make_lcoe_overview_figure(
 
     cax = fig.add_axes([cbar_x0, cbar_y0, cbar_w, cbar_h_frac])
     sm = plt.cm.ScalarMappable(norm=lcoe_norm, cmap=lcoe_cmap)
-    cbar = fig.colorbar(sm, cax=cax, orientation="horizontal", extend="max")
-    cbar.set_ticks(LCOE_TICKS)
-    cbar.set_ticklabels(LCOE_TICKLABELS)
+    cbar = fig.colorbar(sm, cax=cax, orientation="horizontal", extend=lcoe_colorbar_extend)
     cbar.set_label("Levelized Cost of Electricity (€/MWh$_e$)")
     cbar.ax.tick_params(length=0, labelsize=11)
 
@@ -1376,6 +1684,19 @@ def main():
             cycles=cycles,
             out_path=Path(snakemake.output.technology_boxplot_fig),
         )
+        make_lcoe_potential_split_boxplot_figure(
+            lcoe_maps=lcoe_maps_2d,
+            potential_maps=potential_maps_2d,
+            cycles=cycles,
+            out_path=Path(snakemake.output.technology_split_boxplot_fig),
+        )
+        make_lcoe_potential_cumulative_four_panel_figure(
+            lcoe_maps=lcoe_maps_2d,
+            potential_maps=potential_maps_2d,
+            temperature_maps=temperature_maps_2d,
+            cycles=cycles,
+            out_path=Path(snakemake.output.technology_cumulative_four_panel_fig),
+        )
         make_average_potential_by_depth_figure(
             potential_profiles=potential_profiles_3d,
             depths_m=depths_m,
@@ -1446,8 +1767,8 @@ def main():
             maps=potential_maps_2d,
             cycles=cycles,
             out_path=Path(snakemake.output.potential_overview_fig),
-            colorbar_label="Potential (GW)",
-            cmap="YlOrRd",
+            colorbar_label="Potential (GW per grid cell)",
+            cmap=MAP_CMAP,
             value_scale=1000.0,
             countries=countries,
         )
@@ -1460,7 +1781,7 @@ def main():
             cycles=cycles,
             out_path=Path(snakemake.output.depth_overview_fig),
             colorbar_label="Depth at minimum LCOE (km)",
-            cmap=f"{MAP_CMAP}_r",
+            cmap=LCOE_OVERVIEW_CMAP,
             value_scale=1000.0,
             countries=countries,
         )

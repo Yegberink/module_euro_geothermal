@@ -49,7 +49,7 @@ SED_NAN_POLICY: always_egs    # how to treat missing sediment thickness after re
                               #   depth_only  → treat NaN as EGS_cutoff   → EGS only below EGS_cutoff
 
 drilling_cost_curve: thermogis  # options configured below; used as the baseline drilling cost relation
-stimulation_cost_per_doublet: 1.03   # EGS stimulation cost per doublet (M€2020)
+stimulation_cost_per_doublet: 3.0   # EGS stimulation cost per doublet (M€2020)
 
 drilling_cost_curve_definitions:
   thermogis:
@@ -84,9 +84,9 @@ kalina_money_per_kw: 2175.0   # Kalina plant (€2020/kW)
 pump_cost: 0.6                # pump cost per doublet pair (M€2020)
 lifetime: 30.0                # plant lifetime (years)
 capacity_factor: 0.88         # annual availability factor for electricity generation (-)
-fixed_OM_rate: 0.01           # fixed O&M as fraction of capital cost per year
+fixed_OM_rate: 0.015           # fixed O&M as fraction of capital cost per year
 parasitic_fraction: 0.21      # parasitic power consumption as fraction of gross output
-well_spacing: 1.0             # distance between production and injection well (km)
+well_spacing: 1.5             # distance between production and injection well (km)
 flowrate_egs: 60.0            # mass flow rate per EGS doublet (kg/s)
 flowrate_conventional: 100.0  # mass flow rate per conventional
 
@@ -179,8 +179,7 @@ sensitivity_parameters:
   EGS_cutoff:
     absolute_values: [2000, 5000]  # override percentage-based deviations with absolute values (m)
   stimulation_cost_per_doublet:
-    max_dev_pct: 30
-    steps: 1
+    absolute_values: [1.03, 10]
   well_spacing:
     absolute_values: [0.8, 2.0]  # override percentage-based deviations with absolute values (m)
   flowrate_egs:

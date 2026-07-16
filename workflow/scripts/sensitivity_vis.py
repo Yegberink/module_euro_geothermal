@@ -1,9 +1,13 @@
 import textwrap
 
+import geopandas as gpd
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.transforms as mtransforms
+from matplotlib.colors import BoundaryNorm, ListedColormap
+from matplotlib.patches import Patch
+import rasterio
 from cycler import cycler
 import _schemas
 
@@ -36,6 +40,13 @@ okabe_ito = [
     "#F0E442", "#0072B2", "#D55E00", "#CC79A7",
 ]
 plt.rcParams["axes.prop_cycle"] = cycler(color=okabe_ito)
+
+TECH_LABELS = {"orc": "ORC", "flash": "Flash", "kalina": "Kalina"}
+PANEL_LETTERS = "abcdefghijklmnopqrstuvwxyz"
+MAP_BACKGROUND_COLOR = "#DCEEF4"
+GEOTHERMAL_NOT_POSSIBLE_COLOR = "#D9D9D9"
+UNCHANGED_COLOR = "#FFFFFF"
+COUNTRY_EDGE_COLOR = "#4D5960"
 
 PARAM_LABELS = {
     "EGS_cutoff": "EGS cutoff (m)",
@@ -165,10 +176,16 @@ def make_parameter_box_label(param, base_value, scenario_value):
     return f"{pretty_param_name(param, width=18)}\n({change})"
 
 
-def summarise_lcoe(values):
+def summarise_lcoe(values, baseline_mean=None):
     vals = np.asarray(values, dtype=float)
     vals = vals[np.isfinite(vals)]
-    return f"Mean: {np.round(np.nanmean(vals), 0):.0f} €/MWh" if vals.size else ""
+    if not vals.size:
+        return ""
+    mean = float(np.nanmean(vals))
+    label = f"Mean: {np.round(mean, 0):.0f} €/MWh"
+    if baseline_mean is not None and not np.isclose(float(baseline_mean), 0.0):
+        label += f"\n({100.0 * mean / float(baseline_mean):.0f}% of baseline)"
+    return label
 
 
 def summarise_potential_tw(values, baseline_total=None):
@@ -269,6 +286,9 @@ def make_single_baseline_plus_parameter_boxplot(
     ylabel,
     out_path,
     summary_fn=None,
+    summary_position="top",
+    show_mean_dot=False,
+    mean_label_fn=None,
 ):
     """
     Plot one baseline box plus one box per selected parameter.
@@ -283,6 +303,8 @@ def make_single_baseline_plus_parameter_boxplot(
     labels = []
     kinds = []
     summaries = []
+    means = []
+    plot_specs = []
 
     pos = 1
     for spec in specs:
@@ -296,6 +318,8 @@ def make_single_baseline_plus_parameter_boxplot(
         labels.append(spec["label"])
         kinds.append(spec["kind"])
         summaries.append(summary_fn(vals) if summary_fn is not None else None)
+        means.append(float(np.nanmean(vals)))
+        plot_specs.append(spec)
         pos += 1
 
     fig_w = max(12, 2.25 * len(data))
@@ -324,35 +348,102 @@ def make_single_baseline_plus_parameter_boxplot(
             item.set_linewidth(0.8)
 
     ax.set_xticks(positions)
-    ax.set_xticklabels(labels, rotation=0, fontsize=15)
+    ax.set_xticklabels(labels, rotation=0, fontsize=18)
     ax.set_ylabel(ylabel, fontsize=18)
-    ax.tick_params(axis="y", labelsize=16)
+    ax.tick_params(axis="y", labelsize=18)
     ax.grid(False)
+
+    if show_mean_dot:
+        ax.scatter(
+            positions,
+            means,
+            s=64,
+            marker="o",
+            facecolor="white",
+            edgecolor="#202020",
+            linewidth=1.2,
+            zorder=4,
+            label="Mean",
+        )
+
+    legend_handles = [
+        Patch(facecolor=kind_colors["baseline"], edgecolor="black", alpha=0.80, label="Baseline"),
+        Patch(facecolor=kind_colors["scenario"], edgecolor="black", alpha=0.80, label="Scenario"),
+    ]
+    if show_mean_dot:
+        legend_handles.append(
+            plt.Line2D(
+                [0],
+                [0],
+                marker="o",
+                color="none",
+                markerfacecolor="white",
+                markeredgecolor="#202020",
+                markeredgewidth=1.2,
+                markersize=8,
+                label="Mean",
+            )
+        )
+    ax.legend(
+        handles=legend_handles,
+        loc="upper right",
+        frameon=True,
+        facecolor="white",
+        framealpha=0.9,
+        edgecolor="#BBBBBB",
+        fontsize=16,
+    )
 
     for spine in ax.spines.values():
         spine.set_visible(True)
 
     ymin, ymax = ax.get_ylim()
     yrange = ymax - ymin if ymax > ymin else 1.0
-    ax.set_ylim(ymin, ymax + 0.08 * yrange)
+    top_pad = 0.08 * yrange if summary_position == "top" else 0.04 * yrange
+    ax.set_ylim(ymin, ymax + top_pad)
 
     text_transform = mtransforms.blended_transform_factory(ax.transData, ax.transAxes)
+
+    if mean_label_fn is not None:
+        for x, mean, spec in zip(positions, means, plot_specs):
+            label = mean_label_fn(mean, spec)
+            if not label:
+                continue
+            ax.annotate(
+                label,
+                (x, mean),
+                xytext=(0, 8),
+                textcoords="offset points",
+                ha="center",
+                va="bottom",
+                fontsize=18,
+                color="#202020",
+                bbox=dict(facecolor="white", edgecolor="none", alpha=0.85, pad=1.5),
+                zorder=5,
+            )
+
+    if summary_position not in {"top", "bottom"}:
+        summaries = [None] * len(summaries)
 
     for x, summary in zip(positions, summaries):
         if not summary:
             continue
+        y = 1.03 if summary_position == "top" else -0.13
+        va = "bottom" if summary_position == "top" else "top"
         ax.text(
             x,
-            1.03,
+            y,
             summary,
             transform=text_transform,
             ha="center",
-            va="bottom",
-            fontsize=14,
+            va=va,
+            fontsize=18,
             clip_on=False,
         )
 
     fig.tight_layout()
+    if summary_position == "bottom":
+        fig.subplots_adjust(bottom=0.22)
     fig.savefig(out_path)
     plt.close(fig)
 
@@ -429,6 +520,273 @@ def make_top_switch_rate_barplot(df, top_n, out_path, required_params=None):
     plt.close(fig)
 
 
+def transition_label(tech_from: str, tech_to: str) -> str:
+    return f"{TECH_LABELS.get(tech_from, tech_from.upper())} to {TECH_LABELS.get(tech_to, tech_to.upper())}"
+
+
+def transition_color_map(transitions):
+    preferred = {
+        "ORC to Kalina": "#0072B2",
+        "Kalina to ORC": "#D55E00",
+        "ORC to Flash": "#009E73",
+        "Flash to ORC": "#CC79A7",
+        "Kalina to Flash": "#E69F00",
+        "Flash to Kalina": "#56B4E9",
+    }
+    fallback = [
+        "#000000",
+        "#F0E442",
+        "#8C564B",
+        "#9467BD",
+        "#17BECF",
+        "#7F7F7F",
+    ]
+    colors = {}
+    fallback_idx = 0
+    for label in transitions:
+        if label in preferred:
+            colors[label] = preferred[label]
+        else:
+            colors[label] = fallback[fallback_idx % len(fallback)]
+            fallback_idx += 1
+    return colors
+
+
+def make_switch_transition_map_figure(
+    switch_df,
+    scenario_to_boxplot,
+    baseline_winner_df,
+    baseline,
+    top_n,
+    out_path,
+    shapes_path,
+    reference_raster_path,
+    required_params=None,
+):
+    plot_df = switch_df.copy()
+    plot_df = plot_df.loc[np.isfinite(plot_df["transition_total_pixels"].to_numpy(dtype=float))].copy()
+    plot_df = plot_df.sort_values(
+        ["transition_total_pixels", "sort_magnitude", "parameter"],
+        ascending=[False, False, True],
+    )
+    required_params = required_params or []
+    required_df = plot_df.loc[plot_df["parameter"].isin(required_params)]
+    plot_df = (
+        pd.concat([plot_df.head(top_n), required_df], ignore_index=True)
+        .drop_duplicates(subset=["parameter"], keep="first")
+        .sort_values(
+            ["transition_total_pixels", "sort_magnitude", "parameter"],
+            ascending=[False, False, True],
+        )
+        .head(top_n)
+    )
+
+    if plot_df.empty:
+        _schemas.write_blank_png(out_path)
+        return
+
+    if not reference_raster_path:
+        _schemas.write_blank_png(out_path)
+        return
+
+    with rasterio.open(reference_raster_path) as src:
+        height = src.height
+        width = src.width
+        bounds = src.bounds
+        extent = [
+            min(bounds.left, bounds.right),
+            max(bounds.left, bounds.right),
+            min(bounds.bottom, bounds.top),
+            max(bounds.bottom, bounds.top),
+        ]
+        raster_crs = src.crs
+
+    countries = gpd.read_parquet(shapes_path)
+    if "shape_class" in countries.columns:
+        countries = countries.loc[countries["shape_class"] == "land"].copy()
+    if raster_crs is not None and countries.crs != raster_crs:
+        countries = countries.to_crs(raster_crs)
+
+    panel_specs = []
+    transitions_seen = []
+    base_cols = ["row", "col", "tech_base_winner"]
+    for _, row in plot_df.iterrows():
+        scenario = row["scenario"]
+        if scenario not in scenario_to_boxplot:
+            continue
+
+        df_box = _schemas.SensitivityBoxplotSchema.validate(
+            load_boxplot_table(scenario_to_boxplot[scenario])
+        )
+        if df_box.empty:
+            continue
+
+        scen_winner_df = build_scenario_winner_df(
+            df_box,
+            scenario_name=scenario,
+            baseline_name=baseline,
+        )
+        joined = baseline_winner_df[base_cols].merge(
+            scen_winner_df[["row", "col", "tech_scen_winner"]],
+            on=["row", "col"],
+            how="inner",
+        )
+        comparable = joined.loc[
+            joined["tech_base_winner"].notna()
+            & joined["tech_scen_winner"].notna()
+        ].copy()
+        changed = joined.loc[
+            joined["tech_base_winner"].notna()
+            & joined["tech_scen_winner"].notna()
+            & (joined["tech_base_winner"] != joined["tech_scen_winner"])
+        ].copy()
+        unchanged = comparable.loc[
+            comparable["tech_base_winner"] == comparable["tech_scen_winner"]
+        ].copy()
+
+        labels = [
+            transition_label(t_from, t_to)
+            for t_from, t_to in zip(changed["tech_base_winner"], changed["tech_scen_winner"])
+        ]
+        if not labels:
+            continue
+        changed["_transition"] = labels
+        transitions_seen.extend(labels)
+
+        panel_specs.append(
+            {
+                "label": row["label"],
+                "changed": changed,
+                "unchanged": unchanged,
+                "switch_rate": float(row["transition_total_pixels"]) * 100.0,
+            }
+        )
+
+    if not panel_specs or not transitions_seen:
+        _schemas.write_blank_png(out_path)
+        return
+
+    transitions = sorted(set(transitions_seen))
+    colors = transition_color_map(transitions)
+    transition_to_code = {label: i + 2 for i, label in enumerate(transitions)}
+    cmap = ListedColormap(
+        [
+            (1.0, 1.0, 1.0, 0.0),
+            UNCHANGED_COLOR,
+            *[colors[label] for label in transitions],
+        ]
+    )
+    norm = BoundaryNorm(
+        np.arange(-0.5, len(transitions) + 2.5, 1.0),
+        cmap.N,
+    )
+
+    data_aspect = (extent[3] - extent[2]) / (extent[1] - extent[0])
+    fig_w = 8.9
+    fig_h = 8.35
+    legend_h = 0.78
+    margin_l = 0.18
+    margin_r = 0.18
+    margin_t = 0.10
+    margin_b = legend_h
+    gap_x = 0.08
+    gap_y = 0.12
+    available_w = fig_w - margin_l - margin_r - gap_x
+    available_h = fig_h - margin_t - margin_b - gap_y
+    panel_w = min(available_w / 2.0, (available_h / 2.0) / data_aspect)
+    panel_h = panel_w * data_aspect
+    start_x = margin_l + 0.5 * (available_w - 2.0 * panel_w - gap_x)
+    start_y = margin_b + 0.5 * (available_h - 2.0 * panel_h - gap_y)
+
+    fig = plt.figure(figsize=(fig_w, fig_h))
+    axes = []
+    for row_idx in range(2):
+        for col_idx in range(2):
+            x0 = (start_x + col_idx * (panel_w + gap_x)) / fig_w
+            y0 = (start_y + (1 - row_idx) * (panel_h + gap_y)) / fig_h
+            axes.append(fig.add_axes([x0, y0, panel_w / fig_w, panel_h / fig_h]))
+
+    for idx, ax in enumerate(axes):
+        ax.set_facecolor(MAP_BACKGROUND_COLOR)
+        countries.plot(
+            ax=ax,
+            facecolor=GEOTHERMAL_NOT_POSSIBLE_COLOR,
+            edgecolor="none",
+            zorder=1,
+        )
+        countries.boundary.plot(
+            ax=ax,
+            color=COUNTRY_EDGE_COLOR,
+            linewidth=0.25,
+            zorder=4,
+        )
+        ax.set_xticks([])
+        ax.set_yticks([])
+        for spine in ax.spines.values():
+            spine.set_visible(True)
+            spine.set_linewidth(0.8)
+
+        if idx >= len(panel_specs):
+            ax.axis("off")
+            continue
+
+        spec = panel_specs[idx]
+        image = np.zeros((height, width), dtype=np.int16)
+        for _, unchanged_row in spec["unchanged"].iterrows():
+            r = int(unchanged_row["row"])
+            c = int(unchanged_row["col"])
+            if 0 <= r < height and 0 <= c < width:
+                image[r, c] = 1
+        for _, changed_row in spec["changed"].iterrows():
+            r = int(changed_row["row"])
+            c = int(changed_row["col"])
+            if 0 <= r < height and 0 <= c < width:
+                image[r, c] = transition_to_code[changed_row["_transition"]]
+
+        ax.imshow(
+            image,
+            cmap=cmap,
+            norm=norm,
+            interpolation="nearest",
+            extent=extent,
+            origin="upper",
+            zorder=2,
+        )
+        ax.set_xlim(extent[0], extent[1])
+        ax.set_ylim(extent[2], extent[3])
+        ax.set_aspect("equal")
+        ax.text(
+            0.02,
+            0.985,
+            f"{PANEL_LETTERS[idx]}) {spec['label']}\n{spec['switch_rate']:.1f}% switched",
+            transform=ax.transAxes,
+            ha="left",
+            va="top",
+            fontsize=11,
+            linespacing=1.08,
+            bbox=dict(facecolor="white", edgecolor="none", alpha=0.82, pad=1.2),
+            zorder=5,
+        )
+
+    legend_handles = [
+        Patch(facecolor=GEOTHERMAL_NOT_POSSIBLE_COLOR, edgecolor=COUNTRY_EDGE_COLOR, label="Geothermal not possible"),
+        Patch(facecolor=UNCHANGED_COLOR, edgecolor="#666666", label="Not changed"),
+    ] + [
+        Patch(facecolor=colors[label], edgecolor="none", label=label)
+        for label in transitions
+    ]
+    fig.legend(
+        handles=legend_handles,
+        loc="lower center",
+        bbox_to_anchor=(0.5, 0.005),
+        ncol=min(3, len(legend_handles)),
+        frameon=False,
+        fontsize=11,
+    )
+    fig.savefig(out_path, dpi=300)
+    plt.close(fig)
+
+
 # =========================
 # Main
 # =========================
@@ -486,6 +844,7 @@ def main():
         _schemas.write_blank_png(snakemake.output["boxplot_lcoe_top6_winner"])
         _schemas.write_blank_png(snakemake.output["boxplot_potential_top6_winner"])
         _schemas.write_blank_png(snakemake.output["barplot_switch_rate_top6"])
+        _schemas.write_blank_png(snakemake.output["map_switch_transition_top4"])
         return
 
     rank_params = (
@@ -514,12 +873,19 @@ def main():
         _schemas.write_blank_png(snakemake.output["boxplot_lcoe_top6_winner"])
         _schemas.write_blank_png(snakemake.output["boxplot_potential_top6_winner"])
         _schemas.write_blank_png(snakemake.output["barplot_switch_rate_top6"])
+        _schemas.write_blank_png(snakemake.output["map_switch_transition_top4"])
         return
     baseline_winner_df = build_baseline_winner_df(df_box_base, baseline_name=baseline)
     baseline_lcoe_values = baseline_winner_df["winner_lcoe_base"].to_numpy()
     baseline_potential_values = baseline_winner_df["winner_potential_base"].to_numpy()
+    finite_baseline_lcoe = baseline_lcoe_values[np.isfinite(baseline_lcoe_values)]
+    baseline_lcoe_mean = float(np.nanmean(finite_baseline_lcoe)) if finite_baseline_lcoe.size else np.nan
     finite_baseline_potential = baseline_potential_values[np.isfinite(baseline_potential_values)]
-    baseline_potential_total = float(np.nansum(finite_baseline_potential))
+    baseline_potential_mean = (
+        float(np.nanmean(finite_baseline_potential))
+        if finite_baseline_potential.size
+        else np.nan
+    )
 
     scenario_specs = []
     for _, row in df.iterrows():
@@ -564,6 +930,7 @@ def main():
         _schemas.write_blank_png(snakemake.output["boxplot_lcoe_top6_winner"])
         _schemas.write_blank_png(snakemake.output["boxplot_potential_top6_winner"])
         _schemas.write_blank_png(snakemake.output["barplot_switch_rate_top6"])
+        _schemas.write_blank_png(snakemake.output["map_switch_transition_top4"])
         return
 
     rank_params_lcoe = (
@@ -699,7 +1066,17 @@ def main():
         value_key="lcoe_values",
         ylabel="LCOE (€/MWh)",
         out_path=snakemake.output["boxplot_lcoe_top6_winner"],
-        summary_fn=summarise_lcoe,
+        summary_position="none",
+        show_mean_dot=True,
+        mean_label_fn=(
+            lambda mean, spec: (
+                f"{100.0 * mean / baseline_lcoe_mean:.0f}%"
+                if np.isfinite(mean)
+                and np.isfinite(baseline_lcoe_mean)
+                and not np.isclose(baseline_lcoe_mean, 0.0)
+                else ""
+            )
+        ),
     )
 
     make_single_baseline_plus_parameter_boxplot(
@@ -707,9 +1084,16 @@ def main():
         value_key="potential_values",
         ylabel="Potential (GW per 10x10km grid cell)",
         out_path=snakemake.output["boxplot_potential_top6_winner"],
-        summary_fn=lambda values: summarise_potential_tw(
-            values,
-            baseline_total=baseline_potential_total,
+        summary_position="none",
+        show_mean_dot=True,
+        mean_label_fn=(
+            lambda mean, spec: (
+                f"{100.0 * mean / baseline_potential_mean:.0f}%"
+                if np.isfinite(mean)
+                and np.isfinite(baseline_potential_mean)
+                and not np.isclose(baseline_potential_mean, 0.0)
+                else ""
+            )
         ),
     )
 
@@ -726,6 +1110,17 @@ def main():
         df=switch_df,
         top_n=bar_top_n,
         out_path=snakemake.output["barplot_switch_rate_top6"],
+        required_params=required_params,
+    )
+    make_switch_transition_map_figure(
+        switch_df=switch_df,
+        scenario_to_boxplot=scenario_to_boxplot,
+        baseline_winner_df=baseline_winner_df,
+        baseline=baseline,
+        top_n=bar_top_n,
+        out_path=snakemake.output["map_switch_transition_top4"],
+        shapes_path=snakemake.input["shapes"],
+        reference_raster_path=snakemake.input["reference_lcoe"],
         required_params=required_params,
     )
 

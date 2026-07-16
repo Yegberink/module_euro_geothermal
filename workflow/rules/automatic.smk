@@ -30,6 +30,8 @@ make_2d_figure_outputs = (
         "potential_presentation_fig": "<results>/{shapes}/{scenario}/potential_overview_presentation.png",
         "scatter_fig": "<resources>/automatic/{shapes}/scenarios/{scenario}/figures/lcoe_vs_potential_scatter.png",
         "technology_boxplot_fig": "<resources>/automatic/{shapes}/scenarios/{scenario}/figures/lcoe_potential_boxplots.png",
+        "technology_split_boxplot_fig": "<resources>/automatic/{shapes}/scenarios/{scenario}/figures/lcoe_potential_split_boxplots.png",
+        "technology_cumulative_four_panel_fig": "<resources>/automatic/{shapes}/scenarios/{scenario}/figures/lcoe_potential_cumulative_four_panel.png",
         "avg_potential_depth_fig": "<resources>/automatic/{shapes}/scenarios/{scenario}/figures/average_potential_per_cell_by_depth.png",
         "depth_profile_figs": expand(
             "<resources>/automatic/{{shapes}}/scenarios/{{scenario}}/figures/depth_profile_{cycle}.png",
@@ -394,6 +396,12 @@ if config["perform_sensitivity"]:
     rule sensitivity_vis:
         input:
             scenario_table=rules.build_scenario_table.output.tsv,
+            shapes="<shapes>",
+            reference_lcoe=(
+                f"<resources>/automatic/{{shapes}}/scenarios/{baseline_scenario}/documents/{cycles[0]}_2d_lcoe.tif"
+                if config["method_2d_aggregation"] == "LCOE_minimization"
+                else []
+            ),
             metrics=lambda wc: expand(
                 "<resources>/automatic/{shapes}/scenarios/{scenario}/documents/sensitivity_metrics.tsv",
                 shapes=wc.shapes,
@@ -413,6 +421,7 @@ if config["perform_sensitivity"]:
             boxplot_lcoe_top6_winner="<resources>/automatic/{shapes}/scenarios/_overview/boxplot_lcoe_top_6_winner.png",
             boxplot_potential_top6_winner="<resources>/automatic/{shapes}/scenarios/_overview/boxplot_potential_top_6_winner.png",
             barplot_switch_rate_top6="<resources>/automatic/{shapes}/scenarios/_overview/barplot_switch_rate_top_6.png",
+            map_switch_transition_top4="<resources>/automatic/{shapes}/scenarios/_overview/map_switch_transition_top_4.png",
         params:
             baseline=baseline_scenario,
             metric_name="mean_abs_pct_change_sens",
