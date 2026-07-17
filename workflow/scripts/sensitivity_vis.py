@@ -67,6 +67,9 @@ PARAM_LABELS = {
     "drilling_cost_curve": "Drilling cost curve",
     "include_egs": "Include EGS",
     "SED_NAN_POLICY": "Sediment NaN policy",
+    "max_depth": "Max depth",
+    "flowrate_egs": "EGS flow rate",
+    "flowrate_conventional": "Conventional flow rate",
 }
 
 
@@ -194,7 +197,7 @@ def summarise_potential_tw(values, baseline_total=None):
     if not vals.size:
         return ""
     total = float(np.nansum(vals))
-    label = f"Total: {total / 1e6:.2f} TW"
+    label = f"Total: {total / 1e6:.1f} TW"
     if baseline_total is not None and not np.isclose(float(baseline_total), 0.0):
         label += f"\n({100.0 * total / float(baseline_total):.0f}% of baseline)"
     return label
@@ -878,14 +881,6 @@ def main():
     baseline_winner_df = build_baseline_winner_df(df_box_base, baseline_name=baseline)
     baseline_lcoe_values = baseline_winner_df["winner_lcoe_base"].to_numpy()
     baseline_potential_values = baseline_winner_df["winner_potential_base"].to_numpy()
-    finite_baseline_lcoe = baseline_lcoe_values[np.isfinite(baseline_lcoe_values)]
-    baseline_lcoe_mean = float(np.nanmean(finite_baseline_lcoe)) if finite_baseline_lcoe.size else np.nan
-    finite_baseline_potential = baseline_potential_values[np.isfinite(baseline_potential_values)]
-    baseline_potential_mean = (
-        float(np.nanmean(finite_baseline_potential))
-        if finite_baseline_potential.size
-        else np.nan
-    )
 
     scenario_specs = []
     for _, row in df.iterrows():
@@ -1068,15 +1063,6 @@ def main():
         out_path=snakemake.output["boxplot_lcoe_top6_winner"],
         summary_position="none",
         show_mean_dot=True,
-        mean_label_fn=(
-            lambda mean, spec: (
-                f"{100.0 * mean / baseline_lcoe_mean:.0f}%"
-                if np.isfinite(mean)
-                and np.isfinite(baseline_lcoe_mean)
-                and not np.isclose(baseline_lcoe_mean, 0.0)
-                else ""
-            )
-        ),
     )
 
     make_single_baseline_plus_parameter_boxplot(
@@ -1084,17 +1070,9 @@ def main():
         value_key="potential_values",
         ylabel="Potential (GW per 10x10km grid cell)",
         out_path=snakemake.output["boxplot_potential_top6_winner"],
-        summary_position="none",
+        summary_fn=summarise_potential_tw,
+        summary_position="top",
         show_mean_dot=True,
-        mean_label_fn=(
-            lambda mean, spec: (
-                f"{100.0 * mean / baseline_potential_mean:.0f}%"
-                if np.isfinite(mean)
-                and np.isfinite(baseline_potential_mean)
-                and not np.isclose(baseline_potential_mean, 0.0)
-                else ""
-            )
-        ),
     )
 
     df_switch = df.copy()

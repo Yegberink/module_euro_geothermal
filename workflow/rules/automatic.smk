@@ -133,6 +133,42 @@ rule calculate_LCOE:
         "../scripts/calculate_LCOE.py"
 
 
+rule cost_breakdown:
+    """Plot technology-specific LCOE cost-share boxplots."""
+    input:
+        shapes="<shapes>",
+        cubes=lambda wc: expand(
+            rules.calculate_LCOE.output.cube,
+            shapes=wc.shapes,
+            scenario=wc.scenario,
+            cycle=cycles,
+        ),
+    output:
+        fig="<resources>/automatic/{shapes}/scenarios/{scenario}/figures/cost_breakdown.png",
+    conda:
+        "../envs/module_geothermal.yaml"
+    script:
+        "../scripts/cost_breakdown.py"
+
+
+rule depth_cost_breakdown_four_panel:
+    """Combine the three optimal-depth maps and cost breakdown in one figure."""
+    input:
+        shapes="<shapes>",
+        cubes=lambda wc: expand(
+            rules.calculate_LCOE.output.cube,
+            shapes=wc.shapes,
+            scenario=wc.scenario,
+            cycle=cycles,
+        ),
+    output:
+        fig="<resources>/automatic/{shapes}/scenarios/{scenario}/figures/depth_cost_breakdown_four_panel.png",
+    conda:
+        "../envs/module_geothermal.yaml"
+    script:
+        "../scripts/depth_cost_breakdown_four_panel.py"
+
+
 rule make_2d_base:
     input:
         shapes="<shapes>",
@@ -366,6 +402,51 @@ rule sensitivity_boxplot_per_scenario:
         "../scripts/sensitivity_boxplot_per_scenario.py"
 
 
+rule overall_potential:
+    """Tabulate study-wide potential by scenario and its sensitivity envelope."""
+    input:
+        scenario_table=rules.build_scenario_table.output.tsv,
+        lcoe_tifs=lambda wc: expand(
+            (
+                "<resources>/automatic/{shapes}/scenarios/{scenario}/documents/{cycle}_2d_lcoe.tif"
+                if config["method_2d_aggregation"] == "LCOE_minimization"
+                else "<resources>/automatic/{shapes}/scenarios/{scenario}/documents/{cycle}_2d_{cat}_lcoe.tif"
+            ),
+            shapes=wc.shapes,
+            scenario=scenarios,
+            cycle=cycles,
+            **(
+                {}
+                if config["method_2d_aggregation"] == "LCOE_minimization"
+                else {"cat": depth_categories_labels}
+            ),
+        ),
+        potential_tifs=lambda wc: expand(
+            (
+                "<resources>/automatic/{shapes}/scenarios/{scenario}/documents/{cycle}_2d_potential.tif"
+                if config["method_2d_aggregation"] == "LCOE_minimization"
+                else "<resources>/automatic/{shapes}/scenarios/{scenario}/documents/{cycle}_2d_{cat}_potential.tif"
+            ),
+            shapes=wc.shapes,
+            scenario=scenarios,
+            cycle=cycles,
+            **(
+                {}
+                if config["method_2d_aggregation"] == "LCOE_minimization"
+                else {"cat": depth_categories_labels}
+            ),
+        ),
+    output:
+        by_scenario="<resources>/automatic/{shapes}/generic/overall_potential_by_scenario.tsv",
+        summary="<resources>/automatic/{shapes}/generic/overall_potential_summary.tsv",
+    params:
+        baseline=baseline_scenario,
+    conda:
+        "../envs/module_geothermal.yaml"
+    script:
+        "../scripts/overall_potential.py"
+
+
 if config["perform_sensitivity"]:
 
     rule orc_temperature_bin_overview:
@@ -397,6 +478,7 @@ if config["perform_sensitivity"]:
         input:
             scenario_table=rules.build_scenario_table.output.tsv,
             shapes="<shapes>",
+            overall_potential=rules.overall_potential.output.summary,
             reference_lcoe=(
                 f"<resources>/automatic/{{shapes}}/scenarios/{baseline_scenario}/documents/{cycles[0]}_2d_lcoe.tif"
                 if config["method_2d_aggregation"] == "LCOE_minimization"

@@ -302,7 +302,16 @@ def _apply_sed_nan_policy(sed_thickness, z_thr=Z_THR_M, policy=SED_NAN_POLICY):
     return np.where(np.isfinite(sed_thickness), sed_thickness, fill).astype(np.float32)
 
 
-def calculate_LCOE_vec(
+LCOE_COMPONENT_NAMES = (
+    "drilling",
+    "stimulation",
+    "pump",
+    "power_plant",
+    "fixed_om",
+)
+
+
+def calculate_LCOE_components_vec(
     efficiency,
     production_temp,
     depth,
@@ -324,6 +333,8 @@ def calculate_LCOE_vec(
     kalina_money_per_kw,
     min_dt
 ):
+    """Return total LCOE followed by its five additive cost contributions."""
+    nan_result = tuple(np.float32(np.nan) for _ in range(1 + len(LCOE_COMPONENT_NAMES)))
     Cp_water = 4250.0
     MIN_DT = min_dt
 
@@ -346,13 +357,13 @@ def calculate_LCOE_vec(
 
     # Early rejection
     if (not np.isfinite(efficiency)) or (not np.isfinite(dT)) or (dT < MIN_DT):
-        return np.float32(np.nan)
+        return nan_result
 
     therm_out = flowrate_wells * Cp_water * dT / 1e6
     power_out = therm_out * efficiency
 
     if (not np.isfinite(power_out)) or (power_out <= 0.0):
-        return np.float32(np.nan)
+        return nan_result
 
     W = power_out
 
@@ -364,23 +375,27 @@ def calculate_LCOE_vec(
     elif ct == "kalina":
         eur_per_kw = kalina_money_per_kw
     else:
-        return np.float32(np.nan)
+        return nan_result
 
     powerplant_investment = (W * 1000.0 * eur_per_kw) / 1e6
     stimulation_cost = stimulation_cost_per_doublet * n_pairs
 
     well_cost_no_stim = _drilling_cost_meur_per_well(depth) * nr_wells
-    well_cost = well_cost_no_stim + stimulation_cost if is_egs else well_cost_no_stim
-
-    drill_investment = well_cost + pump_cost * n_pairs
-    capex_total = powerplant_investment + drill_investment
+    stimulation_investment = stimulation_cost if is_egs else 0.0
+    pump_investment = pump_cost * n_pairs
+    capex_total = (
+        well_cost_no_stim
+        + stimulation_investment
+        + pump_investment
+        + powerplant_investment
+    )
 
     load_hours = capacity_factor * 24.0 * 365.0
     elec_out = W * load_hours
     net_elec = elec_out * (1.0 - parasitic_fraction)
 
     if (not np.isfinite(net_elec)) or (net_elec <= 0.0):
-        return np.float32(np.nan)
+        return nan_result
 
     fixed_OM_costs = capex_total * fixed_OM_rate
     opex_total = fixed_OM_costs
@@ -389,12 +404,20 @@ def calculate_LCOE_vec(
     TT = float(lifetime)
     annuity_factor = (discount_rate * (1 + discount_rate) ** TT) / ((1 + discount_rate) ** TT - 1)
 
-    lcoe = ((capex_total * annuity_factor + opex_total) * 1e6) / net_elec
+    meur_to_eur_per_mwh = 1e6 / net_elec
+    component_lcoe = (
+        well_cost_no_stim * annuity_factor * meur_to_eur_per_mwh,
+        stimulation_investment * annuity_factor * meur_to_eur_per_mwh,
+        pump_investment * annuity_factor * meur_to_eur_per_mwh,
+        powerplant_investment * annuity_factor * meur_to_eur_per_mwh,
+        opex_total * meur_to_eur_per_mwh,
+    )
+    lcoe = sum(component_lcoe)
 
     if not np.isfinite(lcoe):
-        return np.float32(np.nan)
+        return nan_result
 
-    return np.float32(lcoe)
+    return (np.float32(lcoe), *(np.float32(value) for value in component_lcoe))
 
 
 def calculate_capacity_vec(
@@ -566,41 +589,47 @@ def main():
 
     t_out = float(temp_turbine_out[cycle_key])
 
-    # LCOE cube
-    lcoe = (
-        xr.apply_ufunc(
-            calculate_LCOE_vec,
-            eff,
-            T,
-            depth3d,
-            t_out,
-            sed3d,
-            input_core_dims=[[], [], [], [], []],
-            vectorize=True,
-            dask=use_dask,
-            output_dtypes=[np.float32],
-            keep_attrs=True,
-            kwargs=dict(
-                cycle_type=cycle,
-                stimulation_cost_per_doublet=cfg("stimulation_cost_per_doublet"),
-                pump_cost=cfg("pump_cost"),
-                fixed_OM_rate=cfg("fixed_OM_rate"),
-                parasitic_fraction=cfg("parasitic_fraction"),
-                capacity_factor=cfg("capacity_factor"),
-                orc_money_per_kw=cfg("orc_money_per_kw"),
-                flash_money_per_kw=cfg("flash_money_per_kw"),
-                kalina_money_per_kw=cfg("kalina_money_per_kw"),
-                lifetime=cfg("lifetime"),
-                min_dt=cfg("min_dt"),
-                well_spacing=cfg("well_spacing"),
-                flowrate_egs=cfg("flowrate_egs"),
-                flowrate_conventional=cfg("flowrate_conventional"),
-                area_available=100,
-            ),
-        )
-        .transpose("depth_m", "y", "x")
-        .assign_attrs(units="€/MWhe", tech=str(cycle_key), crs=crs_str)
+    # Total LCOE and its exact additive cost-component contributions.
+    lcoe_outputs = xr.apply_ufunc(
+        calculate_LCOE_components_vec,
+        eff,
+        T,
+        depth3d,
+        t_out,
+        sed3d,
+        input_core_dims=[[], [], [], [], []],
+        output_core_dims=[[] for _ in range(1 + len(LCOE_COMPONENT_NAMES))],
+        vectorize=True,
+        dask=use_dask,
+        output_dtypes=[np.float32 for _ in range(1 + len(LCOE_COMPONENT_NAMES))],
+        keep_attrs=True,
+        kwargs=dict(
+            cycle_type=cycle,
+            stimulation_cost_per_doublet=cfg("stimulation_cost_per_doublet"),
+            pump_cost=cfg("pump_cost"),
+            fixed_OM_rate=cfg("fixed_OM_rate"),
+            parasitic_fraction=cfg("parasitic_fraction"),
+            capacity_factor=cfg("capacity_factor"),
+            orc_money_per_kw=cfg("orc_money_per_kw"),
+            flash_money_per_kw=cfg("flash_money_per_kw"),
+            kalina_money_per_kw=cfg("kalina_money_per_kw"),
+            lifetime=cfg("lifetime"),
+            min_dt=cfg("min_dt"),
+            well_spacing=cfg("well_spacing"),
+            flowrate_egs=cfg("flowrate_egs"),
+            flowrate_conventional=cfg("flowrate_conventional"),
+            area_available=100,
+        ),
     )
+    lcoe, *component_arrays = [
+        output.transpose("depth_m", "y", "x").assign_attrs(
+            units="€/MWh_e",
+            tech=str(cycle_key),
+            crs=crs_str,
+        )
+        for output in lcoe_outputs
+    ]
+    lcoe_components = dict(zip(LCOE_COMPONENT_NAMES, component_arrays))
 
     # Installed capacity cube (net MW)
     cap = (
@@ -633,6 +662,10 @@ def main():
         data_vars={
             "temperature": T.astype(np.float32),
             "lcoe": lcoe.astype(np.float32),
+            **{
+                f"lcoe_{name}": values.astype(np.float32)
+                for name, values in lcoe_components.items()
+            },
             "potential": cap.astype(np.float32),
             "egs_cutoff_depth_m": cutoff3d.astype(np.float32),
         },
@@ -653,6 +686,14 @@ def main():
 
     ds_out["temperature"].attrs.update({"units": "degC", "long_name": "Reservoir temperature"})
     ds_out["lcoe"].attrs.update({"units": "€/MWh_e", "long_name": f"LCOE ({cycle_key})"})
+    for name in LCOE_COMPONENT_NAMES:
+        label = name.replace("_", " ").title()
+        ds_out[f"lcoe_{name}"].attrs.update(
+            {
+                "units": "€/MWh_e",
+                "long_name": f"{label} contribution to LCOE ({cycle_key})",
+            }
+        )
     ds_out["potential"].attrs.update({"units": "MW", "long_name": f"Net electric capacity ({cycle_key})"})
     ds_out["egs_cutoff_depth_m"].attrs.update({"units": "m", "long_name": "EGS cutoff depth"})
 

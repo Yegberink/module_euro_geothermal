@@ -18,6 +18,12 @@ pathvars:
     geothermal_regions:
       default: "<results>/{shapes}/{scenario}/geothermal_regions.parquet"
       description: Geothermal LCOE and potential aggregated to user-provided polygons.
+    overall_potential_by_scenario:
+      default: "<resources>/automatic/{shapes}/generic/overall_potential_by_scenario.tsv"
+      description: Study-wide potential in TW by sensitivity scenario and technology.
+    overall_potential_summary:
+      default: "<resources>/automatic/{shapes}/generic/overall_potential_summary.tsv"
+      description: Baseline study-wide potential and min-max sensitivity envelope in TW.
 wildcards:
   shapes: Name of the provided shape set.
   scenario: Scenario name; defaults to "base" and can include sensitivity scenarios.
