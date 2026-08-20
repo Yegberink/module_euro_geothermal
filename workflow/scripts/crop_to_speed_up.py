@@ -31,53 +31,6 @@ def crop_ds_bbox_projected(ds, x_name="x", y_name="y", bbox=None, pad_m=20_000):
 
     return ds.sel({x_name: x_slice, y_name: y_slice})
 
-def write_depth_slider_html(da, qc_path: Path, title="Cropped temperature voxel QC (depth slider)"):
-    import plotly.graph_objects as go
-
-    depths = da["depth_m"].values.astype(float)
-    if depths.size == 0 or da.sizes.get("x", 1) == 0 or da.sizes.get("y", 1) == 0:
-        _schemas.write_empty_html(qc_path)
-        return
-    z0 = depths[0]
-    img0 = da.sel(depth_m=z0).values
-
-    fig = go.Figure()
-    fig.add_trace(go.Heatmap(z=img0))
-
-    frames = [
-        go.Frame(data=[go.Heatmap(z=da.sel(depth_m=d).values)], name=str(int(d)))
-        for d in depths
-    ]
-    fig.frames = frames
-
-    steps = []
-    for d in depths:
-        dname = str(int(d))
-        steps.append({
-            "label": dname,
-            "method": "animate",
-            "args": [[dname], {
-                "mode": "immediate",
-                "frame": {"duration": 0, "redraw": True},
-                "transition": {"duration": 0},
-            }],
-        })
-
-    fig.update_layout(
-        title=title,
-        xaxis_title="x",
-        yaxis_title="y",
-        sliders=[{
-            "active": 0,
-            "currentvalue": {"prefix": "Depth (m): "},
-            "pad": {"t": 30},
-            "steps": steps,
-        }],
-    )
-
-    fig.write_html(str(qc_path), include_plotlyjs="cdn")
-
-
 def main():
     voxel_nc = Path(snakemake.input.nc)
     shapes_path = Path(snakemake.input.shapes)
@@ -95,12 +48,6 @@ def main():
         ds_small = _schemas.empty_dataset_like(ds.isel(x=slice(0, 1), y=slice(0, 1)))
 
     ds_small.to_netcdf(out_nc)
-    # QC plot (if requested by rule)
-    qc_path = Path(snakemake.output.qc_html)
-    if qc_path is not None:
-        # Choose the variable name in your voxel (adjust if different)
-        var = "temperature"
-        write_depth_slider_html(ds_small[var], qc_path)
 
 if __name__ == "__main__":
     main()

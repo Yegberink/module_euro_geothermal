@@ -39,6 +39,10 @@ validate(config, workflow.source_path("internal/config.schema.yaml"))
 
 # Add all your includes here.
 include: "rules/automatic.smk"
+include: "rules/lcoe.smk"
+include: "rules/spatial_aggregation.smk"
+include: "rules/scenario_figures.smk"
+include: "rules/sensitivity.smk"
 
 
 # Add additional files to be delivered alongside the workflow here.

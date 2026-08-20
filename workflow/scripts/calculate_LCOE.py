@@ -473,59 +473,6 @@ def calculate_capacity_vec(
     return np.float32(potential)
 
 
-def write_depth_slider_html(da3d, qc_path: Path, title: str, stride: int = 1):
-    da = da3d
-    if stride and stride > 1:
-        da = da.isel(y=slice(None, None, stride), x=slice(None, None, stride))
-
-    depths = da["depth_m"].values.astype(float)
-    if depths.size == 0 or da.sizes.get("x", 1) == 0 or da.sizes.get("y", 1) == 0:
-        _schemas.write_empty_html(qc_path)
-        return
-    z0 = depths[0]
-    img0 = da.sel(depth_m=z0).values
-
-    fig = go.Figure()
-    fig.add_trace(go.Heatmap(z=img0))
-
-    frames = [go.Frame(data=[go.Heatmap(z=da.sel(depth_m=d).values)], name=str(int(d))) for d in depths]
-    fig.frames = frames
-
-    steps = []
-    for d in depths:
-        dname = str(int(d))
-        steps.append(
-            {
-                "label": dname,
-                "method": "animate",
-                "args": [
-                    [dname],
-                    {
-                        "mode": "immediate",
-                        "frame": {"duration": 0, "redraw": True},
-                        "transition": {"duration": 0},
-                    },
-                ],
-            }
-        )
-
-    fig.update_layout(
-        title=title,
-        xaxis_title="x",
-        yaxis_title="y",
-        sliders=[
-            {
-                "active": 0,
-                "currentvalue": {"prefix": "Depth (m): "},
-                "pad": {"t": 30},
-                "steps": steps,
-            }
-        ],
-    )
-
-    fig.write_html(str(qc_path), include_plotlyjs="cdn")
-
-
 def _normalize_cycle_param(x: str) -> str:
     x = str(x).strip().lower()
     return x
@@ -698,24 +645,6 @@ def main():
     ds_out["egs_cutoff_depth_m"].attrs.update({"units": "m", "long_name": "EGS cutoff depth"})
 
     ds_out.to_netcdf(cube_nc)
-
-    # Write html sliders only if both requested and declared as outputs
-    write_qc = bool(snakemake.params.get("write_qc_sliders", False))
-    if write_qc:
-        if qc_lcoe is not None:
-            write_depth_slider_html(
-                lcoe,
-                qc_lcoe,
-                title=f"LCOE depth slider ({cycle_key})",
-                stride=snakemake.params.get("qc_stride"),
-            )
-        if qc_pot is not None:
-            write_depth_slider_html(
-                cap,
-                qc_pot,
-                title=f"Potential depth slider ({cycle_key})",
-                stride=snakemake.params.get("qc_stride"),
-            )
 
 if __name__ == "__main__":
     main()

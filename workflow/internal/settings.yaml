@@ -8,8 +8,6 @@ resources:
 defaults:
   baseline_scenario: base
   perform_sensitivity: false
-  write_qc_sliders: false
-  qc_stride: 1
   sens_tech: orc
 
   active_sensitivity_parameters: []

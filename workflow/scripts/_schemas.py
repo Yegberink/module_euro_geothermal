@@ -166,12 +166,6 @@ def ensure_parent(path) -> None:
     if str(parent):
         parent.mkdir(parents=True, exist_ok=True)
 
-
-def write_empty_html(path) -> None:
-    ensure_parent(path)
-    Path(path).write_text("<!doctype html><html><body></body></html>\n")
-
-
 def write_blank_png(path, figsize=(6, 4)) -> None:
     import matplotlib.pyplot as plt
 

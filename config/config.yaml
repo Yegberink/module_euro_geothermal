@@ -13,7 +13,6 @@
 baseline_scenario: base
 
 perform_sensitivity: true     # false → only the baseline scenario is run
-write_qc_sliders: false        # false → skip depth-slider HTML files (saves disk)
 
 method_region_aggregation: cutoff
 # options:
@@ -235,7 +234,3 @@ sensitivity_parameters:
     - shamoushaki_2021
     - getem_2017
     - getem_2025
-# -----------------------------------------------------------------------------
-# Quality-control options
-# -----------------------------------------------------------------------------
-qc_stride: 1              # increase to subsample QC sliders and reduce HTML file size
