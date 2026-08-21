@@ -66,7 +66,7 @@ rule build_scenario_table:
 
 rule crop_to_speed_up:
     input:
-        nc="<resources>/automatic/temperature_voxel_from_2020.nc",
+        nc="<resources>/automatic/temperature_voxel.nc",
         shapes="<shapes>",
     output:
         clipped_temp_voxel="<resources>/automatic/{shapes}/generic/clipped_temp_voxel.nc",
@@ -82,9 +82,9 @@ rule calculate_LCOE:
     input:
         nc=rules.crop_to_speed_up.output.clipped_temp_voxel,
         sed="<resources>/automatic/Global_sedmap_1deg.nc",
-        eff="<resources>/automatic/efficiency_curves.csv",
-        drilling_costs_2017="<resources>/automatic/baseline_drilling_2017.csv",
-        drilling_costs_2025="<resources>/automatic/baseline_drilling_2025.csv",
+        eff="workflow/internal/efficiency_curves.csv",
+        drilling_costs_2017="workflow/internal/baseline_drilling_2017.csv",
+        drilling_costs_2025="workflow/internal/baseline_drilling_2025.csv",
         scenario_table=rules.build_scenario_table.output.tsv,
     output:
         cube="<resources>/automatic/{shapes}/scenarios/{scenario}/documents/{cycle}_lcoe_cube.nc",

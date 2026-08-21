@@ -1,8 +1,11 @@
 # Module settings that users cannot modify.
 resources:
   automatic:
-    # Links for automatically downloaded files
-    dummy_readme: "https://raw.githubusercontent.com/modelblocks-org/module_powerplants/refs/heads/main/README.md"
+    # Stable Zenodo repository; add a URL containing the {dataset} placeholder.
+    url: ""
+    datasets:
+      - Global_sedmap_1deg.nc
+      - temperature_voxel.nc
 
 
 defaults:
@@ -43,11 +46,11 @@ defaults:
       currency_year: 2021
     getem_2017:
       curve_type: csv_fit_usd
-      csv_path: <resources>/automatic/baseline_drilling_2017.csv
+      csv_path: workflow/internal/baseline_drilling_2017.csv
       currency_year: 2017
     getem_2025:
       curve_type: csv_fit_usd
-      csv_path: <resources>/automatic/baseline_drilling_2025.csv
+      csv_path: workflow/internal/baseline_drilling_2025.csv
       currency_year: 2025
 
   carrier_out: power
