@@ -1,5 +1,6 @@
 """Rules for reducing LCOE cubes to 2D rasters and regional outputs."""
 
+
 rule make_2d_base:
     input:
         shapes="<shapes>",
@@ -55,6 +56,8 @@ rule make_2d_base:
         ),
     log:
         "<logs>/{shapes}/{scenario}/make_2d.log",
+    message:
+        "Reduce baseline geothermal results for {wildcards.shapes} to 2-D rasters."
     params:
         method_2d_aggregation=config["method_2d_aggregation"],
         depth_categories=config.get("depth_categories"),
@@ -116,6 +119,8 @@ rule make_2d_scenario:
         ),
     log:
         "<logs>/{shapes}/{scenario}/make_2d.log",
+    message:
+        "Reduce geothermal scenario {wildcards.scenario} to 2-D rasters."
     params:
         method_2d_aggregation=config["method_2d_aggregation"],
         depth_categories=config.get("depth_categories"),
@@ -173,6 +178,8 @@ rule aggregate_to_regions:
         manifest="<results>/{shapes}/{scenario}/geothermal_region_outputs.tsv",
     log:
         "<logs>/{shapes}/{scenario}/aggregate_to_regions.log",
+    message:
+        "Aggregate geothermal scenario {wildcards.scenario} to {wildcards.shapes}."
     params:
         cycles=cycles,
         method_region_aggregation=config["method_region_aggregation"],

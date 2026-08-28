@@ -1,7 +1,6 @@
 """Rules for per-scenario cost and sensitivity figures."""
 
 
-
 rule cost_breakdown:
     """Plot technology-specific LCOE cost-share boxplots."""
     input:
@@ -16,6 +15,8 @@ rule cost_breakdown:
         fig="<resources>/automatic/{shapes}/scenarios/{scenario}/figures/cost_breakdown.png",
     log:
         "<logs>/{shapes}/{scenario}/cost_breakdown.log",
+    message:
+        "Plot LCOE cost components for geothermal scenario {wildcards.scenario}."
     conda:
         "../envs/module_geothermal.yaml"
     script:
@@ -36,11 +37,12 @@ rule depth_cost_breakdown_four_panel:
         fig="<resources>/automatic/{shapes}/scenarios/{scenario}/figures/depth_cost_breakdown_four_panel.png",
     log:
         "<logs>/{shapes}/{scenario}/depth_cost_breakdown_four_panel.log",
+    message:
+        "Plot depth and cost diagnostics for geothermal scenario {wildcards.scenario}."
     conda:
         "../envs/module_geothermal.yaml"
     script:
         "../scripts/depth_cost_breakdown_four_panel.py"
-
 
 
 rule scenario_summary_fig:
@@ -75,6 +77,8 @@ rule scenario_summary_fig:
         boxplot_data="<resources>/automatic/{shapes}/scenarios/{scenario}/documents/sensitivity_boxplot_data.parquet",
     log:
         "<logs>/{shapes}/{scenario}/scenario_summary_fig.log",
+    message:
+        "Compare geothermal scenario {wildcards.scenario} with the baseline."
     params:
         baseline=baseline_scenario,
         cycles=cycles,
@@ -95,8 +99,9 @@ rule sensitivity_boxplot_per_scenario:
         potential_fig="<resources>/automatic/{shapes}/scenarios/{scenario}/figures/boxplot_potential.png",
     log:
         "<logs>/{shapes}/{scenario}/sensitivity_boxplot_per_scenario.log",
+    message:
+        "Plot sensitivity distributions for geothermal scenario {wildcards.scenario}."
     conda:
         "../envs/module_geothermal.yaml"
     script:
         "../scripts/sensitivity_boxplot_per_scenario.py"
-

@@ -93,15 +93,21 @@ def scenario_potential_table(lcoe_paths, potential_paths, scenario_table, baseli
             lcoe_by_technology = {}
             potential_by_technology = {}
             reference_grid = None
-            for _, technology in [key for key in option_keys if key[0] == depth_category]:
+            for _, technology in [
+                key for key in option_keys if key[0] == depth_category
+            ]:
                 lcoe_key = (scenario, depth_category, technology, "lcoe")
                 potential_key = (scenario, depth_category, technology, "potential")
                 if potential_key not in paths:
-                    raise ValueError(f"Missing matching potential raster for {lcoe_key}")
+                    raise ValueError(
+                        f"Missing matching potential raster for {lcoe_key}"
+                    )
                 lcoe, lcoe_grid = _read_raster(paths[lcoe_key])
                 potential, potential_grid = _read_raster(paths[potential_key])
                 if lcoe_grid != potential_grid:
-                    raise ValueError(f"LCOE and potential grids differ for {lcoe_key[:-1]}")
+                    raise ValueError(
+                        f"LCOE and potential grids differ for {lcoe_key[:-1]}"
+                    )
                 if reference_grid is not None and lcoe_grid != reference_grid:
                     raise ValueError(
                         f"Technology grids differ in {scenario!r}, {depth_category!r}"
@@ -109,10 +115,9 @@ def scenario_potential_table(lcoe_paths, potential_paths, scenario_table, baseli
                 reference_grid = lcoe_grid
                 lcoe_by_technology[technology] = lcoe
                 potential_by_technology[technology] = potential
-                totals_by_technology[technology] = (
-                    totals_by_technology.get(technology, 0.0)
-                    + total_potential_tw(potential)
-                )
+                totals_by_technology[technology] = totals_by_technology.get(
+                    technology, 0.0
+                ) + total_potential_tw(potential)
 
             portfolio_total += lowest_lcoe_potential_tw(
                 lcoe_by_technology, potential_by_technology
@@ -127,19 +132,11 @@ def scenario_potential_table(lcoe_paths, potential_paths, scenario_table, baseli
             "sensitivity_scenario_value": metadata.get("sensitivity_scenario_value"),
         }
         rows.extend(
-            {
-                **common,
-                "technology": technology,
-                "potential_tw": potential_tw,
-            }
+            {**common, "technology": technology, "potential_tw": potential_tw}
             for technology, potential_tw in sorted(totals_by_technology.items())
         )
         rows.append(
-            {
-                **common,
-                "technology": PORTFOLIO_LABEL,
-                "potential_tw": portfolio_total,
-            }
+            {**common, "technology": PORTFOLIO_LABEL, "potential_tw": portfolio_total}
         )
 
     return pd.DataFrame(rows)

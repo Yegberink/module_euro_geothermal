@@ -1,8 +1,14 @@
+import os
+import sys
+
 import yaml
 
 from snakemake.utils import min_version, validate
 
 min_version("9.19")
+
+sys.path.insert(0, os.path.dirname(workflow.source_path("scripts/scenario_config.py")))
+from scenario_config import validate_module_config
 
 
 def deep_update(base, overrides):
@@ -19,6 +25,12 @@ pathvars:
     geothermal_regions="<results>/{shapes}/{scenario}/geothermal_regions.parquet",
     overall_potential_by_scenario="<results>/{shapes}/overall_potential_by_scenario.tsv",
     overall_potential_summary="<results>/{shapes}/overall_potential_summary.tsv",
+
+
+wildcard_constraints:
+    shapes="[A-Za-z0-9][A-Za-z0-9_-]*",
+    scenario="[A-Za-z0-9][A-Za-z0-9_.-]*",
+    cycle="orc|flash|kalina",
 
 
 # Load the example configuration. This will be overridden by users.
@@ -38,6 +50,7 @@ config.update(merged_config)
 
 # Validate the configuration using the schema file.
 validate(config, workflow.source_path("internal/config.schema.yaml"))
+validate_module_config(config)
 
 
 # Add all your includes here.

@@ -1,13 +1,6 @@
 """Scenario setup, input preparation, and LCOE calculation rules."""
 
-import os
 import re
-import sys
-
-sys.path.insert(
-    0, os.path.dirname(workflow.source_path("../scripts/scenario_config.py"))
-)
-from scenario_config import build_scenario_rows
 
 
 def depthcat_labels():
@@ -58,6 +51,8 @@ rule build_scenario_table:
         tsv="<resources>/automatic/scenario_table.tsv",
     log:
         "<logs>/build_scenario_table.log",
+    message:
+        "Build the configured geothermal scenario table."
     params:
         config=config,
     conda:
@@ -74,6 +69,8 @@ rule crop_to_speed_up:
         clipped_temp_voxel="<resources>/automatic/{shapes}/generic/clipped_temp_voxel.nc",
     log:
         "<logs>/{shapes}/crop_to_speed_up.log",
+    message:
+        "Crop the European temperature model to {wildcards.shapes}."
     params:
         pad_m=25_000,
     conda:
@@ -91,6 +88,8 @@ rule resample_gst1_sediment:
         sediment="<resources>/automatic/GST1_sediment_thickness.nc",
     log:
         "<logs>/automatic/resample_gst1_sediment.log",
+    message:
+        "Align GST-1 sediment thickness with the temperature grid."
     params:
         member=internal["resources"]["automatic"]["gst1"]["member"],
         doi=internal["resources"]["automatic"]["gst1"]["doi"],
@@ -116,6 +115,8 @@ rule calculate_LCOE:
         cube="<resources>/automatic/{shapes}/scenarios/{scenario}/documents/{cycle}_lcoe_cube.nc",
     log:
         "<logs>/{shapes}/{scenario}/{cycle}/calculate_LCOE.log",
+    message:
+        "Calculate {wildcards.cycle} geothermal potential and LCOE for {wildcards.scenario}."
     params:
         cycle=lambda wc: wc.cycle,
     conda:

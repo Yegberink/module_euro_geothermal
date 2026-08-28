@@ -1,5 +1,6 @@
 """Rules for study-wide potential and sensitivity analysis."""
 
+
 rule overall_potential:
     """Tabulate study-wide potential by scenario and its sensitivity envelope."""
     input:
@@ -39,6 +40,8 @@ rule overall_potential:
         summary="<overall_potential_summary>",
     log:
         "<logs>/{shapes}/overall_potential.log",
+    message:
+        "Summarize geothermal potential across all configured scenarios."
     params:
         baseline=baseline_scenario,
     conda:
@@ -68,6 +71,8 @@ if config["perform_sensitivity"]:
             data="<results>/{shapes}/orc_potential_temperature_bins_by_scenario.tsv",
         log:
             "<logs>/{shapes}/orc_temperature_bin_overview.log",
+        message:
+            "Summarize ORC potential by reservoir-temperature bin."
         params:
             scenarios=scenarios,
             bin_width=10,
@@ -108,6 +113,8 @@ if config["perform_sensitivity"]:
             map_switch_transition_top4="<resources>/automatic/{shapes}/scenarios/_overview/map_switch_transition_top_4.png",
         log:
             "<logs>/{shapes}/sensitivity_vis.log",
+        message:
+            "Plot study-wide geothermal sensitivity results for {wildcards.shapes}."
         params:
             baseline=baseline_scenario,
             metric_name="mean_abs_pct_change_sens",

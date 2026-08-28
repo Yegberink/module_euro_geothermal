@@ -1,34 +1,38 @@
+"""Plot per-scenario geothermal LCOE and potential distributions."""
+
 import sys
 
+import _schemas
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
-import _schemas
 
 if "snakemake" in dir():
     sys.stdout = sys.stderr = open(snakemake.log[0], "w", buffering=1)
 
-plt.rcParams.update({
-    "figure.dpi": 200,
-    "savefig.dpi": 300,
-    "font.family": "serif",
-    "font.serif": ["Times New Roman"],
-    "mathtext.fontset": "stix",
-    "axes.unicode_minus": False,
-    "font.size": 11,
-    "axes.labelsize": 12,
-    "axes.titlesize": 13,
-    "axes.linewidth": 0.8,
-    "xtick.direction": "out",
-    "ytick.direction": "out",
-    "xtick.major.size": 4,
-    "ytick.major.size": 4,
-    "xtick.minor.size": 2,
-    "ytick.minor.size": 2,
-    "legend.fontsize": 10,
-    "legend.frameon": False,
-})
+plt.rcParams.update(
+    {
+        "figure.dpi": 200,
+        "savefig.dpi": 300,
+        "font.family": "serif",
+        "font.serif": ["Times New Roman"],
+        "mathtext.fontset": "stix",
+        "axes.unicode_minus": False,
+        "font.size": 11,
+        "axes.labelsize": 12,
+        "axes.titlesize": 13,
+        "axes.linewidth": 0.8,
+        "xtick.direction": "out",
+        "ytick.direction": "out",
+        "xtick.major.size": 4,
+        "ytick.major.size": 4,
+        "xtick.minor.size": 2,
+        "ytick.minor.size": 2,
+        "legend.fontsize": 10,
+        "legend.frameon": False,
+    }
+)
 
 LCOE_LABEL = r"LCOE (€/MWh$_e$)"
 POTENTIAL_LABEL = "Theoretical potential(GW)"
@@ -61,18 +65,13 @@ SCENARIO_LABELS = {
     "min_dt": "Minimum dT",
 }
 
-STATE_COLORS = {
-    "Baseline": "#9E9E9E",
-    "Scenario": "#2166AC",
-}
+STATE_COLORS = {"Baseline": "#9E9E9E", "Scenario": "#2166AC"}
 
-BASELINE_DUAL_COLORS = {
-    "LCOE": "#6F6F6F",
-    "Potential": "#2166AC",
-}
+BASELINE_DUAL_COLORS = {"LCOE": "#6F6F6F", "Potential": "#2166AC"}
 
 
 def load_boxplot_table(path):
+    """Load sensitivity boxplot data from Parquet, TSV, or CSV."""
     path = str(path)
     if path.endswith(".parquet"):
         return pd.read_parquet(path)
@@ -84,12 +83,14 @@ def load_boxplot_table(path):
 
 
 def load_scenario_table(path):
+    """Load and normalize the configured scenario table."""
     df = pd.read_csv(path, sep="\t", comment="#").replace({np.nan: None})
     df["scenario"] = df["scenario"].astype(str)
     return df.set_index("scenario")
 
 
 def pretty_scenario_label(scen_df, scenario_name, baseline_name):
+    """Return a readable scenario label containing its changed value."""
     if scenario_name == baseline_name:
         return "Baseline"
     row = scen_df.loc[scenario_name]
@@ -103,6 +104,7 @@ def pretty_scenario_label(scen_df, scenario_name, baseline_name):
 
 
 def style_axes(ax, add_grid=True):
+    """Apply common styling to a plot axis."""
     ax.spines["top"].set_visible(True)
     ax.spines["right"].set_visible(True)
     if add_grid:
@@ -111,6 +113,7 @@ def style_axes(ax, add_grid=True):
 
 
 def add_top_padding(ax, frac=0.18):
+    """Increase the upper axis limit to leave room for annotations."""
     ymin, ymax = ax.get_ylim()
     yrange = ymax - ymin
     if not np.isfinite(yrange) or yrange <= 0:
@@ -118,17 +121,8 @@ def add_top_padding(ax, frac=0.18):
     ax.set_ylim(ymin, ymax + frac * yrange)
 
 
-def draw_boxplot(
-    ax,
-    data,
-    positions,
-    colors,
-    widths=0.65,
-    zorder=3,
-):
-    """
-    Draw a styled boxplot and return the matplotlib boxplot dictionary.
-    """
+def draw_boxplot(ax, data, positions, colors, widths=0.65, zorder=3):
+    """Draw a styled boxplot and return the matplotlib boxplot dictionary."""
     bp = ax.boxplot(
         data,
         positions=positions,
@@ -160,8 +154,8 @@ def make_metric_comparison_boxplot(
     outfig,
     value_scale=1.0,
 ):
-    """
-    For non-baseline scenarios:
+    """Plot one metric for a non-baseline scenario.
+
     create a single-metric figure comparing Baseline vs Scenario for each technology.
     """
     fig, ax = plt.subplots(figsize=(8.6, 5.6), constrained_layout=True)
@@ -241,8 +235,16 @@ def make_metric_comparison_boxplot(
     add_top_padding(ax)
 
     legend_handles = [
-        Patch(facecolor=STATE_COLORS["Baseline"], edgecolor="#4D4D4D", label=baseline_label),
-        Patch(facecolor=STATE_COLORS["Scenario"], edgecolor="#4D4D4D", label=f"Scenario: {scenario_label}"),
+        Patch(
+            facecolor=STATE_COLORS["Baseline"],
+            edgecolor="#4D4D4D",
+            label=baseline_label,
+        ),
+        Patch(
+            facecolor=STATE_COLORS["Scenario"],
+            edgecolor="#4D4D4D",
+            label=f"Scenario: {scenario_label}",
+        ),
     ]
     ax.legend(handles=legend_handles, loc="upper right")
 
@@ -250,14 +252,9 @@ def make_metric_comparison_boxplot(
     plt.close(fig)
 
 
-def make_baseline_dual_axis_boxplot(
-    df,
-    scenario_label,
-    is_baseline_case,
-    outfig,
-):
-    """
-    For the baseline scenario:
+def make_baseline_dual_axis_boxplot(df, scenario_label, is_baseline_case, outfig):
+    """Plot baseline LCOE and potential on paired axes.
+
     create one figure with twin y-axes:
       - LCOE boxplots on left axis
       - Potential boxplots on right axis
@@ -343,8 +340,14 @@ def make_baseline_dual_axis_boxplot(
     add_top_padding(ax2)
 
     legend_handles = [
-        Patch(facecolor=BASELINE_DUAL_COLORS["LCOE"], edgecolor="#4D4D4D", label="LCOE"),
-        Patch(facecolor=BASELINE_DUAL_COLORS["Potential"], edgecolor="#4D4D4D", label="Potential"),
+        Patch(
+            facecolor=BASELINE_DUAL_COLORS["LCOE"], edgecolor="#4D4D4D", label="LCOE"
+        ),
+        Patch(
+            facecolor=BASELINE_DUAL_COLORS["Potential"],
+            edgecolor="#4D4D4D",
+            label="Potential",
+        ),
     ]
     ax1.legend(handles=legend_handles, loc="upper left")
 
@@ -353,6 +356,7 @@ def make_baseline_dual_axis_boxplot(
 
 
 def main():
+    """Create the scenario boxplots requested by Snakemake."""
     scen_df = load_scenario_table(snakemake.input["scenario_table"])
     inpath = snakemake.input["boxplot_data"]
     df = _schemas.SensitivityBoxplotSchema.validate(load_boxplot_table(inpath))

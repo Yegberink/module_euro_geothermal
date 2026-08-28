@@ -4,24 +4,20 @@ channels:
   - bioconda
   - nodefaults
 dependencies:
-  - python=3.12
-  - snakemake-minimal=9.19
-  - affine=2.4
-  - attrs
-  - cycler=0.12.1
-  - dask=2026.1.1
-  - geopandas=1.1.2
-  - libjxl=0.11.1
-  - matplotlib=3.10.8
-  - numpy
-  - pandas=2.3.0
-  - pandera-geopandas=0.24.0
-  - plotly=6.5.2
-  - pyarrow=23.0.0
-  - rasterio=1.5.0
-  - rioxarray=0.21.0
-  - seaborn
-  - scipy=1.17.0
-  - xarray=2025.11.0
-  - pip
-  - gregor==0.0.2
+  - python >=3.12,<3.14
+  - affine >=2.4,<3
+  - cycler >=0.12,<0.13
+  - dask >=2026.1,<2027
+  - geopandas >=1.1,<2
+  - gregor >=0.1,<0.2
+  - matplotlib >=3.10,<4
+  - netcdf4 >=1.7,<2
+  - numpy >=2.3,<3
+  - pandas >=2.3,<3
+  - pandera-geopandas >=0.24,<0.25
+  - pyarrow >=23,<24
+  - rasterio >=1.5,<2
+  - rioxarray >=0.21,<0.22
+  - scipy >=1.17,<2
+  - seaborn >=0.13,<0.14
+  - xarray >=2026.1,<2027

@@ -76,7 +76,17 @@ worked configuration is available in [`config/config.yaml`](./config/config.yaml
 ## Input and output structure
 
 The required polygon input and the module's public result path variables are
-documented in [`INTERFACE.yaml`](./INTERFACE.yaml).
+documented in [`INTERFACE.yaml`](./INTERFACE.yaml). The input must be a
+GeoParquet file with a declared coordinate reference system, unique `shape_id`
+values, and valid Polygon or MultiPolygon geometry. An optional `shape_class`
+column may be included; rows whose value is `maritime` are excluded from
+regional aggregation.
+
+The regional `geothermal_regions.parquet` output contains one row for each
+region, technology, depth category, and price bin. Its `potential` values are
+net electric capacity in MW and `mean_lcoe` is the potential-weighted mean LCOE
+in €2020/MWh. See the [configuration guide](./config/README.md#inputs-and-outputs)
+for the complete column contract and the study-wide TSV outputs.
 
 ## Using this module
 
@@ -120,16 +130,28 @@ cd module_geothermal
 pixi install --all
 ```
 
-For testing, run:
+Pixi's single `default` environment contains both development tools and runtime
+packages. Snakemake rules remain reproducible through two smaller Conda files:
+`workflow/envs/shell.yaml` supplies Curl to download inputs, while
+`workflow/envs/module_geothermal.yaml` supplies the Python computation stack.
+
+Run the quick checks used during development with:
 
 ```shell
-pixi run test-integration
+pixi run test-quick
 ```
 
-To test a minimal example of a workflow using this module:
+The integration definition is retained for dedicated workflow testing, but is
+not part of the quick check. To run it explicitly:
 
 ```shell
 pixi shell
 cd tests/integration/
 snakemake --use-conda --cores 2
 ```
+
+## References
+
+- [3D subsurface temperature model of Europe](https://doi.org/10.5281/zenodo.22149195), Zenodo dataset, version 1, CC BY 4.0.
+- Limberger et al. (2014), [Assessing the prospective resource base for enhanced geothermal systems in Europe](https://doi.org/10.5194/gtes-2-55-2014), *Geothermal Energy Science* 2, 55–71.
+- [Global Sediment Thickness Dataset v1 (GST-1)](https://doi.org/10.5281/zenodo.15320474), Zenodo dataset, CC BY 4.0.

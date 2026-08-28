@@ -1,7 +1,7 @@
 """Plot geographic distributions of LCOE component shares."""
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import _schemas
 import geopandas as gpd
@@ -83,15 +83,15 @@ def component_shares_for_cube(cube_path, shapes_path):
         valid_depth = np.isfinite(lcoe.min(dim="depth_m", skipna=True))
         total = lcoe.isel(depth_m=argmin).where(valid_depth).load()
         inside = _geographic_mask(
-            shapes_path,
-            total,
-            ds.attrs.get("crs") or total.attrs.get("crs"),
+            shapes_path, total, ds.attrs.get("crs") or total.attrs.get("crs")
         )
 
         shares = {}
         valid_total = inside & np.isfinite(total) & (total > 0)
         for component, _ in COMPONENTS:
-            contribution = ds[f"lcoe_{component}"].isel(depth_m=argmin).where(valid_depth).load()
+            contribution = (
+                ds[f"lcoe_{component}"].isel(depth_m=argmin).where(valid_depth).load()
+            )
             shares[component] = (100.0 * contribution / total).where(valid_total)
 
     return xr.Dataset(shares).expand_dims(technology=[_cycle_from_cube(cube_path)])
@@ -123,16 +123,16 @@ def plot_cost_breakdown(ax, technology_shares, *, compact=False):
     summaries = summarize_technology_shares(technology_shares)
     technologies = [technology for technology in TECH_LABELS if technology in summaries]
     technologies.extend(
-        technology
-        for technology in summaries
-        if technology not in technologies
+        technology for technology in summaries if technology not in technologies
     )
     if not technologies:
         ax.axis("off")
         return False
 
     positions = np.arange(1, len(COMPONENTS) + 1)
-    offsets = np.linspace(-0.22, 0.22, len(technologies)) if len(technologies) > 1 else [0.0]
+    offsets = (
+        np.linspace(-0.22, 0.22, len(technologies)) if len(technologies) > 1 else [0.0]
+    )
     rng = np.random.default_rng(42)
 
     for technology, offset in zip(technologies, offsets):
@@ -163,13 +163,7 @@ def plot_cost_breakdown(ax, technology_shares, *, compact=False):
             sample = rng.choice(stats["values"], size=sample_size, replace=False)
             jitter = rng.uniform(-0.07, 0.07, size=sample_size)
             ax.scatter(
-                x + jitter,
-                sample,
-                s=3,
-                color=color,
-                alpha=0.20,
-                linewidth=0,
-                zorder=1,
+                x + jitter, sample, s=3, color=color, alpha=0.20, linewidth=0, zorder=1
             )
             ax.scatter(
                 x,
@@ -185,10 +179,7 @@ def plot_cost_breakdown(ax, technology_shares, *, compact=False):
     ax.set_xticks(positions, [label for _, label in COMPONENTS])
     if compact:
         ax.set_xticklabels(
-            [label for _, label in COMPONENTS],
-            rotation=24,
-            ha="right",
-            fontsize=9.5,
+            [label for _, label in COMPONENTS], rotation=24, ha="right", fontsize=9.5
         )
     ax.set_xlim(0.5, len(COMPONENTS) + 0.5)
     ax.set_ylabel("Contribution to LCOE (%)")

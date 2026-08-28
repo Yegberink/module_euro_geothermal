@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import re
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +32,241 @@ NON_MODEL_KEYS = {
     "which_cycles",
     "drilling_cost_curve_definitions",
 }
+
+SCENARIO_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+SENSITIVITY_PARAMETERS = frozenset(
+    {
+        "max_depth",
+        "EGS_cutoff",
+        "drilling_cost_curve",
+        "stimulation_cost_per_doublet",
+        "pump_cost",
+        "lifetime",
+        "capacity_factor",
+        "fixed_OM_rate",
+        "parasitic_fraction",
+        "orc_money_per_kw",
+        "flash_money_per_kw",
+        "kalina_money_per_kw",
+        "temp_turbine_out_ORC",
+        "temp_turbine_out_Flash",
+        "temp_turbine_out_Kalina",
+        "include_egs",
+        "SED_NAN_POLICY",
+        "min_dt",
+        "well_spacing",
+        "flowrate_egs",
+        "flowrate_conventional",
+    }
+)
+
+
+def validate_module_config(cfg: dict[str, Any]) -> None:
+    """Validate configuration relationships not expressible in JSON Schema."""
+    _validate_scenario_name(cfg["baseline_scenario"])
+
+    if cfg["carrier_out"] != "power":
+        raise ValueError("Only carrier_out='power' is supported.")
+
+    curve = cfg["drilling_cost_curve"]
+    if curve not in cfg["drilling_cost_curve_definitions"]:
+        raise ValueError(f"drilling_cost_curve {curve!r} has no matching definition.")
+
+    _validate_depth_categories(cfg.get("depth_categories", []))
+    _validate_fixed_bins(cfg.get("fixed_bins", []))
+    _validate_sensitivity_config(cfg)
+    _validate_explicit_scenarios(cfg)
+
+    scenario_names = [row["scenario"] for row in build_scenario_rows(cfg)]
+    for scenario_name in scenario_names:
+        _validate_scenario_name(scenario_name)
+    if len(scenario_names) != len(set(scenario_names)):
+        raise ValueError("Expanded scenario names must be unique.")
+
+
+def _validate_scenario_name(name: object) -> None:
+    """Require scenario names that are safe to embed in file paths."""
+    if not isinstance(name, str) or not SCENARIO_NAME_PATTERN.fullmatch(name):
+        raise ValueError(
+            f"Invalid scenario name {name!r}; use letters, digits, '_', '-', or '.'."
+        )
+
+
+def _validate_depth_categories(categories: list[list[float]]) -> None:
+    """Require ordered, non-overlapping depth intervals within the source model."""
+    previous_stop = 0.0
+    for category in categories:
+        start, stop = map(float, category)
+        if start < 0 or stop > 10_000 or start >= stop:
+            raise ValueError(
+                f"Invalid depth category {category!r}; expected 0 <= start < stop <= 10000."
+            )
+        if start < previous_stop:
+            raise ValueError("depth_categories must be ordered and non-overlapping.")
+        previous_stop = stop
+
+
+def _validate_fixed_bins(bins: list[str]) -> None:
+    """Require ordered, non-overlapping LCOE intervals."""
+    previous_stop = 0.0
+    for value in bins:
+        start_text, stop_text = value.split("-", maxsplit=1)
+        start, stop = float(start_text), float(stop_text)
+        if start < 0 or start >= stop:
+            raise ValueError(f"Invalid fixed LCOE bin {value!r}.")
+        if start < previous_stop:
+            raise ValueError("fixed_bins must be ordered and non-overlapping.")
+        previous_stop = stop
+
+
+def _validate_sensitivity_config(cfg: dict[str, Any]) -> None:
+    """Validate sensitivity names, definitions, and candidate values."""
+    active = cfg.get("active_sensitivity_parameters", [])
+    definitions = cfg.get("sensitivity_parameters", {})
+    unknown = (set(active) | set(definitions)) - SENSITIVITY_PARAMETERS
+    if unknown:
+        raise ValueError(f"Unsupported sensitivity parameters: {sorted(unknown)}")
+
+    missing = set(active) - set(definitions)
+    if missing:
+        raise ValueError(f"Missing sensitivity definitions: {sorted(missing)}")
+
+    base_row = flatten_base_config(model_config(cfg))
+    for parameter in active:
+        definition = definitions[parameter]
+        base_value = base_row[parameter]
+        if isinstance(base_value, bool):
+            if not isinstance(definition, bool):
+                raise ValueError(
+                    f"Sensitivity {parameter!r} must use a boolean definition."
+                )
+        elif isinstance(base_value, str):
+            if not isinstance(definition, list) or not definition:
+                raise ValueError(
+                    f"Sensitivity {parameter!r} must list alternative values."
+                )
+            for value in definition:
+                _validate_parameter_value(parameter, value, cfg)
+        else:
+            if not isinstance(definition, dict):
+                raise ValueError(
+                    f"Sensitivity {parameter!r} must use a numeric definition."
+                )
+            if not ({"max_dev_pct", "absolute_values"} & set(definition)):
+                raise ValueError(
+                    f"Sensitivity {parameter!r} needs max_dev_pct or absolute_values."
+                )
+            if "max_dev_pct" in definition:
+                if "steps" not in definition:
+                    raise ValueError(
+                        f"Sensitivity {parameter!r} needs steps with max_dev_pct."
+                    )
+                for delta in _build_deltas(
+                    definition["max_dev_pct"], definition["steps"]
+                ):
+                    _validate_parameter_value(
+                        parameter, float(base_value) * (1.0 + delta), cfg
+                    )
+            for value in definition.get("absolute_values", []):
+                _validate_parameter_value(parameter, value, cfg)
+
+
+def _validate_explicit_scenarios(cfg: dict[str, Any]) -> None:
+    """Validate names and overrides in optional explicit scenarios."""
+    if "scenarios" not in cfg:
+        return
+
+    baseline = cfg["baseline_scenario"]
+    scenarios = cfg["scenarios"]
+    if isinstance(scenarios, dict):
+        entries = list(scenarios.items())
+    else:
+        entries = [
+            (
+                item["scenario"],
+                {key: value for key, value in item.items() if key != "scenario"},
+            )
+            for item in scenarios
+        ]
+
+    names = [name for name, _ in entries]
+    if len(names) != len(set(names)):
+        raise ValueError("Explicit scenario names must be unique.")
+
+    for name, overrides in entries:
+        _validate_scenario_name(name)
+        flattened = _flatten_scenario_overrides(overrides)
+        unknown = set(flattened) - SENSITIVITY_PARAMETERS
+        if unknown:
+            raise ValueError(
+                f"Scenario {name!r} has unsupported overrides: {sorted(unknown)}"
+            )
+        if name == baseline and flattened:
+            raise ValueError(
+                "The baseline scenario entry must be empty; configure baseline values at the top level."
+            )
+        for parameter, value in flattened.items():
+            _validate_parameter_value(parameter, value, cfg)
+
+
+def _flatten_scenario_overrides(overrides: dict[str, Any]) -> dict[str, Any]:
+    """Flatten per-cycle turbine temperatures in explicit scenario overrides."""
+    flattened = dict(overrides)
+    temperatures = flattened.pop("temp_turbine_out", {})
+    for cycle, value in temperatures.items():
+        flattened[f"temp_turbine_out_{cycle}"] = value
+    return flattened
+
+
+def _validate_parameter_value(parameter: str, value: Any, cfg: dict[str, Any]) -> None:
+    """Validate a sensitivity or explicit-scenario model value."""
+    if parameter == "include_egs":
+        if not isinstance(value, bool):
+            raise ValueError("include_egs overrides must be boolean.")
+        return
+    if parameter == "SED_NAN_POLICY":
+        if value not in {"always_egs", "depth_only"}:
+            raise ValueError(f"Unsupported SED_NAN_POLICY value {value!r}.")
+        return
+    if parameter == "drilling_cost_curve":
+        if value not in cfg["drilling_cost_curve_definitions"]:
+            raise ValueError(f"Unknown drilling cost curve {value!r}.")
+        return
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{parameter} overrides must be numeric.")
+
+    numeric = float(value)
+    if parameter == "max_depth":
+        if not 250 <= numeric <= 10_000 or numeric % 250:
+            raise ValueError(
+                "max_depth must be a multiple of 250 between 250 and 10000 m."
+            )
+    elif parameter == "EGS_cutoff":
+        if not 0 <= numeric <= 10_000:
+            raise ValueError("EGS_cutoff must be between 0 and 10000 m.")
+    elif parameter in {"capacity_factor", "fixed_OM_rate", "parasitic_fraction"}:
+        if not 0 <= numeric <= 1:
+            raise ValueError(f"{parameter} must be between 0 and 1.")
+    elif parameter.startswith("temp_turbine_out_"):
+        maximum = {
+            "temp_turbine_out_ORC": 320,
+            "temp_turbine_out_Flash": 485,
+            "temp_turbine_out_Kalina": 180,
+        }[parameter]
+        if not 0 <= numeric <= maximum:
+            raise ValueError(f"{parameter} must be between 0 and {maximum} degrees C.")
+    elif parameter in {
+        "stimulation_cost_per_doublet",
+        "pump_cost",
+        "orc_money_per_kw",
+        "flash_money_per_kw",
+        "kalina_money_per_kw",
+        "min_dt",
+    }:
+        if numeric < 0:
+            raise ValueError(f"{parameter} must be zero or greater.")
+    elif numeric <= 0:
+        raise ValueError(f"{parameter} must be greater than zero.")
 
 
 def model_config(cfg: dict[str, Any]) -> dict[str, Any]:
@@ -77,7 +313,9 @@ def write_scenario_table(rows: list[dict[str, Any]], output_path: str | Path) ->
         writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter="\t")
         writer.writeheader()
         for row in rows:
-            writer.writerow({key: _format_tsv_value(row.get(key)) for key in fieldnames})
+            writer.writerow(
+                {key: _format_tsv_value(row.get(key)) for key in fieldnames}
+            )
 
 
 def _build_explicit_scenarios(
@@ -92,7 +330,7 @@ def _build_explicit_scenarios(
             {
                 "scenario": name,
                 **base_row,
-                **overrides,
+                **_flatten_scenario_overrides(overrides),
                 **_metadata(None),
             }
             for name, overrides in scenarios.items()
@@ -104,7 +342,9 @@ def _build_explicit_scenarios(
         {
             "scenario": scenario["scenario"],
             **base_row,
-            **{k: v for k, v in scenario.items() if k != "scenario"},
+            **_flatten_scenario_overrides(
+                {k: v for k, v in scenario.items() if k != "scenario"}
+            ),
             **_metadata(None),
         }
         for scenario in scenarios
@@ -131,8 +371,7 @@ def _build_sensitivity_scenarios(
 
             if param == "include_egs" and flipped is False:
                 updated_row["max_depth"] = min(
-                    updated_row["max_depth"],
-                    updated_row["EGS_cutoff"],
+                    updated_row["max_depth"], updated_row["EGS_cutoff"]
                 )
 
             rows.append(

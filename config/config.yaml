@@ -31,14 +31,13 @@ which_cycles:
   - flash
   - kalina
 
-carrier_out: power            # options: power, heat, both
-                              # Note: only 'power' is fully implemented
+carrier_out: power            # geothermal electricity is the only supported carrier
 
 
 # -----------------------------------------------------------------------------
 # Reservoir parameters
 # -----------------------------------------------------------------------------
-max_depth: 6000               # maximum drilling depth considered (m); must be a multiple of 250
+max_depth: 6000               # drilling depth (m); multiple of 250 within source range 0–10,000 m
 
 include_egs: true             # true → include Enhanced Geothermal Systems (EGS) locations
 EGS_cutoff: 3000.0            # depth below which only EGS is possible (m)
@@ -180,7 +179,7 @@ sensitivity_parameters:
   stimulation_cost_per_doublet:
     absolute_values: [1.03, 10]
   well_spacing:
-    absolute_values: [0.8, 2.0]  # override percentage-based deviations with absolute values (m)
+    absolute_values: [0.8, 2.0]  # override percentage-based deviations with absolute values (km)
   flowrate_egs:
     max_dev_pct: 30
     steps: 1
@@ -193,13 +192,13 @@ sensitivity_parameters:
     max_dev_pct: 30
     steps: 1
   lifetime:
-    absolute_values: [20, 40]  # override percentage-based deviations with absolute values (m)
+    absolute_values: [20, 40]  # years
   capacity_factor:
-    absolute_values: [0.6, 0.91]  # override percentage-based deviations with absolute values (m)
+    absolute_values: [0.6, 0.91]  # fraction
   fixed_OM_rate:
-    absolute_values: [0.008, 0.02]  # override percentage-based deviations with absolute values (m)
+    absolute_values: [0.008, 0.02]  # fraction/year
   parasitic_fraction:
-    absolute_values: [0.02, 0.6]  # override percentage-based deviations with absolute values (m)
+    absolute_values: [0.02, 0.6]  # fraction
   orc_money_per_kw:
     max_dev_pct: 30
     steps: 1

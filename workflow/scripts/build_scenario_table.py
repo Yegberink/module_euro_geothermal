@@ -1,8 +1,8 @@
 """Write the scenario TSV used by downstream Snakemake rules."""
 
 import sys
-import pandas as pd
 
+import pandas as pd
 from _schemas import validate_scenario_table
 from scenario_config import build_scenario_rows, write_scenario_table
 

@@ -1,7 +1,7 @@
 """Resample the GST-1 sediment-thickness model to the temperature grid."""
 
-from pathlib import Path
 import sys
+from pathlib import Path
 from zipfile import ZipFile
 
 import numpy as np
@@ -46,9 +46,7 @@ def read_gst1_xyz(
     longitude_column = records[:, 1]
     thickness_column = records[:, 2]
 
-    latitude_starts = np.r_[
-        0, np.flatnonzero(np.diff(latitude_column) != 0.0) + 1
-    ]
+    latitude_starts = np.r_[0, np.flatnonzero(np.diff(latitude_column) != 0.0) + 1]
     latitudes = latitude_column[latitude_starts]
     longitude_count = (
         int(latitude_starts[1]) if latitude_starts.size > 1 else records.shape[0]
@@ -67,9 +65,7 @@ def read_gst1_xyz(
         raise ValueError("GST-1 latitude ordering is inconsistent")
     if not np.all(longitude_grid == longitudes[np.newaxis, :]):
         raise ValueError("GST-1 longitude ordering is inconsistent")
-    if not np.all(np.diff(latitudes) > 0.0) or not np.all(
-        np.diff(longitudes) > 0.0
-    ):
+    if not np.all(np.diff(latitudes) > 0.0) or not np.all(np.diff(longitudes) > 0.0):
         raise ValueError("GST-1 coordinates must be strictly ascending")
 
     if expected_resolution is not None:
@@ -103,13 +99,17 @@ def read_gst1_xyz(
 def _regular_grid_spacing(coordinates, name):
     coordinates = np.asarray(coordinates)
     if coordinates.ndim != 1 or coordinates.size < 2:
-        raise ValueError(f"Temperature-grid coordinate {name!r} must be one-dimensional")
+        raise ValueError(
+            f"Temperature-grid coordinate {name!r} must be one-dimensional"
+        )
 
     differences = np.diff(coordinates)
     if not (np.all(differences > 0.0) or np.all(differences < 0.0)):
         raise ValueError(f"Temperature-grid coordinate {name!r} must be monotonic")
     if not np.allclose(np.abs(differences), abs(differences[0])):
-        raise ValueError(f"Temperature-grid coordinate {name!r} must be regularly spaced")
+        raise ValueError(
+            f"Temperature-grid coordinate {name!r} must be regularly spaced"
+        )
     return float(abs(differences[0]))
 
 
@@ -135,9 +135,7 @@ def reproject_nearest(thickness, latitudes, longitudes, x, y, target_crs):
         y_spacing,
     )
 
-    north_up_west_to_east = np.full(
-        (y.size, x.size), np.nan, dtype=np.float32
-    )
+    north_up_west_to_east = np.full((y.size, x.size), np.nan, dtype=np.float32)
     reproject(
         source=np.asarray(thickness, dtype=np.float32)[::-1, :],
         destination=north_up_west_to_east,
@@ -184,9 +182,7 @@ def resample_gst1_to_temperature_grid(
     )
     x = temperature_grid["x"].values
     y = temperature_grid["y"].values
-    aligned = reproject_nearest(
-        thickness, latitudes, longitudes, x, y, target_crs
-    )
+    aligned = reproject_nearest(thickness, latitudes, longitudes, x, y, target_crs)
 
     sediment = xr.DataArray(
         aligned,

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Aggregate 2D geothermal LCOE and potential rasters to user-defined regions.
+"""Aggregate 2D geothermal LCOE and potential rasters to user-defined regions.
 
 Consumes outputs of make_2d.py (one or more LCOE + potential GeoTIFF pairs)
 and produces a GeoParquet with per-region potential and mean-LCOE statistics,
@@ -15,30 +14,32 @@ Supported aggregation methods (method_region_aggregation):
 import os
 import re
 import sys
+
+import geopandas as gpd
+import matplotlib
 import numpy as np
 import pandas as pd
-import geopandas as gpd
 import rioxarray as rxr
 import xarray as xr
-import matplotlib
+
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-
-import gregor
-import affine
 import _schemas
-
+import affine
+import gregor
+import matplotlib.pyplot as plt
 
 if "snakemake" in dir():
     sys.stdout = sys.stderr = open(snakemake.log[0], "w", buffering=1)
 
 
-plt.rcParams.update({
-    "font.family": "serif",
-    "font.serif": ["Times New Roman"],
-    "mathtext.fontset": "stix",
-    "axes.unicode_minus": False,
-})
+plt.rcParams.update(
+    {
+        "font.family": "serif",
+        "font.serif": ["Times New Roman"],
+        "mathtext.fontset": "stix",
+        "axes.unicode_minus": False,
+    }
+)
 
 TECH_LABELS = {"orc": "ORC", "flash": "Flash", "kalina": "Kalina"}
 PANEL_LETTERS = "abcdefghijklmnopqrstuvwxyz"
@@ -46,6 +47,7 @@ MAP_CMAP = "viridis"
 
 
 def write_empty_outputs(out_path: str, manifest_path: str, crs=None):
+    """Write schema-valid empty regional outputs."""
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     out_gdf = _schemas.GeothermalRegionsSchema.validate(
         _schemas.empty_geothermal_regions(crs)
@@ -71,9 +73,9 @@ def write_empty_outputs(out_path: str, manifest_path: str, crs=None):
 # Filename parsing
 # ---------------------------------------------------------------------------
 
+
 def _parse_2d_tif_name(path: str):
-    """
-    Parse a 2D output tif filename into (tech, depth_category, kind).
+    """Parse a 2D output tif filename into (tech, depth_category, kind).
 
     Accepts both forms produced by make_2d.py:
       <tech>_2d_lcoe.tif                    → depth_category = "all_depths"
@@ -85,17 +87,13 @@ def _parse_2d_tif_name(path: str):
 
     # Depth-category form  (tech_2d_<cat>_<kind>.tif)
     m = re.match(
-        r"^(?P<tech>[A-Za-z0-9]+)_2d_(?P<cat>.+)_(?P<kind>lcoe|potential)\.tif$",
-        name,
+        r"^(?P<tech>[A-Za-z0-9]+)_2d_(?P<cat>.+)_(?P<kind>lcoe|potential)\.tif$", name
     )
     if m:
         return m.group("tech").lower(), m.group("cat"), m.group("kind")
 
     # No-category form  (tech_2d_<kind>.tif)
-    m = re.match(
-        r"^(?P<tech>[A-Za-z0-9]+)_2d_(?P<kind>lcoe|potential)\.tif$",
-        name,
-    )
+    m = re.match(r"^(?P<tech>[A-Za-z0-9]+)_2d_(?P<kind>lcoe|potential)\.tif$", name)
     if m:
         return m.group("tech").lower(), "all_depths", m.group("kind")
 
@@ -112,9 +110,10 @@ def _safe_name(s: str) -> str:
 # Raster utilities
 # ---------------------------------------------------------------------------
 
+
 def ensure_north_up(da: xr.DataArray) -> xr.DataArray:
-    """
-    Guarantee that the raster is north-up (negative pixel height).
+    """Guarantee that the raster is north-up (negative pixel height).
+
     Flips the y dimension and rewrites the affine transform when needed.
     """
     t = da.rio.transform()
@@ -148,11 +147,9 @@ def inherit_rio_meta(dst: xr.DataArray, src: xr.DataArray) -> xr.DataArray:
 
 
 def load_aligned_rasters(lcoe_path: str, pot_path: str):
-    """
-    Open LCOE and potential rasters, verify alignment, and return as float64 DataArrays.
-    """
+    """Open LCOE and potential rasters, verify alignment, and return as float64 DataArrays."""
     lcoe = rxr.open_rasterio(lcoe_path).squeeze(drop=True).astype("float64")
-    pot  = rxr.open_rasterio(pot_path).squeeze(drop=True).astype("float64")
+    pot = rxr.open_rasterio(pot_path).squeeze(drop=True).astype("float64")
 
     return lcoe, pot
 
@@ -161,13 +158,14 @@ def load_aligned_rasters(lcoe_path: str, pot_path: str):
 # Bin computation
 # ---------------------------------------------------------------------------
 
+
 def parse_fixed_bins(raw):
-    """
-    Parse fixed_bins from config into a sorted list of (left, right) float tuples.
+    """Parse fixed_bins from config into a sorted list of (left, right) float tuples.
+
     Accepts either ["0-50", "50-100"] or [[0, 50], [50, 100]].
     """
     out = []
-    for b in (raw or []):
+    for b in raw or []:
         if isinstance(b, str) and "-" in b:
             a, c = b.split("-", 1)
             out.append((float(a), float(c)))
@@ -178,8 +176,8 @@ def parse_fixed_bins(raw):
 
 
 def compute_quantile_bins(lcoe_da: xr.DataArray, n_quantiles: int):
-    """
-    Compute *n_quantiles* global quantile bins from finite LCOE values.
+    """Compute *n_quantiles* global quantile bins from finite LCOE values.
+
     Returns a list of (left, right) float tuples.
     """
     vals = lcoe_da.values
@@ -211,15 +209,14 @@ def _bins_for_method(method, lcoe_da, n_quantiles, fixed_bins, lcoe_cutoff):
 # Choropleth helper
 # ---------------------------------------------------------------------------
 
+
 def composite_choropleth_png(
-    panel_specs: list[dict],
-    path: str,
-    title_suffix: str,
-    value_scale: float = 1000.0,
+    panel_specs: list[dict], path: str, title_suffix: str, value_scale: float = 1000.0
 ):
     """Write a 3-panel choropleth PNG with a shared colorbar."""
     valid_specs = [
-        spec for spec in panel_specs
+        spec
+        for spec in panel_specs
         if spec["gdf"] is not None
         and len(spec["gdf"]) > 0
         and spec["column"] in spec["gdf"].columns
@@ -319,6 +316,7 @@ def composite_choropleth_png(
 # Region dissolution
 # ---------------------------------------------------------------------------
 
+
 def dissolve_regions(gdf: gpd.GeoDataFrame, region_id_col: str) -> gpd.GeoDataFrame:
     """Dissolve all geometries to unique region IDs (removes sub-polygon detail)."""
     dissolved = (
@@ -333,6 +331,7 @@ def dissolve_regions(gdf: gpd.GeoDataFrame, region_id_col: str) -> gpd.GeoDataFr
 # Core aggregation for one (tech, depth_category) pair
 # ---------------------------------------------------------------------------
 
+
 def aggregate_one_tech(
     tech: str,
     lcoe_path: str,
@@ -345,10 +344,9 @@ def aggregate_one_tech(
     lcoe_cutoff: float | None,
     depth_category: str = "all_depths",
 ) -> tuple[pd.DataFrame, object, list[dict]]:
-    """
-    Aggregate LCOE and potential for a single (tech, depth_category) pair.
+    """Aggregate LCOE and potential for a single (tech, depth_category) pair.
 
-    Returns
+    Returns:
     -------
     df : pd.DataFrame
         Rows of (technology, depth_category, region_id, price_bin, …).
@@ -357,7 +355,7 @@ def aggregate_one_tech(
     """
     lcoe, pot = load_aligned_rasters(lcoe_path, pot_path)
     lcoe = ensure_north_up(lcoe)
-    pot  = ensure_north_up(pot)
+    pot = ensure_north_up(pot)
 
     regions = regions_gdf.to_crs(lcoe.rio.crs)
     bins = _bins_for_method(method, lcoe, n_quantiles, fixed_bins, lcoe_cutoff)
@@ -366,13 +364,12 @@ def aggregate_one_tech(
     figure_specs = []
 
     for bi, (bin_left, bin_right) in enumerate(bins):
-
         # Build the per-bin validity mask
         if method == "cutoff":
-            in_bin      = lcoe <= bin_right
-            bin_label   = f"<= {bin_right:g}"
-            bin_id      = f"cutoff_{bin_right:g}"
-            bin_left_v  = np.nan
+            in_bin = lcoe <= bin_right
+            bin_label = f"<= {bin_right:g}"
+            bin_id = f"cutoff_{bin_right:g}"
+            bin_left_v = np.nan
             bin_right_v = float(bin_right)
         else:
             # Last bin is inclusive on the right edge
@@ -380,17 +377,16 @@ def aggregate_one_tech(
                 in_bin = (lcoe >= bin_left) & (lcoe < bin_right)
             else:
                 in_bin = (lcoe >= bin_left) & (lcoe <= bin_right)
-            bin_label   = f"{bin_left:g}-{bin_right:g}"
-            bin_id      = f"quantile_{bi + 1:02d}" if method == "quantiles" else f"bin_{bin_label}"
-            bin_left_v  = float(bin_left)
+            bin_label = f"{bin_left:g}-{bin_right:g}"
+            bin_id = (
+                f"quantile_{bi + 1:02d}"
+                if method == "quantiles"
+                else f"bin_{bin_label}"
+            )
+            bin_left_v = float(bin_left)
             bin_right_v = float(bin_right)
 
-        valid = (
-            in_bin
-            & xr.ufuncs.isfinite(lcoe)
-            & xr.ufuncs.isfinite(pot)
-            & (pot > 0)
-        )
+        valid = in_bin & xr.ufuncs.isfinite(lcoe) & xr.ufuncs.isfinite(pot) & (pot > 0)
 
         # Fast skip when no valid cells exist
         n_valid = int(valid.sum().values)
@@ -399,12 +395,18 @@ def aggregate_one_tech(
 
         # Weighted-sum rasters (potential, lcoe*potential, cell count)
         pot_bin = inherit_rio_meta(pot.where(valid, other=0.0), pot)
-        lp_bin  = inherit_rio_meta((lcoe * pot).where(valid, other=0.0), pot)
+        lp_bin = inherit_rio_meta((lcoe * pot).where(valid, other=0.0), pot)
         cnt_bin = inherit_rio_meta(xr.where(valid, 1.0, 0.0), pot)
 
-        agg_p  = gregor.aggregate.aggregate_raster_to_polygon(pot_bin,  regions, stats="sum")
-        agg_lp = gregor.aggregate.aggregate_raster_to_polygon(lp_bin,   regions, stats="sum")
-        agg_n  = gregor.aggregate.aggregate_raster_to_polygon(cnt_bin,  regions, stats="sum")
+        agg_p = gregor.aggregate.aggregate_raster_to_polygon(
+            pot_bin, regions, stats="sum"
+        )
+        agg_lp = gregor.aggregate.aggregate_raster_to_polygon(
+            lp_bin, regions, stats="sum"
+        )
+        agg_n = gregor.aggregate.aggregate_raster_to_polygon(
+            cnt_bin, regions, stats="sum"
+        )
 
         if agg_p is None or len(agg_p) == 0 or "sum" not in agg_p.columns:
             continue
@@ -428,16 +430,16 @@ def aggregate_one_tech(
 
         df = pd.DataFrame(
             {
-                "technology":    tech,
+                "technology": tech,
                 "depth_category": str(depth_category),
-                "bin_id":        bin_id,
-                "region_id":     agg_p.index.astype(str),
-                "price_bin":     bin_label,
-                "bin_left":      bin_left_v,
-                "bin_right":     bin_right_v,
-                "potential":     total_pot.values,
-                "mean_lcoe":     mean_lcoe.values,
-                "n_cells":       agg_n["sum"].fillna(0).round().astype(np.int64).values,
+                "bin_id": bin_id,
+                "region_id": agg_p.index.astype(str),
+                "price_bin": bin_label,
+                "bin_left": bin_left_v,
+                "bin_right": bin_right_v,
+                "potential": total_pot.values,
+                "mean_lcoe": mean_lcoe.values,
+                "n_cells": agg_n["sum"].fillna(0).round().astype(np.int64).values,
             }
         )
         df = df[np.isfinite(df["potential"]) & (df["potential"] > 0)]
@@ -449,8 +451,16 @@ def aggregate_one_tech(
     else:
         out_df = pd.DataFrame(
             columns=[
-                "technology", "depth_category", "bin_id", "region_id", "price_bin",
-                "bin_left", "bin_right", "potential", "mean_lcoe", "n_cells",
+                "technology",
+                "depth_category",
+                "bin_id",
+                "region_id",
+                "price_bin",
+                "bin_left",
+                "bin_right",
+                "potential",
+                "mean_lcoe",
+                "n_cells",
             ]
         )
 
@@ -461,19 +471,21 @@ def aggregate_one_tech(
 # Main
 # ---------------------------------------------------------------------------
 
+
 def main():
+    """Aggregate all configured technology rasters to the supplied regions."""
     # --- Inputs / outputs from Snakemake ---------------------------------
-    lcoe_tifs  = list(snakemake.input.lcoe_tifs)
-    pot_tifs   = list(snakemake.input.pot_tifs)
+    lcoe_tifs = list(snakemake.input.lcoe_tifs)
+    pot_tifs = list(snakemake.input.pot_tifs)
     shapes_path = snakemake.input["shapes"]
-    out_path   = snakemake.output["geoparquet"]
+    out_path = snakemake.output["geoparquet"]
     manifest_path = snakemake.output["manifest"]
     resultdir = os.path.dirname(out_path)
     figdir = os.path.join(resultdir, "figures")
 
     # --- Parameters -------------------------------------------------------
-    cycles     = [str(c).strip().lower() for c in (snakemake.params.get("cycles") or [])]
-    method     = str(snakemake.params["method_region_aggregation"]).lower()
+    cycles = [str(c).strip().lower() for c in (snakemake.params.get("cycles") or [])]
+    method = str(snakemake.params["method_region_aggregation"]).lower()
     n_quantiles = int(snakemake.params.get("n_quantiles", 5))
     fixed_bins = parse_fixed_bins(snakemake.params.get("fixed_bins", []))
     lcoe_cutoff = snakemake.params.get("lcoe_cutoff", None)
@@ -482,7 +494,7 @@ def main():
 
     # --- Build (tech, depth_category) → path maps -------------------------
     lcoe_map: dict[tuple, str] = {}
-    pot_map:  dict[tuple, str] = {}
+    pot_map: dict[tuple, str] = {}
 
     for p in lcoe_tifs:
         tech, cat, _ = _parse_2d_tif_name(p)
@@ -495,7 +507,7 @@ def main():
     # Optionally filter to the cycles listed in params
     if cycles:
         lcoe_map = {k: v for k, v in lcoe_map.items() if k[0] in cycles}
-        pot_map  = {k: v for k, v in pot_map.items()  if k[0] in cycles}
+        pot_map = {k: v for k, v in pot_map.items() if k[0] in cycles}
 
     pairs = sorted(set(lcoe_map) & set(pot_map))
     # --- Load and prepare regions -----------------------------------------
@@ -513,21 +525,21 @@ def main():
         return
 
     # --- Aggregate each (tech, depth_category) pair -----------------------
-    frames  = []
+    frames = []
     figure_specs_all = []
 
     for tech, depth_cat in pairs:
         df, _, fig_specs = aggregate_one_tech(
-            tech           = tech,
-            lcoe_path      = lcoe_map[(tech, depth_cat)],
-            pot_path       = pot_map[(tech, depth_cat)],
-            regions_gdf    = regions,
-            method         = method,
-            n_quantiles    = n_quantiles,
-            fixed_bins     = fixed_bins,
-            figdir         = figdir,
-            lcoe_cutoff    = lcoe_cutoff,
-            depth_category = depth_cat,
+            tech=tech,
+            lcoe_path=lcoe_map[(tech, depth_cat)],
+            pot_path=pot_map[(tech, depth_cat)],
+            regions_gdf=regions,
+            method=method,
+            n_quantiles=n_quantiles,
+            fixed_bins=fixed_bins,
+            figdir=figdir,
+            lcoe_cutoff=lcoe_cutoff,
+            depth_category=depth_cat,
         )
         if not df.empty:
             frames.append(df)
@@ -563,8 +575,7 @@ def main():
     ]
 
     for (depth_category, bin_id), group in out_gdf.groupby(
-        ["depth_category", "bin_id"],
-        dropna=False,
+        ["depth_category", "bin_id"], dropna=False
     ):
         price_bin = ", ".join(sorted(group["price_bin"].astype(str).unique()))
         split_path = os.path.join(
@@ -572,10 +583,7 @@ def main():
             f"geothermal_regions_{_safe_name(depth_category)}_{_safe_name(bin_id)}.parquet",
         )
         group = _schemas.GeothermalRegionsSchema.validate(group)
-        group.to_parquet(
-            split_path,
-            index=False,
-        )
+        group.to_parquet(split_path, index=False)
         output_rows.append(
             {
                 "kind": "split_parquet",
@@ -592,7 +600,12 @@ def main():
         grouped_specs.setdefault(key, []).append(spec)
 
     for (depth_category, bin_id), specs in grouped_specs.items():
-        specs = sorted(specs, key=lambda s: list(TECH_LABELS).index(s["tech"]) if s["tech"] in TECH_LABELS else 999)
+        specs = sorted(
+            specs,
+            key=lambda s: list(TECH_LABELS).index(s["tech"])
+            if s["tech"] in TECH_LABELS
+            else 999,
+        )
         price_bin = ", ".join(sorted({str(spec["price_bin"]) for spec in specs}))
         figure_path = os.path.join(
             figdir,

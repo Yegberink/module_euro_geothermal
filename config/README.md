@@ -43,8 +43,8 @@ scenarios:
 ## Conversion technologies
 
 `which_cycles` selects one or more of `orc`, `flash`, and `kalina`.
-`carrier_out` accepts `power`, `heat`, or `both`; currently only `power` is
-fully implemented. A turbine outlet temperature must be supplied for every
+`carrier_out` must be `power`; this initial public release models geothermal
+electricity only. A turbine outlet temperature must be supplied for every
 selected electricity cycle:
 
 ```yaml
@@ -77,6 +77,8 @@ temperature for electricity generation to be feasible.
 The supplied example defines `thermogis`, `shamoushaki_2021`, `getem_2017`, and
 `getem_2025` drilling-cost curves. Custom named definitions may be added under
 `drilling_cost_curve_definitions` and selected with `drilling_cost_curve`.
+The source temperature model covers 0–10 km, so `max_depth`, `EGS_cutoff`, and
+all configured depth intervals must stay within that range.
 
 ## Plant economics
 
@@ -159,9 +161,45 @@ sensitivity summary plots. See the repository's
 [`config/config.yaml`](./config.yaml) for the full set of supported sensitivity
 parameters and example ranges.
 
+Configuration validation rejects unsafe or duplicate scenario names, unknown
+sensitivity parameters, missing sensitivity definitions, invalid explicit
+overrides, and drilling-cost curves without a selected definition. It also
+requires ordered, non-overlapping depth and LCOE bins. Scenario names may use
+letters, digits, `_`, `-`, and `.`, and must begin with a letter or digit.
+
 ## Inputs and outputs
 
 Configuration controls model behaviour; file placement is controlled through
 Snakemake path variables. See [`INTERFACE.yaml`](../INTERFACE.yaml) for the
 required polygon input and public module outputs, and the
 [integration example](../tests/integration/Snakefile) for a complete import.
+
+The `shapes` input is GeoParquet and must have a declared CRS, unique
+`shape_id` values, and valid Polygon or MultiPolygon geometry. `shape_class` is
+optional; rows with `shape_class: maritime` are excluded from aggregation.
+
+`geothermal_regions.parquet` has the following public columns:
+
+| Column | Meaning |
+| --- | --- |
+| `technology` | Conversion cycle (`orc`, `flash`, or `kalina`). |
+| `depth_category` | Configured depth interval, or `all_depths` after LCOE minimization. |
+| `region_id` | String form of the input `shape_id`. |
+| `price_bin`, `bin_id` | Human-readable and path-safe identifiers for the LCOE interval. |
+| `bin_left`, `bin_right` | LCOE interval bounds in €2020/MWh; the lower bound is empty for cutoff aggregation. |
+| `potential` | Net electric capacity in MW. |
+| `mean_lcoe` | Potential-weighted mean LCOE in €2020/MWh. |
+| `n_cells` | Number of contributing raster cells. |
+| `geometry` | Aggregation-region polygon in the input CRS. |
+
+`overall_potential_by_scenario.tsv` reports study-wide potential in TW by
+scenario and technology. `overall_potential_summary.tsv` reports the baseline
+and its sensitivity envelope in TW.
+
+## Development environments
+
+The repository intentionally uses one Pixi `default` environment containing
+runtime and development dependencies. Rule-time dependencies are kept in the
+existing Conda environments: `workflow/envs/shell.yaml` for Curl-based download
+and failure rules, and `workflow/envs/module_geothermal.yaml` for Python
+computations. Run `pixi run test-quick` for the fast validation suite.

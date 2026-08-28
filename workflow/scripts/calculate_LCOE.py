@@ -1,15 +1,16 @@
-from pathlib import Path
+"""Calculate depth-resolved geothermal potential and electricity costs."""
+
 import sys
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
 import xarray as xr
 from scipy.optimize import curve_fit
-import _schemas
 
 if "snakemake" in dir():
     sys.stdout = sys.stderr = open(snakemake.log[0], "w", buffering=1)
+
 
 def _parse_scalar(value):
     if value is None or pd.isna(value):
@@ -38,6 +39,7 @@ SCENARIO = _scenario_row()
 
 
 def cfg(key, default=None):
+    """Read a scenario override followed by the module's baseline value."""
     value = SCENARIO.get(key)
     if value is not None:
         return value
@@ -52,6 +54,7 @@ def cfg(key, default=None):
 
 
 def drilling_cost_curve_definitions():
+    """Resolve configured drilling-curve files to Snakemake input paths."""
     definitions = dict(snakemake.config["drilling_cost_curve_definitions"])
     if "getem_2017" in definitions:
         definitions["getem_2017"] = dict(definitions["getem_2017"])
@@ -155,8 +158,7 @@ def _resolve_drilling_curve_definition(curve_name, definitions):
 
 
 DRILLING_COST_CURVE_SPEC = _resolve_drilling_curve_definition(
-    DRILLING_COST_CURVE,
-    DRILLING_COST_CURVE_DEFINITIONS,
+    DRILLING_COST_CURVE, DRILLING_COST_CURVE_DEFINITIONS
 )
 
 
@@ -173,17 +175,14 @@ def _drilling_cost_meur_per_well(depth_m):
 
     if curve_type == "log_quadratic_usd":
         cost_meur = _log_quadratic_cost_meur(
-            depth_m,
-            float(spec["a"]),
-            float(spec["b"]),
-            float(spec["c"]),
+            depth_m, float(spec["a"]), float(spec["b"]), float(spec["c"])
         )
         return cost_meur * _usd_to_eur2020_factor(spec["currency_year"])
 
 
 def load_efficiency_curve_csv(csv_path, cycle_key):
-    """
-    cycle_key is expected to be one of: ORC, Flash, Kalina (matching your config keys).
+    """cycle_key is expected to be one of: ORC, Flash, Kalina (matching your config keys).
+
     This function lowercases it to match CSV columns like orc_temperature/orc_efficiency.
     """
     cycle = str(cycle_key).lower()
@@ -205,15 +204,16 @@ def load_efficiency_curve_csv(csv_path, cycle_key):
 
 
 def interp_eff(temps_grid, temps_curve, effs_curve):
+    """Interpolate cycle efficiency and return single-precision values."""
     eff = np.interp(temps_grid, temps_curve, effs_curve, left=np.nan, right=np.nan)
     return eff.astype(np.float32, copy=False)
 
 
 def _apply_sed_nan_policy(sed_thickness, z_thr=Z_THR_M, policy=SED_NAN_POLICY):
-    """
-    Replace NaNs in sediment thickness according to policy.
+    """Replace NaNs in sediment thickness according to policy.
+
     - depth_only: NaN -> z_thr (EGS only deeper than z_thr)
-    - always_egs: NaN -> 0 (EGS at all depths)
+    - always_egs: NaN -> 0 (EGS at all depths).
     """
     if policy == "depth_only":
         fill = float(z_thr)
@@ -222,13 +222,7 @@ def _apply_sed_nan_policy(sed_thickness, z_thr=Z_THR_M, policy=SED_NAN_POLICY):
     return np.where(np.isfinite(sed_thickness), sed_thickness, fill).astype(np.float32)
 
 
-LCOE_COMPONENT_NAMES = (
-    "drilling",
-    "stimulation",
-    "pump",
-    "power_plant",
-    "fixed_om",
-)
+LCOE_COMPONENT_NAMES = ("drilling", "stimulation", "pump", "power_plant", "fixed_om")
 
 
 def calculate_LCOE_components_vec(
@@ -251,7 +245,7 @@ def calculate_LCOE_components_vec(
     orc_money_per_kw,
     flash_money_per_kw,
     kalina_money_per_kw,
-    min_dt
+    min_dt,
 ):
     """Return total LCOE followed by its five additive cost contributions."""
     nan_result = tuple(np.float32(np.nan) for _ in range(1 + len(LCOE_COMPONENT_NAMES)))
@@ -271,7 +265,9 @@ def calculate_LCOE_components_vec(
     n_pairs = area_available / doublet_occupation
 
     nr_wells = n_pairs * 2
-    flowrate_wells = np.where(is_egs, flowrate_egs * n_pairs, flowrate_conventional * n_pairs)
+    flowrate_wells = np.where(
+        is_egs, flowrate_egs * n_pairs, flowrate_conventional * n_pairs
+    )
 
     dT = production_temp - temp_turb_out
 
@@ -322,7 +318,9 @@ def calculate_LCOE_components_vec(
 
     discount_rate = 0.075
     TT = float(lifetime)
-    annuity_factor = (discount_rate * (1 + discount_rate) ** TT) / ((1 + discount_rate) ** TT - 1)
+    annuity_factor = (discount_rate * (1 + discount_rate) ** TT) / (
+        (1 + discount_rate) ** TT - 1
+    )
 
     meur_to_eur_per_mwh = 1e6 / net_elec
     component_lcoe = (
@@ -353,6 +351,7 @@ def calculate_capacity_vec(
     flowrate_conventional,
     area_available,
 ):
+    """Calculate net installed capacity for one voxel."""
     Cp_water = 4250.0
     MIN_DT = min_dt
 
@@ -370,7 +369,9 @@ def calculate_capacity_vec(
 
     n_pairs = area_available / doublet_occupation
 
-    flowrate_wells = np.where(is_egs, flowrate_egs * n_pairs, flowrate_conventional * n_pairs)
+    flowrate_wells = np.where(
+        is_egs, flowrate_egs * n_pairs, flowrate_conventional * n_pairs
+    )
 
     dT = production_temp - temp_turb_out
 
@@ -397,14 +398,14 @@ def _normalize_cycle_param(x: str) -> str:
     x = str(x).strip().lower()
     return x
 
+
 def main():
+    """Calculate and write the LCOE cube requested by Snakemake."""
     cycle = _normalize_cycle_param(snakemake.params.get("cycle"))
     cycle_key = {"orc": "ORC", "flash": "Flash", "kalina": "Kalina"}[cycle]
 
     # Explicit outputs from Snakemake rule (one tech per job)
     cube_nc = Path(snakemake.output.cube)
-    qc_lcoe = Path(snakemake.output.qc_lcoe) if hasattr(snakemake.output, "qc_lcoe") else None
-    qc_pot = Path(snakemake.output.qc_potential) if hasattr(snakemake.output, "qc_potential") else None
 
     ds = xr.open_dataset(VOXEL_NC)
     crs_str = str(ds.attrs.get("crs", "")).strip() or "EPSG:3857"
@@ -493,9 +494,7 @@ def main():
     )
     lcoe, *component_arrays = [
         output.transpose("depth_m", "y", "x").assign_attrs(
-            units="€/MWh_e",
-            tech=str(cycle_key),
-            crs=crs_str,
+            units="€/MWh_e", tech=str(cycle_key), crs=crs_str
         )
         for output in lcoe_outputs
     ]
@@ -539,11 +538,7 @@ def main():
             "potential": cap.astype(np.float32),
             "egs_cutoff_depth_m": cutoff3d.astype(np.float32),
         },
-        coords={
-            "depth_m": lcoe["depth_m"],
-            "y": lcoe["y"],
-            "x": lcoe["x"],
-        },
+        coords={"depth_m": lcoe["depth_m"], "y": lcoe["y"], "x": lcoe["x"]},
         attrs={
             "crs": crs_str,
             "tech": str(cycle_key),
@@ -554,8 +549,12 @@ def main():
         },
     )
 
-    ds_out["temperature"].attrs.update({"units": "degC", "long_name": "Reservoir temperature"})
-    ds_out["lcoe"].attrs.update({"units": "€/MWh_e", "long_name": f"LCOE ({cycle_key})"})
+    ds_out["temperature"].attrs.update(
+        {"units": "degC", "long_name": "Reservoir temperature"}
+    )
+    ds_out["lcoe"].attrs.update(
+        {"units": "€/MWh_e", "long_name": f"LCOE ({cycle_key})"}
+    )
     for name in LCOE_COMPONENT_NAMES:
         label = name.replace("_", " ").title()
         ds_out[f"lcoe_{name}"].attrs.update(
@@ -564,10 +563,15 @@ def main():
                 "long_name": f"{label} contribution to LCOE ({cycle_key})",
             }
         )
-    ds_out["potential"].attrs.update({"units": "MW", "long_name": f"Net electric capacity ({cycle_key})"})
-    ds_out["egs_cutoff_depth_m"].attrs.update({"units": "m", "long_name": "EGS cutoff depth"})
+    ds_out["potential"].attrs.update(
+        {"units": "MW", "long_name": f"Net electric capacity ({cycle_key})"}
+    )
+    ds_out["egs_cutoff_depth_m"].attrs.update(
+        {"units": "m", "long_name": "EGS cutoff depth"}
+    )
 
     ds_out.to_netcdf(cube_nc)
+
 
 if __name__ == "__main__":
     main()

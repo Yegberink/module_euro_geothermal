@@ -1,7 +1,7 @@
 [workspace]
 name = "module_geothermal"
 authors = ["See AUTHORS file"]
-description = "This module calculates geothermal heat or power production based on a temperature model by Limberger et al. (2014)."
+description = "This module calculates geothermal electricity production and costs based on a temperature model by Limberger et al. (2014)."
 license = "Apache-2.0"
 readme = "README.md"
 channels = ["conda-forge", "bioconda"]
@@ -22,9 +22,7 @@ snakefmt = ">=0.10.2"
 snakemake-minimal = ">=9.19.0,<10"
 rasterio = ">=1.5.0,<2"
 xarray = ">=2026.1.0,<2027"
-snakemake = ">=9.19.0,<10"
 scipy = ">=1.17.0,<2"
-plotly = ">=6.5.2,<7"
 geopandas = ">=1.1.2,<2"
 pyarrow = ">=23.0.0,<24"
 pandas = ">=2.3.0,<3"
@@ -34,9 +32,12 @@ rioxarray = ">=0.21.0,<0.22"
 affine = ">=2.4.0,<3"
 matplotlib = ">=3.10.8,<4"
 cycler = ">=0.12.1,<0.13"
+curl = ">=8.21.0,<9"
+gregor = ">=0.1,<0.2"
+netcdf4 = ">=1.7.2,<2"
+numpy = ">=2.3,<3"
+seaborn = ">=0.13,<0.14"
 
 [tasks]
 test-integration = {cmd = "pytest tests/integration_test.py"}
-
-[pypi-dependencies]
-gregor = ">=0.0.2, <0.0.3"
+test-quick = {cmd = "pytest -m 'not workflow and not slow' tests"}

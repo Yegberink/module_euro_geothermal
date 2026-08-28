@@ -40,6 +40,7 @@ def test_standard_file_existance(module_path, file):
     assert Path(module_path / file).exists()
 
 
+@pytest.mark.workflow
 def test_snakemake_all_failure(module_path):
     """The snakemake 'all' rule should return an error by default."""
     process = subprocess.run(
@@ -48,6 +49,7 @@ def test_snakemake_all_failure(module_path):
     assert "INVALID (missing locally)" in str(process.stderr)
 
 
+@pytest.mark.workflow
 def test_snakemake_integration_testing(module_path):
     """Run a light-weight test simulating someone using this module."""
     assert subprocess.run(

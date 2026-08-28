@@ -1,7 +1,7 @@
 """Combine three optimal-depth maps with the LCOE cost breakdown."""
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import cost_breakdown
 import make_2d
@@ -48,8 +48,7 @@ def make_four_panel_figure(cubes, shapes_path, output_path):
     }
     technology_shares = [
         cost_breakdown.component_shares_for_cube(
-            cubes_by_technology[technology],
-            shapes_path,
+            cubes_by_technology[technology], shapes_path
         )
         for technology in technologies
     ]
@@ -70,12 +69,7 @@ def make_four_panel_figure(cubes, shapes_path, output_path):
     for index, (ax, technology, values) in enumerate(
         zip(map_axes, technologies, arrays)
     ):
-        make_2d._decorate_map(
-            ax,
-            countries,
-            extent,
-            make_2d._map_crs(reference),
-        )
+        make_2d._decorate_map(ax, countries, extent, make_2d._map_crs(reference))
         image = ax.imshow(
             values,
             origin="lower",
@@ -119,12 +113,7 @@ def make_four_panel_figure(cubes, shapes_path, output_path):
     )
 
     fig.subplots_adjust(
-        left=0.055,
-        right=0.985,
-        top=0.98,
-        bottom=0.12,
-        wspace=0.16,
-        hspace=0.16,
+        left=0.055, right=0.985, top=0.98, bottom=0.12, wspace=0.16, hspace=0.16
     )
     cax = fig.add_axes([0.09, 0.045, 0.38, 0.022])
     colorbar = fig.colorbar(

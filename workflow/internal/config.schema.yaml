@@ -11,6 +11,7 @@ properties:
 
   baseline_scenario:
     type: string
+    pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]*$"
     description: "Name of the baseline scenario."
 
   scenarios:
@@ -28,6 +29,7 @@ properties:
           properties:
             scenario:
               type: string
+              pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]*$"
 
   include_egs:
     type: boolean
@@ -35,12 +37,13 @@ properties:
 
   carrier_out:
     type: string
-    enum: ["heat", "power", "both"]
-    description: "Which carrier(s) to output."
+    const: "power"
+    description: "Output carrier. Only geothermal electricity is currently supported."
 
   max_depth:
     type: number
     minimum: 250
+    maximum: 10000
     multipleOf: 250
     description: "Maximum drilling depth (m) considered in the geothermal analysis; must be a multiple of 250 m."
 
@@ -55,6 +58,7 @@ properties:
   EGS_cutoff:
     type: number
     minimum: 0
+    maximum: 10000
     description: "Depth (m) below which only EGS is assumed."
 
   SED_NAN_POLICY:
@@ -142,7 +146,7 @@ properties:
   well_spacing:
     type: number
     exclusiveMinimum: 0
-    description: "Distance between production and injection well (m)."
+    description: "Distance between production and injection well (km)."
 
   flowrate_egs:
     type: number
@@ -190,7 +194,7 @@ properties:
 
   fixed_bins:
     type: array
-    description: "Fixed LCOE bins in EUR/kWh as strings like '0-50'. Used when method_region_aggregation=fixed_bins."
+    description: "Fixed LCOE bins in EUR2020/MWh as strings like '0-50'. Used when method_region_aggregation=fixed_bins."
     minItems: 1
     items:
       type: string
@@ -199,7 +203,7 @@ properties:
   lcoe_cutoff:
     type: number
     minimum: 0
-    description: "LCOE cutoff (EUR/kWh) used when method_region_aggregation=cutoff."
+    description: "LCOE cutoff (EUR2020/MWh) used when method_region_aggregation=cutoff."
 
   sens_tech:
     type: string
@@ -211,6 +215,28 @@ properties:
     description: "List of parameter names to vary in the sensitivity sweep."
     items:
       type: string
+      enum:
+        - max_depth
+        - EGS_cutoff
+        - drilling_cost_curve
+        - stimulation_cost_per_doublet
+        - pump_cost
+        - lifetime
+        - capacity_factor
+        - fixed_OM_rate
+        - parasitic_fraction
+        - orc_money_per_kw
+        - flash_money_per_kw
+        - kalina_money_per_kw
+        - temp_turbine_out_ORC
+        - temp_turbine_out_Flash
+        - temp_turbine_out_Kalina
+        - include_egs
+        - SED_NAN_POLICY
+        - min_dt
+        - well_spacing
+        - flowrate_egs
+        - flowrate_conventional
     uniqueItems: true
 
   sensitivity_parameters:
@@ -240,6 +266,11 @@ properties:
               minItems: 1
               items:
                 type: number
+          allOf:
+            - if:
+                required: ["max_dev_pct"]
+              then:
+                required: ["steps"]
 
 required:
   - baseline_scenario
@@ -271,15 +302,10 @@ required:
   - sensitivity_parameters
 
 allOf:
-  - if:
-      properties:
-        carrier_out:
-          enum: ["power", "both"]
-    then:
-      required: ["temp_turbine_out"]
-      properties:
-        which_cycles:
-          minItems: 1
+  - properties:
+      which_cycles:
+        minItems: 1
+    required: ["temp_turbine_out"]
 
   - if:
       properties:

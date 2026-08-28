@@ -1,9 +1,69 @@
-# Check for changes in the upstream template. If changes are found, an issue is created
-name: Template check.
+# Check for changes in the upstream Modelblocks template. If changes are found, an issue is created.
+name: Template check
+
 on:
+  workflow_dispatch:
   schedule:
     - cron: '0 0 1 * *' # Runs at 00:00 UTC on the 1st day of every month
 
+defaults:
+  run:
+    shell: bash --noprofile --norc -euo pipefail {0}
+
 jobs:
-  copier-update:
-    uses: calliope-project/data-module-template/.github/workflows/template-check-version.yml@latest
+  template-check-update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    env:
+      ISSUE_TITLE: Template update available
+      TEMPLATE_REPOSITORY: modelblocks-org/data-module-template
+      CURRENT_TEMPLATE_VERSION: v1.0.3
+    steps:
+      - name: Check for template updates
+        id: template_check_update
+        run: |
+          latest_version="$(gh api "repos/$TEMPLATE_REPOSITORY/releases/latest" --jq '.tag_name')"
+          echo "latest_version=$latest_version" >> "$GITHUB_OUTPUT"
+          if [[ "$latest_version" == "$CURRENT_TEMPLATE_VERSION" ]]; then
+            echo "update_available=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "update_available=true" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check for existing update issue
+        if: steps.template_check_update.outputs.update_available == 'true'
+        id: existing_issue
+        run: |
+          issue_count="$(gh issue list \
+            --repo "${{ github.repository }}" \
+            --state open \
+            --search "$ISSUE_TITLE in:title" \
+            --json title \
+            --jq "map(select(.title == \"$ISSUE_TITLE\")) | length")"
+          if [[ "$issue_count" -gt 0 ]]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Open update issue
+        if: steps.template_check_update.outputs.update_available == 'true' && steps.existing_issue.outputs.exists != 'true'
+        run: |
+          gh issue create \
+            --repo "${{ github.repository }}" \
+            --title "$ISSUE_TITLE" \
+            --body "A new version of the Modelblocks data module template is available.
+
+          Current synchronized Modelblocks template version: $CURRENT_TEMPLATE_VERSION
+          Latest version: $LATEST_TEMPLATE_VERSION
+
+          Review the resulting changes before merging them."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LATEST_TEMPLATE_VERSION: ${{ steps.template_check_update.outputs.latest_version }}

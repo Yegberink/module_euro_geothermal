@@ -14,6 +14,8 @@ def _valid_geometry(series):
 
 
 class ShapeSchema:
+    """Contract for user-provided aggregation polygons."""
+
     schema = pa.DataFrameSchema(
         {
             "shape_id": pa.Column(str, unique=True, coerce=True),
@@ -25,7 +27,18 @@ class ShapeSchema:
 
     @classmethod
     def validate(cls, df):
-        return cls.schema.validate(df)
+        """Validate tabular, CRS, and polygon-geometry requirements."""
+        if not isinstance(df, gpd.GeoDataFrame):
+            raise TypeError("Shapes must be supplied as a GeoDataFrame.")
+        if df.crs is None:
+            raise ValueError("Shapes must declare a coordinate reference system (CRS).")
+        validated = cls.schema.validate(df)
+        polygon_types = validated.geometry.geom_type.isin({"Polygon", "MultiPolygon"})
+        if not polygon_types.all():
+            raise ValueError(
+                "Shapes must contain only Polygon or MultiPolygon geometry."
+            )
+        return validated
 
 
 class GeothermalRegionsSchema:
@@ -54,7 +67,10 @@ class GeothermalRegionsSchema:
 
 class GeothermalRegionManifestSchema:
     schema = pa.DataFrameSchema(
-        {col: pa.Column(str, coerce=True) for col in ["kind", "depth_category", "bin_id", "price_bin", "path"]},
+        {
+            col: pa.Column(str, coerce=True)
+            for col in ["kind", "depth_category", "bin_id", "price_bin", "path"]
+        },
         strict=True,
         coerce=True,
     )
@@ -166,6 +182,7 @@ def ensure_parent(path) -> None:
     if str(parent):
         parent.mkdir(parents=True, exist_ok=True)
 
+
 def write_blank_png(path, figsize=(6, 4)) -> None:
     import matplotlib.pyplot as plt
 
@@ -208,10 +225,7 @@ def empty_raster_like(da: xr.DataArray) -> xr.DataArray:
 
 
 def empty_raster_dataarray(
-    da: xr.DataArray,
-    *,
-    x_name: str = "x",
-    y_name: str = "y",
+    da: xr.DataArray, *, x_name: str = "x", y_name: str = "y"
 ) -> xr.DataArray:
     return xr.DataArray(
         np.full((1, 1), np.nan, dtype=np.float32),

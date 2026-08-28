@@ -12,7 +12,9 @@ __pycache__
 *.pyc
 
 ### Environments
-.pixi/
+.pixi/*
+!.pixi/.gitignore
+!.pixi/config.toml
 
 ### Snakemake
 .snakemake/

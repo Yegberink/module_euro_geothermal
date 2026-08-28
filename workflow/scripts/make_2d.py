@@ -1,38 +1,43 @@
-from typing import Dict, List, Sequence
-from attr import dataclass
-import xarray as xr
-import numpy as np
-from pathlib import Path
-import rioxarray
+"""Reduce geothermal cubes to rasters and create diagnostic figures."""
+
 import os
 import re
 import shutil
 import sys
-import matplotlib.pyplot as plt
-import geopandas as gpd
-import pandas as pd
-import seaborn as sns
-from rasterio.features import geometry_mask
-from matplotlib.colors import LinearSegmentedColormap, ListedColormap, Normalize, PowerNorm
-from matplotlib.patches import Patch
+from collections.abc import Sequence
+from dataclasses import dataclass
+from pathlib import Path
+
 import _schemas
+import geopandas as gpd
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import rioxarray  # noqa: F401  Register the xarray ``rio`` accessor.
+import seaborn as sns
+import xarray as xr
+from matplotlib.colors import ListedColormap, PowerNorm
+from matplotlib.patches import Patch
+from rasterio.features import geometry_mask
 
 if "snakemake" in dir():
     sys.stdout = sys.stderr = open(snakemake.log[0], "w", buffering=1)
 
 
-plt.rcParams.update({
-    "font.family": "serif",
-    "font.serif": ["Times New Roman"],
-    "mathtext.fontset": "stix",
-    "axes.unicode_minus": False,
-    "font.size": 12,
-    "axes.labelsize": 13,
-    "axes.titlesize": 14,
-    "legend.fontsize": 11,
-    "xtick.labelsize": 11,
-    "ytick.labelsize": 11,
-})
+plt.rcParams.update(
+    {
+        "font.family": "serif",
+        "font.serif": ["Times New Roman"],
+        "mathtext.fontset": "stix",
+        "axes.unicode_minus": False,
+        "font.size": 12,
+        "axes.labelsize": 13,
+        "axes.titlesize": 14,
+        "legend.fontsize": 11,
+        "xtick.labelsize": 11,
+        "ytick.labelsize": 11,
+    }
+)
 
 TECH_LABELS = {"orc": "ORC", "flash": "Flash", "kalina": "Kalina"}
 TECH_COLORS = {"orc": "#0072B2", "flash": "#E69F00", "kalina": "#009E73"}
@@ -50,33 +55,35 @@ COUNTRY_EDGE_COLOR = "#4D5960"
 # Data classes
 # --------------------------
 
+
 @dataclass(frozen=True)
 class DepthCategory:
+    """One half-open interval used to aggregate depth-resolved results."""
+
     zmin: float
     zmax: float
 
     @property
     def label(self) -> str:
-        return f"{self.zmin/1000:g}-{self.zmax/1000:g}km"
+        """Return the interval label used in output filenames."""
+        return f"{self.zmin / 1000:g}-{self.zmax / 1000:g}km"
+
 
 # --------------------------
 # Helpers
 # --------------------------
 
-def _parse_depth_categories(raw) -> List[DepthCategory]:
+
+def _parse_depth_categories(raw) -> list[DepthCategory]:
     raw = raw or []
-    out: List[DepthCategory] = []
+    out: list[DepthCategory] = []
     for pair in raw:
         out.append(DepthCategory(float(pair[0]), float(pair[1])))
     return out
 
 
 def _ensure_raster_metadata(
-    da: xr.DataArray,
-    *,
-    x_name: str = "x",
-    y_name: str = "y",
-    crs: str | None = None,
+    da: xr.DataArray, *, x_name: str = "x", y_name: str = "y", crs: str | None = None
 ) -> xr.DataArray:
     # Ensure dims are (y, x) for rasters
     if da.dims != (y_name, x_name):
@@ -84,7 +91,12 @@ def _ensure_raster_metadata(
 
     da = da.rio.set_spatial_dims(x_dim=x_name, y_dim=y_name, inplace=False)
 
-    crs_guess = crs or da.attrs.get("crs") or da.attrs.get("spatial_ref") or da.attrs.get("epsg")
+    crs_guess = (
+        crs
+        or da.attrs.get("crs")
+        or da.attrs.get("spatial_ref")
+        or da.attrs.get("epsg")
+    )
     if crs_guess is not None:
         if isinstance(crs_guess, (int, np.integer)):
             crs_guess = f"EPSG:{int(crs_guess)}"
@@ -102,6 +114,7 @@ def write_geotiff(
     x_name: str = "x",
     y_name: str = "y",
 ):
+    """Write a georeferenced data array as a compressed GeoTIFF."""
     if da.sizes.get(y_name, 1) == 0 or da.sizes.get(x_name, 1) == 0:
         da = _schemas.empty_raster_dataarray(da, x_name=x_name, y_name=y_name)
     da2 = _ensure_raster_metadata(da, x_name=x_name, y_name=y_name, crs=crs)
@@ -150,9 +163,7 @@ def _country_layer(shapes_path: Path, reference_da: xr.DataArray) -> gpd.GeoData
 
 
 def _plot_values(
-    da: xr.DataArray,
-    countries: gpd.GeoDataFrame,
-    value_scale: float = 1.0,
+    da: xr.DataArray, countries: gpd.GeoDataFrame, value_scale: float = 1.0
 ) -> np.ndarray:
     """Return map values masked to the included land polygons."""
     raster = da.transpose("y", "x")
@@ -177,15 +188,26 @@ def _decorate_map(
     countries.plot(ax=ax, facecolor=unavailable_color, edgecolor="none", zorder=1)
     countries.boundary.plot(ax=ax, color=COUNTRY_EDGE_COLOR, linewidth=0.35, zorder=3)
 
-    ax.annotate("N", xy=(0.94, 0.91), xytext=(0.94, 0.78), xycoords="axes fraction",
-                ha="center", va="center", fontsize=11, fontweight="bold",
-                arrowprops=dict(arrowstyle="-|>", color="#202020", lw=1.2), zorder=5)
+    ax.annotate(
+        "N",
+        xy=(0.94, 0.91),
+        xytext=(0.94, 0.78),
+        xycoords="axes fraction",
+        ha="center",
+        va="center",
+        fontsize=11,
+        fontweight="bold",
+        arrowprops=dict(arrowstyle="-|>", color="#202020", lw=1.2),
+        zorder=5,
+    )
     ax.set_xlim(extent[0], extent[1])
     ax.set_ylim(extent[2], extent[3])
 
 
 def _winner_map(lcoe_maps: dict[str, xr.DataArray], cycles: list[str]) -> np.ndarray:
-    stack = np.stack([lcoe_maps[cycle].values for cycle in cycles], axis=0).astype(np.float32)
+    stack = np.stack([lcoe_maps[cycle].values for cycle in cycles], axis=0).astype(
+        np.float32
+    )
     finite = np.isfinite(stack)
     stack_filled = np.where(finite, stack, np.inf)
     winner = np.argmin(stack_filled, axis=0).astype(np.int16)
@@ -211,7 +233,9 @@ def _cumulative_potential_curve(
     descending: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
     x = np.asarray(sort_da.values, dtype=np.float64).ravel() / x_scale
-    potential = np.asarray(potential_da.values, dtype=np.float64).ravel() / potential_scale
+    potential = (
+        np.asarray(potential_da.values, dtype=np.float64).ravel() / potential_scale
+    )
     mask = np.isfinite(x) & np.isfinite(potential) & (potential > 0)
     if not np.any(mask):
         return np.array([], dtype=np.float64), np.array([], dtype=np.float64)
@@ -245,9 +269,9 @@ def make_three_panel_map_figure(
     value_scale: float = 1.0,
     countries: gpd.GeoDataFrame,
 ):
+    """Plot one consistently styled map panel per conversion cycle."""
     n_panels = len(cycles)
     ncols = n_panels
-    nrows = 1
 
     reference_da = maps[cycles[0]]
     extent = _map_extent(reference_da)
@@ -272,7 +296,9 @@ def make_three_panel_map_figure(
         return fig.add_axes([x0, y0, w, h])
 
     axes = [make_ax(i) for i in range(n_panels)]
-    scaled_arrays = [_plot_values(maps[cycle], countries, value_scale) for cycle in cycles]
+    scaled_arrays = [
+        _plot_values(maps[cycle], countries, value_scale) for cycle in cycles
+    ]
     vmin, vmax = _finite_limits(scaled_arrays)
     map_cmap = plt.get_cmap(cmap).copy()
     map_cmap.set_bad((0, 0, 0, 0))
@@ -325,16 +351,14 @@ def make_cumulative_potential_figure(
     descending: bool = False,
     ylabel: str = "Cumulative potential below cost (GW)",
 ):
+    """Plot cumulative potential against cost, depth, or temperature."""
     fig, ax = plt.subplots(figsize=(7, 4.8))
     is_depth_curve = "Depth" in xlabel
     is_temperature_curve = "Temperature" in xlabel
 
     for cycle in cycles:
         x, y = _cumulative_potential_curve(
-            x_maps[cycle],
-            potential_maps[cycle],
-            x_scale=x_scale,
-            descending=descending,
+            x_maps[cycle], potential_maps[cycle], x_scale=x_scale, descending=descending
         )
         if x.size == 0:
             continue
@@ -363,7 +387,9 @@ def make_cumulative_potential_figure(
             s=22,
             zorder=4,
         )
-        label_value = f"{x[idx]:.1f} km" if is_depth_curve else f"{x[idx]:.0f} €/MWh$_e$"
+        label_value = (
+            f"{x[idx]:.1f} km" if is_depth_curve else f"{x[idx]:.0f} €/MWh$_e$"
+        )
         if is_temperature_curve:
             label_value = f"{x[idx]:.0f} °C"
         ax.annotate(
@@ -386,10 +412,7 @@ def make_cumulative_potential_figure(
     if descending and not is_temperature_curve:
         ax.invert_xaxis()
     ax.legend(
-        loc="center left",
-        bbox_to_anchor=(1.02, 0.5),
-        frameon=False,
-        borderaxespad=0.0,
+        loc="center left", bbox_to_anchor=(1.02, 0.5), frameon=False, borderaxespad=0.0
     )
     ax.spines["top"].set_visible(True)
     ax.spines["right"].set_visible(True)
@@ -405,6 +428,7 @@ def make_average_potential_by_depth_figure(
     cycles: list[str],
     out_path: Path,
 ):
+    """Plot average grid-cell potential at each evaluated depth."""
     fig, ax = plt.subplots(figsize=(6, 4))
 
     depths_km = np.asarray(depths_m, dtype=np.float64) / 1000.0
@@ -425,10 +449,7 @@ def make_average_potential_by_depth_figure(
     ax.set_xlabel("Depth (km)")
     ax.set_ylabel("Average potential per grid cell (GW)")
     ax.legend(
-        loc="center left",
-        bbox_to_anchor=(1.02, 0.5),
-        frameon=False,
-        borderaxespad=0.0,
+        loc="center left", bbox_to_anchor=(1.02, 0.5), frameon=False, borderaxespad=0.0
     )
     ax.spines["top"].set_visible(True)
     ax.spines["right"].set_visible(True)
@@ -445,6 +466,7 @@ def make_depth_profile_figure(
     cycle: str,
     out_path: Path,
 ):
+    """Plot potential and LCOE distributions by selected depth."""
     depth = np.asarray(depth_map.values, dtype=np.float64).ravel() / 1000.0
     lcoe = np.asarray(lcoe_map.values, dtype=np.float64).ravel()
     potential = np.asarray(potential_map.values, dtype=np.float64).ravel() / 1000.0
@@ -471,7 +493,9 @@ def make_depth_profile_figure(
         [np.nanmean(lcoe[np.isclose(depth, level)]) for level in depth_levels],
         dtype=np.float64,
     )
-    line_valid = np.isfinite(depth_levels) & np.isfinite(mean_potential) & np.isfinite(mean_lcoe)
+    line_valid = (
+        np.isfinite(depth_levels) & np.isfinite(mean_potential) & np.isfinite(mean_lcoe)
+    )
     if not np.any(line_valid):
         _schemas.write_blank_png(out_path)
         return
@@ -486,18 +510,10 @@ def make_depth_profile_figure(
     ax_lcoe = ax_potential.twiny()
 
     potential_line = ax_potential.plot(
-        mean_potential,
-        depth_levels,
-        color=color,
-        linewidth=2.4,
-        label="Mean potential",
+        mean_potential, depth_levels, color=color, linewidth=2.4, label="Mean potential"
     )[0]
     lcoe_line = ax_lcoe.plot(
-        mean_lcoe,
-        depth_levels,
-        color="#202020",
-        linewidth=2.4,
-        label="Mean LCOE",
+        mean_lcoe, depth_levels, color="#202020", linewidth=2.4, label="Mean LCOE"
     )[0]
 
     ax_potential.invert_yaxis()
@@ -531,13 +547,16 @@ def make_lcoe_potential_boxplot_figure(
     cycles: list[str],
     out_path: Path,
 ):
+    """Plot LCOE and potential boxplots for all conversion cycles."""
     lcoe_data = []
     potential_data = []
     labels = []
 
     for cycle in cycles:
         lcoe = np.asarray(lcoe_maps[cycle].values, dtype=np.float64).ravel()
-        potential = np.asarray(potential_maps[cycle].values, dtype=np.float64).ravel() / 1000.0
+        potential = (
+            np.asarray(potential_maps[cycle].values, dtype=np.float64).ravel() / 1000.0
+        )
         lcoe_mask = np.isfinite(lcoe)
         potential_mask = np.isfinite(potential) & (potential > 0)
         if not np.any(lcoe_mask) or not np.any(potential_mask):
@@ -626,6 +645,7 @@ def make_lcoe_potential_split_boxplot_figure(
     *,
     max_scatter_points_per_tech: int = 900,
 ):
+    """Plot separate LCOE, potential, and joint-distribution panels."""
     lcoe_data = []
     potential_data = []
     labels = []
@@ -639,7 +659,9 @@ def make_lcoe_potential_split_boxplot_figure(
         lcoe = np.asarray(lcoe_maps[cycle].values, dtype=np.float64).ravel()
         lcoe = lcoe[np.isfinite(lcoe)]
 
-        potential = np.asarray(potential_maps[cycle].values, dtype=np.float64).ravel() / 1000.0
+        potential = (
+            np.asarray(potential_maps[cycle].values, dtype=np.float64).ravel() / 1000.0
+        )
         potential = potential[np.isfinite(potential) & (potential > 0)]
 
         if lcoe.size == 0 or potential.size == 0:
@@ -663,15 +685,17 @@ def make_lcoe_potential_split_boxplot_figure(
         return
 
     scatter_df = pd.DataFrame(scatter_rows)
-    palette = {
-        label: color
-        for label, color in zip(labels, colors)
-    }
+    palette = {label: color for label, color in zip(labels, colors)}
 
     fig, axes = plt.subplots(1, 2, figsize=(12.5, 5.6), sharex=False)
     metric_specs = [
         ("LCOE", lcoe_data, "LCOE (€/MWh$_e$)", "a) LCOE"),
-        ("Potential", potential_data, "Theoretical potential (GW per grid cell)", "b) Theoretical potential"),
+        (
+            "Potential",
+            potential_data,
+            "Theoretical potential (GW per grid cell)",
+            "b) Theoretical potential",
+        ),
     ]
 
     for ax, (metric, data, ylabel, title) in zip(axes, metric_specs):
@@ -732,6 +756,7 @@ def make_lcoe_potential_cumulative_four_panel_figure(
     *,
     max_scatter_points_per_tech: int = 700,
 ):
+    """Plot four complementary LCOE and potential summaries."""
     lcoe_data = []
     potential_data = []
     labels = []
@@ -746,7 +771,9 @@ def make_lcoe_potential_cumulative_four_panel_figure(
         lcoe = np.asarray(lcoe_maps[cycle].values, dtype=np.float64).ravel()
         lcoe = lcoe[np.isfinite(lcoe)]
 
-        potential = np.asarray(potential_maps[cycle].values, dtype=np.float64).ravel() / 1000.0
+        potential = (
+            np.asarray(potential_maps[cycle].values, dtype=np.float64).ravel() / 1000.0
+        )
         potential = potential[np.isfinite(potential) & (potential > 0)]
 
         if lcoe.size == 0 or potential.size == 0:
@@ -863,12 +890,19 @@ def make_lcoe_potential_cumulative_four_panel_figure(
         ),
     ]
 
-    for ax, x_maps, xlabel, ylabel, descending, panel_label, legend_loc, annotate_80pct in curve_specs:
+    for (
+        ax,
+        x_maps,
+        xlabel,
+        ylabel,
+        descending,
+        panel_label,
+        legend_loc,
+        annotate_80pct,
+    ) in curve_specs:
         for cycle in cycles:
             x, y = _cumulative_potential_curve(
-                x_maps[cycle],
-                potential_maps[cycle],
-                descending=descending,
+                x_maps[cycle], potential_maps[cycle], descending=descending
             )
             if x.size == 0:
                 continue
@@ -944,6 +978,7 @@ def make_lcoe_vs_potential_scatter_figure(
     cycles: list[str],
     out_path: Path,
 ):
+    """Plot minimized LCOE against grid-cell potential."""
     fig, ax = plt.subplots(figsize=(6, 4))
 
     for cycle in cycles:
@@ -966,10 +1001,7 @@ def make_lcoe_vs_potential_scatter_figure(
     ax.set_xlabel("Minimized LCOE (€/MWh$_e$)")
     ax.set_ylabel("Minimized potential (GW per 10x10km grid cell)")
     ax.legend(
-        loc="center left",
-        bbox_to_anchor=(1.02, 0.5),
-        frameon=False,
-        borderaxespad=0.0,
+        loc="center left", bbox_to_anchor=(1.02, 0.5), frameon=False, borderaxespad=0.0
     )
     ax.spines["top"].set_visible(True)
     ax.spines["right"].set_visible(True)
@@ -989,12 +1021,15 @@ def make_temperature_lcoe_potential_heatmap_figure(
     n_temp_bins: int = 25,
     n_lcoe_bins: int = 25,
 ):
+    """Plot potential binned jointly by temperature and LCOE."""
     all_temp = []
     all_lcoe = []
     for cycle in cycles:
         temp = np.asarray(temperature_maps[cycle].values, dtype=np.float64).ravel()
         lcoe = np.asarray(lcoe_maps[cycle].values, dtype=np.float64).ravel()
-        pot = np.asarray(potential_maps[cycle].values, dtype=np.float64).ravel() / 1000.0
+        pot = (
+            np.asarray(potential_maps[cycle].values, dtype=np.float64).ravel() / 1000.0
+        )
         mask = np.isfinite(temp) & np.isfinite(lcoe) & np.isfinite(pot) & (pot > 0)
         if np.any(mask):
             all_temp.append(temp[mask])
@@ -1027,18 +1062,19 @@ def make_temperature_lcoe_potential_heatmap_figure(
     for cycle in cycles:
         temp = np.asarray(temperature_maps[cycle].values, dtype=np.float64).ravel()
         lcoe = np.asarray(lcoe_maps[cycle].values, dtype=np.float64).ravel()
-        pot = np.asarray(potential_maps[cycle].values, dtype=np.float64).ravel() / 1000.0
+        pot = (
+            np.asarray(potential_maps[cycle].values, dtype=np.float64).ravel() / 1000.0
+        )
         mask = np.isfinite(temp) & np.isfinite(lcoe) & np.isfinite(pot) & (pot > 0)
 
         if np.any(mask):
             heatmap, _, _ = np.histogram2d(
-                temp[mask],
-                lcoe[mask],
-                bins=[temp_edges, lcoe_edges],
-                weights=pot[mask],
+                temp[mask], lcoe[mask], bins=[temp_edges, lcoe_edges], weights=pot[mask]
             )
         else:
-            heatmap = np.zeros((len(temp_edges) - 1, len(lcoe_edges) - 1), dtype=np.float64)
+            heatmap = np.zeros(
+                (len(temp_edges) - 1, len(lcoe_edges) - 1), dtype=np.float64
+            )
 
         heatmaps.append(heatmap)
         vmax = max(vmax, float(np.nanmax(heatmap)))
@@ -1047,7 +1083,9 @@ def make_temperature_lcoe_potential_heatmap_figure(
         _schemas.write_blank_png(out_path)
         return
 
-    fig, axes = plt.subplots(1, len(cycles), figsize=(4.8 * len(cycles), 4.2), sharex=True, sharey=True)
+    fig, axes = plt.subplots(
+        1, len(cycles), figsize=(4.8 * len(cycles), 4.2), sharex=True, sharey=True
+    )
     axes = np.atleast_1d(axes)
     cmap = plt.get_cmap(MAP_CMAP).copy()
     cmap.set_bad("#D9D9D9")
@@ -1096,6 +1134,7 @@ def make_temperature_vs_lcoe_scatter_figure(
     cycles: list[str],
     out_path: Path,
 ):
+    """Plot reservoir temperature against minimized LCOE."""
     fig, ax = plt.subplots(figsize=(6, 4))
 
     for cycle in cycles:
@@ -1118,10 +1157,7 @@ def make_temperature_vs_lcoe_scatter_figure(
     ax.set_xlabel("Temperature at minimum LCOE (°C)")
     ax.set_ylabel("Minimized LCOE (€/MWh$_e$)")
     ax.legend(
-        loc="center left",
-        bbox_to_anchor=(1.02, 0.5),
-        frameon=False,
-        borderaxespad=0.0,
+        loc="center left", bbox_to_anchor=(1.02, 0.5), frameon=False, borderaxespad=0.0
     )
     ax.spines["top"].set_visible(True)
     ax.spines["right"].set_visible(True)
@@ -1138,9 +1174,12 @@ def make_temperature_lcoe_potential_scatter_figure(
     cycles: list[str],
     out_path: Path,
 ):
+    """Plot temperature and LCOE with potential represented by color."""
     potential_arrays = []
     for cycle in cycles:
-        pot = np.asarray(potential_maps[cycle].values, dtype=np.float64).ravel() / 1000.0
+        pot = (
+            np.asarray(potential_maps[cycle].values, dtype=np.float64).ravel() / 1000.0
+        )
         pot = pot[np.isfinite(pot) & (pot > 0)]
         if pot.size:
             potential_arrays.append(pot)
@@ -1154,7 +1193,9 @@ def make_temperature_lcoe_potential_scatter_figure(
         _schemas.write_blank_png(out_path)
         return
 
-    fig, axes = plt.subplots(1, len(cycles), figsize=(4.8 * len(cycles), 4.2), sharex=True, sharey=True)
+    fig, axes = plt.subplots(
+        1, len(cycles), figsize=(4.8 * len(cycles), 4.2), sharex=True, sharey=True
+    )
     axes = np.atleast_1d(axes)
     cmap = plt.get_cmap(MAP_CMAP).copy()
     cmap.set_bad("#D9D9D9")
@@ -1219,12 +1260,15 @@ def make_temperature_lcoe_isopotential_figure(
     n_temp_bins: int = 30,
     n_lcoe_bins: int = 30,
 ):
+    """Plot cumulative-potential contours over temperature and LCOE."""
     all_temp = []
     all_lcoe = []
     for cycle in cycles:
         temp = np.asarray(temperature_maps[cycle].values, dtype=np.float64).ravel()
         lcoe = np.asarray(lcoe_maps[cycle].values, dtype=np.float64).ravel()
-        pot = np.asarray(potential_maps[cycle].values, dtype=np.float64).ravel() / 1000.0
+        pot = (
+            np.asarray(potential_maps[cycle].values, dtype=np.float64).ravel() / 1000.0
+        )
         mask = np.isfinite(temp) & np.isfinite(lcoe) & np.isfinite(pot) & (pot > 0)
         if np.any(mask):
             all_temp.append(temp[mask])
@@ -1259,15 +1303,14 @@ def make_temperature_lcoe_isopotential_figure(
     for cycle in cycles:
         temp = np.asarray(temperature_maps[cycle].values, dtype=np.float64).ravel()
         lcoe = np.asarray(lcoe_maps[cycle].values, dtype=np.float64).ravel()
-        pot = np.asarray(potential_maps[cycle].values, dtype=np.float64).ravel() / 1000.0
+        pot = (
+            np.asarray(potential_maps[cycle].values, dtype=np.float64).ravel() / 1000.0
+        )
         mask = np.isfinite(temp) & np.isfinite(lcoe) & np.isfinite(pot) & (pot > 0)
 
         if np.any(mask):
             hist, _, _ = np.histogram2d(
-                temp[mask],
-                lcoe[mask],
-                bins=[temp_edges, lcoe_edges],
-                weights=pot[mask],
+                temp[mask], lcoe[mask], bins=[temp_edges, lcoe_edges], weights=pot[mask]
             )
             surface = hist[::-1, :].cumsum(axis=0)[::-1, :].cumsum(axis=1)
         else:
@@ -1286,7 +1329,9 @@ def make_temperature_lcoe_isopotential_figure(
         _schemas.write_blank_png(out_path)
         return
 
-    fig, axes = plt.subplots(1, len(cycles), figsize=(4.8 * len(cycles), 4.2), sharex=True, sharey=True)
+    fig, axes = plt.subplots(
+        1, len(cycles), figsize=(4.8 * len(cycles), 4.2), sharex=True, sharey=True
+    )
     axes = np.atleast_1d(axes)
     cmap = plt.get_cmap(MAP_CMAP).copy()
     cmap.set_bad("#D9D9D9")
@@ -1296,12 +1341,7 @@ def make_temperature_lcoe_isopotential_figure(
         ax = axes[idx]
         surface = np.where(surfaces[idx] > 0, surfaces[idx].T, np.nan)
         contourf = ax.contourf(
-            temp_centers,
-            lcoe_centers,
-            surface,
-            levels=levels,
-            cmap=cmap,
-            extend="max",
+            temp_centers, lcoe_centers, surface, levels=levels, cmap=cmap, extend="max"
         )
         contour = ax.contour(
             temp_centers,
@@ -1345,6 +1385,7 @@ def make_lcoe_overview_figure(
     countries: gpd.GeoDataFrame,
     max_depth: float,
 ):
+    """Plot cycle-specific LCOE maps and the least-cost technology."""
     panels = cycles + ["winner"]
     n_panels = len(panels)
     ncols = 2 if n_panels > 1 else 1
@@ -1357,12 +1398,11 @@ def make_lcoe_overview_figure(
 
     panel_w = 4.5
     panel_h = panel_w * data_aspect
-    cbar_h = 0.5
-    gap = 0.15          # gap between panels in inches
+    gap = 0.15  # gap between panels in inches
     margin_l = 0.1
     margin_r = 0.1
     margin_t = 0.1
-    margin_b = 0.9      # room for colorbar + label
+    margin_b = 0.9  # room for colorbar + label
 
     fig_w = margin_l + ncols * panel_w + (ncols - 1) * gap + margin_r
     fig_h = margin_t + nrows * panel_h + (nrows - 1) * gap + margin_b
@@ -1398,9 +1438,7 @@ def make_lcoe_overview_figure(
     if lcoe_vmin >= lcoe_vmax:
         lcoe_vmin = 0.0
     lcoe_norm = lcoe_norm = PowerNorm(
-        gamma=LCOE_OVERVIEW_NORM_GAMMA,
-        vmin=70,
-        vmax=LCOE_OVERVIEW_COLORBAR_CUTOFF,
+        gamma=LCOE_OVERVIEW_NORM_GAMMA, vmin=70, vmax=LCOE_OVERVIEW_COLORBAR_CUTOFF
     )
     lcoe_colorbar_extend = "max" if lcoe_data_vmax > lcoe_vmax else "neither"
     plot_maps = {
@@ -1429,7 +1467,7 @@ def make_lcoe_overview_figure(
                 cmap=winner_cmap,
                 vmin=-0.5,
                 vmax=len(cycles) - 0.5,
-                aspect="auto",      # axes box is already the right shape
+                aspect="auto",  # axes box is already the right shape
                 zorder=2,
             )
             title = "Cheapest technology"
@@ -1441,17 +1479,21 @@ def make_lcoe_overview_figure(
                 interpolation="nearest",
                 cmap=lcoe_cmap,
                 norm=lcoe_norm,
-                aspect="auto",      # axes box is already the right shape
+                aspect="auto",  # axes box is already the right shape
                 zorder=2,
             )
             title = TECH_LABELS.get(panel, panel.upper())
 
         ax.text(
-            0.02, 0.98,
+            0.02,
+            0.98,
             f"{PANEL_LETTERS[idx]}) {title}",
             transform=ax.transAxes,
-            ha="left", va="top",
-            fontsize=14, fontweight="bold", color="black",
+            ha="left",
+            va="top",
+            fontsize=14,
+            fontweight="bold",
+            color="black",
         )
         _clean_map_axes(ax)
 
@@ -1463,31 +1505,51 @@ def make_lcoe_overview_figure(
 
     cax = fig.add_axes([cbar_x0, cbar_y0, cbar_w, cbar_h_frac])
     sm = plt.cm.ScalarMappable(norm=lcoe_norm, cmap=lcoe_cmap)
-    cbar = fig.colorbar(sm, cax=cax, orientation="horizontal", extend=lcoe_colorbar_extend)
+    cbar = fig.colorbar(
+        sm, cax=cax, orientation="horizontal", extend=lcoe_colorbar_extend
+    )
     cbar.set_label("Levelized Cost of Electricity (€/MWh$_e$)")
     cbar.ax.tick_params(length=0, labelsize=11)
 
     legend_handles = [
-        Patch(facecolor=TECH_COLORS[c], edgecolor="none", label=TECH_LABELS.get(c, c.upper()))
+        Patch(
+            facecolor=TECH_COLORS[c],
+            edgecolor="none",
+            label=TECH_LABELS.get(c, c.upper()),
+        )
         for c in cycles
     ]
-    depth_label = f"{max_depth / 1000:g} km" if max_depth >= 1000 else f"{max_depth:g} m"
-    legend_handles.append(Patch(facecolor=LCOE_UNAVAILABLE_COLOR, edgecolor=COUNTRY_EDGE_COLOR,
-                                label=f"Not possible below {depth_label}"))
+    depth_label = (
+        f"{max_depth / 1000:g} km" if max_depth >= 1000 else f"{max_depth:g} m"
+    )
+    legend_handles.append(
+        Patch(
+            facecolor=LCOE_UNAVAILABLE_COLOR,
+            edgecolor=COUNTRY_EDGE_COLOR,
+            label=f"Not possible below {depth_label}",
+        )
+    )
     axes[-1].legend(
         handles=legend_handles,
         loc="upper right",
-        frameon=True, facecolor="white", framealpha=0.9,
-        edgecolor="#AAAAAA", fontsize=10,
+        frameon=True,
+        facecolor="white",
+        framealpha=0.9,
+        edgecolor="#AAAAAA",
+        fontsize=10,
     )
 
     fig.savefig(out_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
+
+
 # --------------------------
 # 3D -> 2D aggregation
 # --------------------------
 
+
 def aggregate_3d_to_2d_lcoe_min(ds: xr.Dataset, depth_dim: str) -> xr.Dataset:
+    """Select the minimum-LCOE depth independently in every grid cell."""
     temperature = ds["temperature"]
     lcoe = ds["lcoe"]
     pot = ds["potential"]
@@ -1523,13 +1585,11 @@ def aggregate_3d_to_2d_lcoe_min(ds: xr.Dataset, depth_dim: str) -> xr.Dataset:
 
 
 def aggregate_3d_to_2d_depth_categories(
-    ds: xr.Dataset,
-    depth_categories: Sequence[DepthCategory],
-    depth_dim: str,
-) -> Dict[str, xr.Dataset]:
-
+    ds: xr.Dataset, depth_categories: Sequence[DepthCategory], depth_dim: str
+) -> dict[str, xr.Dataset]:
+    """Select the minimum-LCOE depth within each configured depth interval."""
     depth = ds[depth_dim]
-    out: Dict[str, xr.Dataset] = {}
+    out: dict[str, xr.Dataset] = {}
 
     for cat in depth_categories:
         sel = (depth >= cat.zmin) & (depth < cat.zmax)
@@ -1537,10 +1597,22 @@ def aggregate_3d_to_2d_depth_categories(
         if int(sel.sum()) == 0:
             empty = xr.Dataset(
                 data_vars=dict(
-                    temperature_at_min=(("y", "x"), np.full((ds.sizes["y"], ds.sizes["x"]), np.nan, np.float32)),
-                    lcoe_2d=(("y", "x"), np.full((ds.sizes["y"], ds.sizes["x"]), np.nan, np.float32)),
-                    potential_2d=(("y", "x"), np.full((ds.sizes["y"], ds.sizes["x"]), np.nan, np.float32)),
-                    depth_at_min=(("y", "x"), np.full((ds.sizes["y"], ds.sizes["x"]), np.nan, np.float32)),
+                    temperature_at_min=(
+                        ("y", "x"),
+                        np.full((ds.sizes["y"], ds.sizes["x"]), np.nan, np.float32),
+                    ),
+                    lcoe_2d=(
+                        ("y", "x"),
+                        np.full((ds.sizes["y"], ds.sizes["x"]), np.nan, np.float32),
+                    ),
+                    potential_2d=(
+                        ("y", "x"),
+                        np.full((ds.sizes["y"], ds.sizes["x"]), np.nan, np.float32),
+                    ),
+                    depth_at_min=(
+                        ("y", "x"),
+                        np.full((ds.sizes["y"], ds.sizes["x"]), np.nan, np.float32),
+                    ),
                 ),
                 coords=dict(x=ds["x"], y=ds["y"]),
                 attrs=dict(ds.attrs),
@@ -1558,13 +1630,15 @@ def _cycle_from_cube_path(p: str) -> str:
     name = Path(p).name
     return name.replace("_lcoe_cube.nc", "")
 
+
 def _cycle_from_tif_name(path: str, suffix: str | None = None) -> str:
-    """
-    Extract cycle token from filenames like:
+    """Extract the cycle token from a 2-D output filename.
+
+    Examples include:
       kalina_2d_lcoe.tif
       kalina_2d_potential.tif
       kalina_2d_0-3km_lcoe.tif
-      kalina_2d_3-6km_potential.tif
+      kalina_2d_3-6km_potential.tif.
 
     `suffix` is kept for backward compatibility but is no longer required.
     Returns the 'tech/cycle' part (e.g., 'kalina').
@@ -1573,30 +1647,35 @@ def _cycle_from_tif_name(path: str, suffix: str | None = None) -> str:
 
     m = re.match(
         r"^(?P<cycle>[A-Za-z0-9]+)_2d_(?:(?P<cat>.+)_)?(?P<kind>lcoe|potential)\.tif$",
-        name
+        name,
     )
 
     # If caller provided suffix, you can optionally validate 'kind' against it
     return m.group("cycle").lower()
 
 
-
 def main():
+    """Reduce all Snakemake-requested cubes and write their outputs."""
     # Selected cycles from config (already normalized in Snakefile, but be defensive)
     cycles = [str(c).strip().lower() for c in (snakemake.params.get("cycles"))]
 
-    method_2d_aggregation = snakemake.params.get("method_2d_aggregation") or snakemake.config["method_2d_aggregation"]
-    depth_categories = _parse_depth_categories(snakemake.params.get("depth_categories", []))
+    method_2d_aggregation = (
+        snakemake.params.get("method_2d_aggregation")
+        or snakemake.config["method_2d_aggregation"]
+    )
+    depth_categories = _parse_depth_categories(
+        snakemake.params.get("depth_categories", [])
+    )
 
     # CRS (optional)
     crs = snakemake.config.get("crs") or snakemake.params.get("crs")
     max_depth = float(snakemake.params.get("max_depth", snakemake.config["max_depth"]))
 
     # Inputs/outputs are lists in the new rule
-    cubes: List[str] = list(snakemake.input.cubes)
-    lcoe_tifs: List[str] = list(snakemake.output.lcoe_tifs)
-    pot_tifs: List[str] = list(snakemake.output.pot_tifs)
-    depth_profile_figs: List[str] = (
+    cubes: list[str] = list(snakemake.input.cubes)
+    lcoe_tifs: list[str] = list(snakemake.output.lcoe_tifs)
+    pot_tifs: list[str] = list(snakemake.output.pot_tifs)
+    depth_profile_figs: list[str] = (
         list(snakemake.output.depth_profile_figs)
         if hasattr(snakemake.output, "depth_profile_figs")
         else []
@@ -1604,12 +1683,14 @@ def main():
 
     if len(cubes) != len(cycles):
         # Try to match by filename cycle token instead of position
-        cubes_by_cycle = { _cycle_from_cube_path(p): p for p in cubes }
+        cubes_by_cycle = {_cycle_from_cube_path(p): p for p in cubes}
     else:
-        cubes_by_cycle = { c: p for c, p in zip(cycles, cubes) }
+        cubes_by_cycle = {c: p for c, p in zip(cycles, cubes)}
 
     out_lcoe_by_cycle = {_cycle_from_tif_name(p, "_2d_lcoe.tif"): p for p in lcoe_tifs}
-    out_pot_by_cycle  = {_cycle_from_tif_name(p, "_2d_potential.tif"): p for p in pot_tifs}
+    out_pot_by_cycle = {
+        _cycle_from_tif_name(p, "_2d_potential.tif"): p for p in pot_tifs
+    }
     out_depth_profile_by_cycle = {
         Path(p).stem.replace("depth_profile_", "").lower(): p
         for p in depth_profile_figs
@@ -1636,7 +1717,9 @@ def main():
         if method_2d_aggregation == "LCOE_minimization":
             if depths_m is None:
                 depths_m = ds_3d["depth_m"].values.astype(np.float64)
-            potential_profiles_3d[cycle] = _finite_mean_by_depth(ds_3d["potential"], value_scale=1000.0)
+            potential_profiles_3d[cycle] = _finite_mean_by_depth(
+                ds_3d["potential"], value_scale=1000.0
+            )
             ds_2d = aggregate_3d_to_2d_lcoe_min(ds_3d, depth_dim="depth_m")
             temperature_maps_2d[cycle] = ds_2d["temperature_at_min"].copy()
             lcoe_maps_2d[cycle] = ds_2d["lcoe_2d"].copy()
@@ -1648,27 +1731,51 @@ def main():
             write_geotiff(ds_2d["potential_2d"], Path(out_pot_by_cycle[cycle]), crs=crs)
 
             # Optional extras (not DAG-critical)
-            write_geotiff(ds_2d["temperature_at_min"], extra_outdir / f"{cycle}_2d_temperature_at_min.tif", crs=crs)
-            write_geotiff(ds_2d["depth_at_min"], extra_outdir / f"{cycle}_2d_depth_at_min.tif", crs=crs)
+            write_geotiff(
+                ds_2d["temperature_at_min"],
+                extra_outdir / f"{cycle}_2d_temperature_at_min.tif",
+                crs=crs,
+            )
+            write_geotiff(
+                ds_2d["depth_at_min"],
+                extra_outdir / f"{cycle}_2d_depth_at_min.tif",
+                crs=crs,
+            )
 
         elif method_2d_aggregation == "depth_categories":
             # NOTE: your Snakefile outputs currently do NOT include category-suffixed files.
             # So this branch would need Snakefile changes to declare those outputs.
             ds_dict = aggregate_3d_to_2d_depth_categories(
-                ds_3d,
-                depth_categories=depth_categories,
-                depth_dim="depth_m",
+                ds_3d, depth_categories=depth_categories, depth_dim="depth_m"
             )
             # Write category outputs as "extras" only unless you update Snakefile
             for cat_label, ds_cat in ds_dict.items():
                 base = f"{cycle}_2d_{cat_label}"
-                write_geotiff(ds_cat["temperature_at_min"], extra_outdir / f"{base}_temperature_at_min.tif", crs=crs)
-                write_geotiff(ds_cat["lcoe_2d"], extra_outdir / f"{base}_lcoe.tif", crs=crs)
-                write_geotiff(ds_cat["potential_2d"], extra_outdir / f"{base}_potential.tif", crs=crs)
-                write_geotiff(ds_cat["depth_at_min"], extra_outdir / f"{base}_depth_at_min.tif", crs=crs)
+                write_geotiff(
+                    ds_cat["temperature_at_min"],
+                    extra_outdir / f"{base}_temperature_at_min.tif",
+                    crs=crs,
+                )
+                write_geotiff(
+                    ds_cat["lcoe_2d"], extra_outdir / f"{base}_lcoe.tif", crs=crs
+                )
+                write_geotiff(
+                    ds_cat["potential_2d"],
+                    extra_outdir / f"{base}_potential.tif",
+                    crs=crs,
+                )
+                write_geotiff(
+                    ds_cat["depth_at_min"],
+                    extra_outdir / f"{base}_depth_at_min.tif",
+                    crs=crs,
+                )
 
-    if method_2d_aggregation == "LCOE_minimization" and hasattr(snakemake.output, "overview_fig"):
-        countries = _country_layer(Path(snakemake.input.shapes), lcoe_maps_2d[cycles[0]])
+    if method_2d_aggregation == "LCOE_minimization" and hasattr(
+        snakemake.output, "overview_fig"
+    ):
+        countries = _country_layer(
+            Path(snakemake.input.shapes), lcoe_maps_2d[cycles[0]]
+        )
         make_lcoe_overview_figure(
             lcoe_maps=lcoe_maps_2d,
             cycles=cycles,
