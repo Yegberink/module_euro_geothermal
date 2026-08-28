@@ -1,4 +1,5 @@
 from pathlib import Path
+import sys
 
 import geopandas as gpd
 import matplotlib.pyplot as plt
@@ -7,6 +8,9 @@ import numpy as np
 import pandas as pd
 from rasterio.features import geometry_mask
 import rioxarray
+
+if "snakemake" in dir():
+    sys.stdout = sys.stderr = open(snakemake.log[0], "w", buffering=1)
 
 
 plt.rcParams.update({

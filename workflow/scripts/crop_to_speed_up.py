@@ -1,7 +1,11 @@
 from pathlib import Path
+import sys
 import geopandas as gpd
 import xarray as xr
 import _schemas
+
+if "snakemake" in dir():
+    sys.stdout = sys.stderr = open(snakemake.log[0], "w", buffering=1)
 
 CRS_TARGET = "EPSG:3857"
 

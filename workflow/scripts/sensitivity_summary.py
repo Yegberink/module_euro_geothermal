@@ -1,5 +1,6 @@
 from pathlib import Path
 import re
+import sys
 import pandas as pd
 import numpy as np
 import rasterio
@@ -9,6 +10,9 @@ from matplotlib.patches import Patch
 from matplotlib.gridspec import GridSpec
 import matplotlib as mpl
 import _schemas
+
+if "snakemake" in dir():
+    sys.stdout = sys.stderr = open(snakemake.log[0], "w", buffering=1)
 
 # set some global style parameters for consistent, publication-quality figures
 mpl.rcParams["font.family"] = "serif"

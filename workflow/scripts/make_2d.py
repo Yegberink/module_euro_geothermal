@@ -7,6 +7,7 @@ import rioxarray
 import os
 import re
 import shutil
+import sys
 import matplotlib.pyplot as plt
 import geopandas as gpd
 import pandas as pd
@@ -15,6 +16,9 @@ from rasterio.features import geometry_mask
 from matplotlib.colors import LinearSegmentedColormap, ListedColormap, Normalize, PowerNorm
 from matplotlib.patches import Patch
 import _schemas
+
+if "snakemake" in dir():
+    sys.stdout = sys.stderr = open(snakemake.log[0], "w", buffering=1)
 
 
 plt.rcParams.update({

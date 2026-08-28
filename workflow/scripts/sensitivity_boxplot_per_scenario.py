@@ -1,9 +1,13 @@
+import sys
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 import _schemas
 
+if "snakemake" in dir():
+    sys.stdout = sys.stderr = open(snakemake.log[0], "w", buffering=1)
 
 plt.rcParams.update({
     "figure.dpi": 200,

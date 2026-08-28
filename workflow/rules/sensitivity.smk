@@ -35,8 +35,10 @@ rule overall_potential:
             ),
         ),
     output:
-        by_scenario="<resources>/automatic/{shapes}/generic/overall_potential_by_scenario.tsv",
-        summary="<resources>/automatic/{shapes}/generic/overall_potential_summary.tsv",
+        by_scenario="<results>/{shapes}/overall_potential_by_scenario.tsv",
+        summary="<results>/{shapes}/overall_potential_summary.tsv",
+    log:
+        "<logs>/{shapes}/overall_potential.log",
     params:
         baseline=baseline_scenario,
     conda:
@@ -64,6 +66,8 @@ if config["perform_sensitivity"]:
         output:
             fig="<results>/{shapes}/orc_potential_temperature_bins_by_scenario.png",
             data="<results>/{shapes}/orc_potential_temperature_bins_by_scenario.tsv",
+        log:
+            "<logs>/{shapes}/orc_temperature_bin_overview.log",
         params:
             scenarios=scenarios,
             bin_width=10,
@@ -102,6 +106,8 @@ if config["perform_sensitivity"]:
             boxplot_potential_top6_winner="<resources>/automatic/{shapes}/scenarios/_overview/boxplot_potential_top_6_winner.png",
             barplot_switch_rate_top6="<resources>/automatic/{shapes}/scenarios/_overview/barplot_switch_rate_top_6.png",
             map_switch_transition_top4="<resources>/automatic/{shapes}/scenarios/_overview/map_switch_transition_top_4.png",
+        log:
+            "<logs>/{shapes}/sensitivity_vis.log",
         params:
             baseline=baseline_scenario,
             metric_name="mean_abs_pct_change_sens",

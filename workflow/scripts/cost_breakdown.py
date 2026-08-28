@@ -1,6 +1,7 @@
 """Plot geographic distributions of LCOE component shares."""
 
 from pathlib import Path
+import sys
 
 import _schemas
 import geopandas as gpd
@@ -11,6 +12,9 @@ import xarray as xr
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 from rasterio.features import geometry_mask
+
+if "snakemake" in dir():
+    sys.stdout = sys.stderr = open(snakemake.log[0], "w", buffering=1)
 
 plt.switch_backend("Agg")
 

@@ -1,4 +1,5 @@
 import textwrap
+import sys
 
 import geopandas as gpd
 import pandas as pd
@@ -10,6 +11,9 @@ from matplotlib.patches import Patch
 import rasterio
 from cycler import cycler
 import _schemas
+
+if "snakemake" in dir():
+    sys.stdout = sys.stderr = open(snakemake.log[0], "w", buffering=1)
 
 
 # =========================

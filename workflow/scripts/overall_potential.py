@@ -1,11 +1,15 @@
 """Summarise study-wide geothermal potential across sensitivity scenarios."""
 
 import re
+import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import rasterio
+
+if "snakemake" in dir():
+    sys.stdout = sys.stderr = open(snakemake.log[0], "w", buffering=1)
 
 MW_PER_TW = 1_000_000.0
 PORTFOLIO_LABEL = "lowest_lcoe_technology"

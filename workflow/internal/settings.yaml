@@ -2,10 +2,15 @@
 resources:
   automatic:
     # Stable Zenodo repository; add a URL containing the {dataset} placeholder.
-    url: ""
+    url: "https://zenodo.org/records/22149195/files/{dataset}"
     datasets:
-      - Global_sedmap_1deg.nc
       - temperature_voxel.nc
+    gst1:
+      url: "https://zenodo.org/api/records/15320474/files/GST1_WGS84.zip/content"
+      archive: GST1_WGS84.zip
+      member: GST14_WGS84.XYZ
+      md5: b2d1a3778f172506812036f330944186
+      doi: "10.5281/zenodo.15320474"
 
 
 defaults:

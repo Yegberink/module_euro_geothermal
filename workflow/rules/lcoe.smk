@@ -56,6 +56,8 @@ rule build_scenario_table:
     """Generate the scenario TSV from config sensitivity settings."""
     output:
         tsv="<resources>/automatic/scenario_table.tsv",
+    log:
+        "<logs>/build_scenario_table.log",
     params:
         config=config,
     conda:
@@ -70,6 +72,8 @@ rule crop_to_speed_up:
         shapes="<shapes>",
     output:
         clipped_temp_voxel="<resources>/automatic/{shapes}/generic/clipped_temp_voxel.nc",
+    log:
+        "<logs>/{shapes}/crop_to_speed_up.log",
     params:
         pad_m=25_000,
     conda:
@@ -78,16 +82,36 @@ rule crop_to_speed_up:
         "../scripts/crop_to_speed_up.py"
 
 
+rule resample_gst1_sediment:
+    """Align GST-1 sediment thickness to the full temperature grid."""
+    input:
+        archive=rules.download_gst1.output.archive,
+        temperature="<resources>/automatic/temperature_voxel.nc",
+    output:
+        sediment="<resources>/automatic/GST1_sediment_thickness.nc",
+    log:
+        "<logs>/automatic/resample_gst1_sediment.log",
+    params:
+        member=internal["resources"]["automatic"]["gst1"]["member"],
+        doi=internal["resources"]["automatic"]["gst1"]["doi"],
+    conda:
+        "../envs/module_geothermal.yaml"
+    script:
+        "../scripts/resample_gst1.py"
+
+
 rule calculate_LCOE:
     input:
         nc=rules.crop_to_speed_up.output.clipped_temp_voxel,
-        sed="<resources>/automatic/Global_sedmap_1deg.nc",
+        sed=rules.resample_gst1_sediment.output.sediment,
         eff="workflow/internal/efficiency_curves.csv",
         drilling_costs_2017="workflow/internal/baseline_drilling_2017.csv",
         drilling_costs_2025="workflow/internal/baseline_drilling_2025.csv",
         scenario_table=rules.build_scenario_table.output.tsv,
     output:
         cube="<resources>/automatic/{shapes}/scenarios/{scenario}/documents/{cycle}_lcoe_cube.nc",
+    log:
+        "<logs>/{shapes}/{scenario}/{cycle}/calculate_LCOE.log",
     params:
         cycle=lambda wc: wc.cycle,
     conda:

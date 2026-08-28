@@ -1,14 +1,15 @@
 from pathlib import Path
+import sys
 
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import xarray as xr
-from rasterio.crs import CRS
-from rasterio.transform import from_origin
-from rasterio.warp import Resampling, reproject
 from scipy.optimize import curve_fit
 import _schemas
+
+if "snakemake" in dir():
+    sys.stdout = sys.stderr = open(snakemake.log[0], "w", buffering=1)
 
 def _parse_scalar(value):
     if value is None or pd.isna(value):
@@ -64,8 +65,8 @@ def drilling_cost_curve_definitions():
 VOXEL_NC = snakemake.input.nc
 VAR = "temperature"
 
-# Sediment thickness (Laske/Masters 3-layer) NetCDF
-SED_NC = snakemake.input.sed  # has thk1/thk2/thk3 on latitude/longitude grid (km)
+# GST-1 sediment thickness pre-aligned to the full temperature grid.
+SEDIMENT_NC = snakemake.input.sed
 
 # efficiency curve CSV
 CSV_PATH = snakemake.input.eff
@@ -212,81 +213,6 @@ def load_efficiency_curve_csv(csv_path, cycle_key):
 def interp_eff(temps_grid, temps_curve, effs_curve):
     eff = np.interp(temps_grid, temps_curve, effs_curve, left=np.nan, right=np.nan)
     return eff.astype(np.float32, copy=False)
-
-
-def sed_from_laske_nc_to_grid(
-    nc_path,
-    x_coords,
-    y_coords,
-    crs_target,
-    lat_name="latitude",
-    lon_name="longitude",
-    thk_vars=("thk1", "thk2", "thk3"),
-    resampling=Resampling.nearest,  # nearest is usually better for threshold logic
-):
-    """
-    Read Laske/Masters 3-layer sediment thickness (km) from NetCDF and resample/reproject
-    onto voxel grid (x,y in EPSG:3857). Returns sed thickness in meters as (y,x).
-    """
-    ds = xr.open_dataset(nc_path)
-
-    thk_total_km = sum(ds[v] for v in thk_vars)
-    thk_total_m = (thk_total_km * 1000.0).astype(np.float32)
-
-    lat = thk_total_m[lat_name].values
-    lon = thk_total_m[lon_name].values
-
-    da = thk_total_m.transpose(lat_name, lon_name)
-    src = da.values.astype(np.float32)
-
-    fill = da.attrs.get("_FillValue", None) or da.attrs.get("missing_value", None)
-    if fill is not None:
-        src = np.where(src == fill, np.nan, src)
-
-    dlon = float(lon[1] - lon[0])
-    dlat = float(lat[1] - lat[0])
-
-    lat_is_ascending = np.all(np.diff(lat) > 0)
-    if lat_is_ascending:
-        src = src[::-1, :]
-        lat_top = float(lat.max())
-    else:
-        lat_top = float(lat[0])
-
-    src_transform = from_origin(
-        float(lon.min() - 0.5 * dlon),
-        float(lat_top + 0.5 * abs(dlat)),
-        abs(dlon),
-        abs(dlat),
-    )
-
-    dx = float(x_coords[1] - x_coords[0])
-    dy = float(y_coords[1] - y_coords[0])
-    x_min = float(x_coords.min() - 0.5 * dx)
-    y_max = float(y_coords.max() + 0.5 * abs(dy))
-    dst_transform = from_origin(x_min, y_max, abs(dx), abs(dy))
-
-    dst = np.full((len(y_coords), len(x_coords)), np.nan, dtype=np.float32)
-
-    reproject(
-        source=src,
-        destination=dst,
-        src_transform=src_transform,
-        src_crs=CRS.from_epsg(4326),
-        dst_transform=dst_transform,
-        dst_crs=CRS.from_user_input(crs_target),
-        resampling=resampling,
-        src_nodata=np.nan,
-        dst_nodata=np.nan,
-    )
-
-    # y_coords in dataset may be ascending; align to it
-    if np.all(np.diff(y_coords) > 0):
-        dst = dst[::-1, :]
-
-    sed2d = xr.DataArray(dst, dims=("y", "x"), coords={"y": y_coords, "x": x_coords}, name="sed_thickness_m")
-    sed2d.attrs.update({"crs": crs_target, "units": "m"})
-    return sed2d
 
 
 def _apply_sed_nan_policy(sed_thickness, z_thr=Z_THR_M, policy=SED_NAN_POLICY):
@@ -506,11 +432,14 @@ def main():
     # Re-broadcast depth coordinate to match sliced T
     depth3d = T["depth_m"].broadcast_like(T)
 
-    x_coords = T["x"].values
-    y_coords = T["y"].values
-
-    # --- load and align sediment thickness to voxel grid ---
-    sed2d = sed_from_laske_nc_to_grid(SED_NC, x_coords, y_coords, crs_str)
+    # Select the exact subset of the full, pre-aligned GST-1 grid.
+    sediment_ds = xr.open_dataset(SEDIMENT_NC)
+    sediment_crs = str(sediment_ds.attrs.get("crs", "")).strip()
+    if sediment_crs and sediment_crs != crs_str:
+        raise ValueError(
+            f"Sediment-grid CRS {sediment_crs!r} does not match temperature-grid CRS {crs_str!r}"
+        )
+    sed2d = sediment_ds["sediment_thickness_m"].sel(x=T["x"], y=T["y"])
     sed3d = sed2d.broadcast_like(T)
 
     # --- cutoff depth map (2D) consistent with NaN policy ---

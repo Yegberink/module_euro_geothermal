@@ -53,6 +53,8 @@ rule make_2d_base:
             if config["method_2d_aggregation"] == "LCOE_minimization"
             else []
         ),
+    log:
+        "<logs>/{shapes}/{scenario}/make_2d.log",
     params:
         method_2d_aggregation=config["method_2d_aggregation"],
         depth_categories=config.get("depth_categories"),
@@ -112,6 +114,8 @@ rule make_2d_scenario:
                 cat=depth_categories_labels,
             )
         ),
+    log:
+        "<logs>/{shapes}/{scenario}/make_2d.log",
     params:
         method_2d_aggregation=config["method_2d_aggregation"],
         depth_categories=config.get("depth_categories"),
@@ -167,6 +171,8 @@ rule aggregate_to_regions:
     output:
         geoparquet="<results>/{shapes}/{scenario}/geothermal_regions.parquet",
         manifest="<results>/{shapes}/{scenario}/geothermal_region_outputs.tsv",
+    log:
+        "<logs>/{shapes}/{scenario}/aggregate_to_regions.log",
     params:
         cycles=cycles,
         method_region_aggregation=config["method_region_aggregation"],

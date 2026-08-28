@@ -1,6 +1,7 @@
 """Combine three optimal-depth maps with the LCOE cost breakdown."""
 
 from pathlib import Path
+import sys
 
 import cost_breakdown
 import make_2d
@@ -8,6 +9,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import xarray as xr
 from matplotlib import cm
+
+if "snakemake" in dir():
+    sys.stdout = sys.stderr = open(snakemake.log[0], "w", buffering=1)
 
 
 def _cycle_from_cube(path):

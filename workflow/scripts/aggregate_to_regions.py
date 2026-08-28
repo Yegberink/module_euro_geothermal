@@ -14,6 +14,7 @@ Supported aggregation methods (method_region_aggregation):
 
 import os
 import re
+import sys
 import numpy as np
 import pandas as pd
 import geopandas as gpd
@@ -26,6 +27,10 @@ import matplotlib.pyplot as plt
 import gregor
 import affine
 import _schemas
+
+
+if "snakemake" in dir():
+    sys.stdout = sys.stderr = open(snakemake.log[0], "w", buffering=1)
 
 
 plt.rcParams.update({
