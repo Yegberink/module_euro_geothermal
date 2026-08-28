@@ -1,4 +1,37 @@
 module_geothermal:
-  dummy_text: >-
-    Configuration values (like this one) are also external to the module!
-    This gives users a lot of flexibility in how they apply your methodology to solve their particular needs.
+  baseline_scenario: base
+  perform_sensitivity: false
+
+  which_cycles:
+    - orc
+  carrier_out: power
+
+  max_depth: 3000
+  include_egs: true
+  EGS_cutoff: 3000.0
+  SED_NAN_POLICY: always_egs
+  drilling_cost_curve: thermogis
+  stimulation_cost_per_doublet: 3.0
+
+  orc_money_per_kw: 1978.0
+  flash_money_per_kw: 1528.0
+  kalina_money_per_kw: 2175.0
+  pump_cost: 0.6
+  lifetime: 30.0
+  capacity_factor: 0.88
+  fixed_OM_rate: 0.015
+  parasitic_fraction: 0.21
+  well_spacing: 1.5
+  flowrate_egs: 60.0
+  flowrate_conventional: 100.0
+  min_dt: 10.0
+  temp_turbine_out:
+    ORC: 70.0
+
+  method_2d_aggregation: LCOE_minimization
+  method_region_aggregation: cutoff
+  lcoe_cutoff: 1500
+
+  sens_tech: orc
+  active_sensitivity_parameters: []
+  sensitivity_parameters: {}

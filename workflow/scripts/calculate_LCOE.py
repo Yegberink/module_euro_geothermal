@@ -77,12 +77,6 @@ Z_THR_M = float(cfg("EGS_cutoff"))
 # How to handle NaNs in sed thickness after resampling:
 SED_NAN_POLICY = cfg("SED_NAN_POLICY")
 
-# Turbine outlet temps (°C), dict like {"ORC": 70.0, "Flash": 150.0, "Kalina": 80.0}
-temp_turbine_out = {
-    cycle: float(cfg(f"temp_turbine_out_{cycle}"))
-    for cycle in ("ORC", "Flash", "Kalina")
-}
-
 # other configs
 carrier_out = cfg("carrier_out")
 include_egs = bool(cfg("include_egs"))
@@ -463,7 +457,7 @@ def main():
         output_dtypes=[np.float32],
     )
 
-    t_out = float(temp_turbine_out[cycle_key])
+    t_out = float(cfg(f"temp_turbine_out_{cycle_key}"))
 
     # Total LCOE and its exact additive cost-component contributions.
     lcoe_outputs = xr.apply_ufunc(

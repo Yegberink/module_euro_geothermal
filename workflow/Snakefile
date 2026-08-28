@@ -16,6 +16,9 @@ def deep_update(base, overrides):
 
 pathvars:
     shapes="<resources>/user/{shapes}/shapes.parquet",
+    geothermal_regions="<results>/{shapes}/{scenario}/geothermal_regions.parquet",
+    overall_potential_by_scenario="<results>/{shapes}/overall_potential_by_scenario.tsv",
+    overall_potential_summary="<results>/{shapes}/overall_potential_summary.tsv",
 
 
 # Load the example configuration. This will be overridden by users.

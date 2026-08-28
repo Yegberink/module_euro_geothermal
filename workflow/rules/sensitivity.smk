@@ -35,8 +35,8 @@ rule overall_potential:
             ),
         ),
     output:
-        by_scenario="<results>/{shapes}/overall_potential_by_scenario.tsv",
-        summary="<results>/{shapes}/overall_potential_summary.tsv",
+        by_scenario="<overall_potential_by_scenario>",
+        summary="<overall_potential_summary>",
     log:
         "<logs>/{shapes}/overall_potential.log",
     params:

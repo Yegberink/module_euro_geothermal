@@ -169,7 +169,7 @@ rule aggregate_to_regions:
         ),
         shapes="<shapes>",
     output:
-        geoparquet="<results>/{shapes}/{scenario}/geothermal_regions.parquet",
+        geoparquet="<geothermal_regions>",
         manifest="<results>/{shapes}/{scenario}/geothermal_region_outputs.tsv",
     log:
         "<logs>/{shapes}/{scenario}/aggregate_to_regions.log",

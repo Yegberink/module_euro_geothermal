@@ -1,28 +1,42 @@
-import yaml
-
-module_config = {}
-with open(workflow.source_path("../../config/config.yaml"), "r") as f:
-    module_config["module_geothermal"] = yaml.safe_load(f.read())
+# Emulate a user configuring the module.
+configfile: workflow.source_path("./test_config.yaml")
 
 
+# Emulate how another workflow might create shape inputs for this module.
+rule create_external_shapes:
+    output:
+        "resources/user/test/shapes.parquet",
+    params:
+        url="https://zenodo.org/records/20765043/files/EUROPE_L_C34_ADM1.parquet?download=1",
+    shell:
+        "curl --fail --silent --show-error --location --output {output:q} {params.url:q}"
+
+
+# Import the module and configure it.
 module module_geothermal:
+    pathvars:
+        # Redirect specific user resources (inputs)
+        shapes=rules.create_external_shapes.output[0],
+        # Redirect specific module results (outputs)
+        geothermal_regions="results/output/{shapes}/{scenario}/geothermal_regions.parquet",
+        # Redirect intermediate files that are internal to the module
+        logs="resources/module/logs",
+        resources="resources/module/resources",
+        results="resources/module/results",
     snakefile:
         "../../workflow/Snakefile"
     config:
-        module_config["module_geothermal"]
-    pathvars:
-        logs="results/integration_test/logs",
-        resources="../../resources",
-        results="results/integration_test/results",
-        shapes="../../resources/user/{shapes}/shapes.parquet",
+        config["module_geothermal"]
 
 
+# Rename all module rules with a prefix, to avoid naming conflicts.
 use rule * from module_geothermal as module_geothermal_*
 
 
+# Request something from the module.
 rule all:
-    message:
-        "A generic test case for the geothermal module."
     default_target: True
     input:
-        "results/integration_test/results/euro_all/base/geothermal_regions.parquet",
+        "results/output/test/base/geothermal_regions.parquet",
+    message:
+        "A generic dry-run test case for the geothermal module."

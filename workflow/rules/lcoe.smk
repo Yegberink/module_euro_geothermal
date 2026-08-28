@@ -104,9 +104,13 @@ rule calculate_LCOE:
     input:
         nc=rules.crop_to_speed_up.output.clipped_temp_voxel,
         sed=rules.resample_gst1_sediment.output.sediment,
-        eff="workflow/internal/efficiency_curves.csv",
-        drilling_costs_2017="workflow/internal/baseline_drilling_2017.csv",
-        drilling_costs_2025="workflow/internal/baseline_drilling_2025.csv",
+        eff=workflow.source_path("../internal/efficiency_curves.csv"),
+        drilling_costs_2017=workflow.source_path(
+            "../internal/baseline_drilling_2017.csv"
+        ),
+        drilling_costs_2025=workflow.source_path(
+            "../internal/baseline_drilling_2025.csv"
+        ),
         scenario_table=rules.build_scenario_table.output.tsv,
     output:
         cube="<resources>/automatic/{shapes}/scenarios/{scenario}/documents/{cycle}_lcoe_cube.nc",
