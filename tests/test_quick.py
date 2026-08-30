@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import copy
 import importlib.util
+import tomllib
 from pathlib import Path
 from types import ModuleType
 
-import gregor
 import jsonschema
 import pytest
 import yaml
@@ -37,11 +37,10 @@ def example_config() -> dict:
 
 
 def test_published_yaml_files_parse() -> None:
-    """Parse the public interface and both rule-time environments as YAML."""
+    """Parse the public interface and rule-time environment as YAML."""
     for relative_path in (
         "INTERFACE.yaml",
-        "workflow/envs/module_geothermal.yaml",
-        "workflow/envs/shell.yaml",
+        "workflow/envs/module.yaml",
         "workflow/internal/settings.yaml",
     ):
         with (MODULE_ROOT / relative_path).open() as yaml_file:
@@ -134,6 +133,8 @@ def test_invalid_configuration_relationships_are_rejected(
         SCENARIO_CONFIG.validate_module_config(invalid)
 
 
-def test_gregor_raster_aggregation_api_is_available() -> None:
-    """Keep the Conda Gregor API used by regional aggregation under test."""
-    assert callable(gregor.aggregate.aggregate_raster_to_polygon)
+def test_gregor_is_declared_as_a_module_dependency() -> None:
+    """Keep Gregor in the isolated rule-time environment."""
+    with (MODULE_ROOT / "pixi.toml").open("rb") as manifest_file:
+        manifest = tomllib.load(manifest_file)
+    assert "gregor" in manifest["feature"]["module"]["dependencies"]

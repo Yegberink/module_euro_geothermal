@@ -1,11 +1,5 @@
 """Rules to download automatic resource files for geothermal."""
 
-import re
-
-
-CURL_ARGS = "--fail --silent --show-error --location --retry 5 --retry-delay 5 --retry-all-errors --continue-at -"
-AUTOMATIC_DATASETS = internal["resources"]["automatic"]["datasets"]
-
 
 rule download_stable_dataset:
     output:
@@ -18,7 +12,7 @@ rule download_stable_dataset:
     wildcard_constraints:
         dataset="|".join(re.escape(name) for name in AUTOMATIC_DATASETS),
     conda:
-        "../envs/shell.yaml"
+        "../envs/module.yaml"
     params:
         curl_args=CURL_ARGS,
         url=lambda wc: AUTOMATIC_DATASETS[wc.dataset]["url"],
@@ -38,7 +32,7 @@ rule download_gst1:
     log:
         "<logs>/automatic/download_gst1.log",
     conda:
-        "../envs/shell.yaml"
+        "../envs/module.yaml"
     params:
         curl_args=CURL_ARGS,
         url=internal["resources"]["automatic"]["gst1"]["url"],

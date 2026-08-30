@@ -8,24 +8,24 @@ rule make_2d_base:
             rules.calculate_LCOE.output.cube,
             shapes=wc.shapes,
             scenario=wc.scenario,
-            cycle=cycles,
+            cycle=CYCLES,
         ),
     output:
-        **make_2d_figure_outputs,
+        **MAKE_2D_FIGURE_OUTPUTS,
         lcoe_tifs=(
             expand(
                 "<resources>/automatic/{shapes}/scenarios/{scenario}/documents/{cycle}_2d_lcoe.tif",
                 shapes="{shapes}",
                 scenario="{scenario}",
-                cycle=cycles,
+                cycle=CYCLES,
             )
             if config["method_2d_aggregation"] == "LCOE_minimization"
             else expand(
                 "<resources>/automatic/{shapes}/scenarios/{scenario}/documents/{cycle}_2d_{cat}_lcoe.tif",
                 shapes="{shapes}",
                 scenario="{scenario}",
-                cycle=cycles,
-                cat=depth_categories_labels,
+                cycle=CYCLES,
+                cat=DEPTH_CATEGORY_LABELS,
             )
         ),
         pot_tifs=(
@@ -33,15 +33,15 @@ rule make_2d_base:
                 "<resources>/automatic/{shapes}/scenarios/{scenario}/documents/{cycle}_2d_potential.tif",
                 shapes="{shapes}",
                 scenario="{scenario}",
-                cycle=cycles,
+                cycle=CYCLES,
             )
             if config["method_2d_aggregation"] == "LCOE_minimization"
             else expand(
                 "<resources>/automatic/{shapes}/scenarios/{scenario}/documents/{cycle}_2d_{cat}_potential.tif",
                 shapes="{shapes}",
                 scenario="{scenario}",
-                cycle=cycles,
-                cat=depth_categories_labels,
+                cycle=CYCLES,
+                cat=DEPTH_CATEGORY_LABELS,
             )
         ),
     log:
@@ -51,15 +51,15 @@ rule make_2d_base:
     params:
         method_2d_aggregation=config["method_2d_aggregation"],
         depth_categories=config.get("depth_categories"),
-        depthcat_labels=depth_categories_labels,
-        cycles=cycles,
+        depthcat_labels=DEPTH_CATEGORY_LABELS,
+        cycles=CYCLES,
         max_depth=lambda wc: next(
-            row["max_depth"] for row in scenario_rows if row["scenario"] == wc.scenario
+            row["max_depth"] for row in SCENARIO_ROWS if row["scenario"] == wc.scenario
         ),
     conda:
-        "../envs/module_geothermal.yaml"
+        "../envs/module.yaml"
     wildcard_constraints:
-        scenario=baseline_scenario_re,
+        scenario=BASELINE_SCENARIO_RE,
     script:
         "../scripts/make_2d.py"
 
@@ -71,24 +71,24 @@ rule make_2d_scenario:
             rules.calculate_LCOE.output.cube,
             shapes=wc.shapes,
             scenario=wc.scenario,
-            cycle=cycles,
+            cycle=CYCLES,
         ),
     output:
-        **make_2d_figure_outputs,
+        **MAKE_2D_FIGURE_OUTPUTS,
         lcoe_tifs=(
             expand(
                 "<resources>/automatic/{shapes}/scenarios/{scenario}/documents/{cycle}_2d_lcoe.tif",
                 shapes="{shapes}",
                 scenario="{scenario}",
-                cycle=cycles,
+                cycle=CYCLES,
             )
             if config["method_2d_aggregation"] == "LCOE_minimization"
             else expand(
                 "<resources>/automatic/{shapes}/scenarios/{scenario}/documents/{cycle}_2d_{cat}_lcoe.tif",
                 shapes="{shapes}",
                 scenario="{scenario}",
-                cycle=cycles,
-                cat=depth_categories_labels,
+                cycle=CYCLES,
+                cat=DEPTH_CATEGORY_LABELS,
             )
         ),
         pot_tifs=(
@@ -96,15 +96,15 @@ rule make_2d_scenario:
                 "<resources>/automatic/{shapes}/scenarios/{scenario}/documents/{cycle}_2d_potential.tif",
                 shapes="{shapes}",
                 scenario="{scenario}",
-                cycle=cycles,
+                cycle=CYCLES,
             )
             if config["method_2d_aggregation"] == "LCOE_minimization"
             else expand(
                 "<resources>/automatic/{shapes}/scenarios/{scenario}/documents/{cycle}_2d_{cat}_potential.tif",
                 shapes="{shapes}",
                 scenario="{scenario}",
-                cycle=cycles,
-                cat=depth_categories_labels,
+                cycle=CYCLES,
+                cat=DEPTH_CATEGORY_LABELS,
             )
         ),
     log:
@@ -114,15 +114,15 @@ rule make_2d_scenario:
     params:
         method_2d_aggregation=config["method_2d_aggregation"],
         depth_categories=config.get("depth_categories"),
-        depthcat_labels=depth_categories_labels,
-        cycles=cycles,
+        depthcat_labels=DEPTH_CATEGORY_LABELS,
+        cycles=CYCLES,
         max_depth=lambda wc: next(
-            row["max_depth"] for row in scenario_rows if row["scenario"] == wc.scenario
+            row["max_depth"] for row in SCENARIO_ROWS if row["scenario"] == wc.scenario
         ),
     conda:
-        "../envs/module_geothermal.yaml"
+        "../envs/module.yaml"
     wildcard_constraints:
-        scenario=f"(?!{baseline_scenario_re}$).+",
+        scenario=f"(?!{BASELINE_SCENARIO_RE}$).+",
     script:
         "../scripts/make_2d.py"
 
@@ -135,15 +135,15 @@ rule aggregate_to_regions:
                 "<resources>/automatic/{shapes}/scenarios/{scenario}/documents/{cycle}_2d_lcoe.tif",
                 shapes="{shapes}",
                 scenario="{scenario}",
-                cycle=cycles,
+                cycle=CYCLES,
             )
             if config["method_2d_aggregation"] == "LCOE_minimization"
             else expand(
                 "<resources>/automatic/{shapes}/scenarios/{scenario}/documents/{cycle}_2d_{cat}_lcoe.tif",
                 shapes="{shapes}",
                 scenario="{scenario}",
-                cycle=cycles,
-                cat=depth_categories_labels,
+                cycle=CYCLES,
+                cat=DEPTH_CATEGORY_LABELS,
             )
         ),
         pot_tifs=(
@@ -151,15 +151,15 @@ rule aggregate_to_regions:
                 "<resources>/automatic/{shapes}/scenarios/{scenario}/documents/{cycle}_2d_potential.tif",
                 shapes="{shapes}",
                 scenario="{scenario}",
-                cycle=cycles,
+                cycle=CYCLES,
             )
             if config["method_2d_aggregation"] == "LCOE_minimization"
             else expand(
                 "<resources>/automatic/{shapes}/scenarios/{scenario}/documents/{cycle}_2d_{cat}_potential.tif",
                 shapes="{shapes}",
                 scenario="{scenario}",
-                cycle=cycles,
-                cat=depth_categories_labels,
+                cycle=CYCLES,
+                cat=DEPTH_CATEGORY_LABELS,
             )
         ),
         shapes="<shapes>",
@@ -171,13 +171,13 @@ rule aggregate_to_regions:
     message:
         "Aggregate geothermal scenario {wildcards.scenario} to {wildcards.shapes}."
     params:
-        cycles=cycles,
+        cycles=CYCLES,
         method_region_aggregation=config["method_region_aggregation"],
         n_quantiles=config.get("n_quantiles", 5),
         fixed_bins=config.get("fixed_bins", []),
         lcoe_cutoff=config.get("lcoe_cutoff"),
     conda:
-        "../envs/module_geothermal.yaml"
+        "../envs/module.yaml"
     script:
         "../scripts/aggregate_to_regions.py"
 
@@ -187,8 +187,6 @@ if (
     and config["method_region_aggregation"] == "cutoff"
 ):
 
-    cutoff_label = f"{float(config['lcoe_cutoff']):g}"
-
     rule regional_potential_overview:
         """Plot regional potential below the configured LCOE cutoff."""
         input:
@@ -197,17 +195,17 @@ if (
         output:
             fig=(
                 f"<results>/{{shapes}}/{{scenario}}/figures/"
-                f"potential_overview_all_depths_cutoff_{cutoff_label}.png"
+                f"potential_overview_all_depths_cutoff_{CUTOFF_LABEL}.png"
             ),
         log:
             "<logs>/{shapes}/{scenario}/regional_potential_overview.log",
         message:
             "Plot geothermal potential below the configured LCOE cutoff for {wildcards.scenario}."
         params:
-            cycles=cycles,
+            cycles=CYCLES,
             depth_category="all_depths",
-            bin_id=f"cutoff_{cutoff_label}",
+            bin_id=f"cutoff_{CUTOFF_LABEL}",
         conda:
-            "../envs/module_geothermal.yaml"
+            "../envs/module.yaml"
         script:
             "../scripts/regional_potential_overview.py"

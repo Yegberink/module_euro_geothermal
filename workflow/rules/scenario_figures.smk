@@ -9,7 +9,7 @@ rule depth_cost_breakdown_four_panel:
             rules.calculate_LCOE.output.cube,
             shapes=wc.shapes,
             scenario=wc.scenario,
-            cycle=cycles,
+            cycle=CYCLES,
         ),
     output:
         fig="<resources>/automatic/{shapes}/scenarios/{scenario}/figures/depth_cost_breakdown_four_panel.png",
@@ -18,7 +18,7 @@ rule depth_cost_breakdown_four_panel:
     message:
         "Plot depth and cost diagnostics for geothermal scenario {wildcards.scenario}."
     conda:
-        "../envs/module_geothermal.yaml"
+        "../envs/module.yaml"
     script:
         "../scripts/depth_cost_breakdown_four_panel.py"
 
@@ -28,26 +28,26 @@ rule sensitivity_summary:
         base_lcoe=lambda wc: expand(
             "<resources>/automatic/{shapes}/scenarios/{scenario}/documents/{cycle}_2d_lcoe.tif",
             shapes=wc.shapes,
-            scenario=baseline_scenario,
-            cycle=cycles,
+            scenario=BASELINE_SCENARIO,
+            cycle=CYCLES,
         ),
         scen_lcoe=lambda wc: expand(
             "<resources>/automatic/{shapes}/scenarios/{scenario}/documents/{cycle}_2d_lcoe.tif",
             shapes=wc.shapes,
             scenario=wc.scenario,
-            cycle=cycles,
+            cycle=CYCLES,
         ),
         base_pot=lambda wc: expand(
             "<resources>/automatic/{shapes}/scenarios/{scenario}/documents/{cycle}_2d_potential.tif",
             shapes=wc.shapes,
-            scenario=baseline_scenario,
-            cycle=cycles,
+            scenario=BASELINE_SCENARIO,
+            cycle=CYCLES,
         ),
         scen_pot=lambda wc: expand(
             "<resources>/automatic/{shapes}/scenarios/{scenario}/documents/{cycle}_2d_potential.tif",
             shapes=wc.shapes,
             scenario=wc.scenario,
-            cycle=cycles,
+            cycle=CYCLES,
         ),
     output:
         metrics="<resources>/automatic/{shapes}/scenarios/{scenario}/documents/sensitivity_metrics.tsv",
@@ -57,10 +57,10 @@ rule sensitivity_summary:
     message:
         "Compare geothermal scenario {wildcards.scenario} with the baseline."
     params:
-        baseline=baseline_scenario,
-        cycles=cycles,
+        baseline=BASELINE_SCENARIO,
+        cycles=CYCLES,
         sens_tech=config["sens_tech"],
     conda:
-        "../envs/module_geothermal.yaml"
+        "../envs/module.yaml"
     script:
         "../scripts/sensitivity_summary.py"

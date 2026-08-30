@@ -12,12 +12,12 @@ rule overall_potential:
                 else "<resources>/automatic/{shapes}/scenarios/{scenario}/documents/{cycle}_2d_{cat}_lcoe.tif"
             ),
             shapes=wc.shapes,
-            scenario=scenarios,
-            cycle=cycles,
+            scenario=SCENARIOS,
+            cycle=CYCLES,
             **(
                 {}
                 if config["method_2d_aggregation"] == "LCOE_minimization"
-                else {"cat": depth_categories_labels}
+                else {"cat": DEPTH_CATEGORY_LABELS}
             ),
         ),
         potential_tifs=lambda wc: expand(
@@ -27,12 +27,12 @@ rule overall_potential:
                 else "<resources>/automatic/{shapes}/scenarios/{scenario}/documents/{cycle}_2d_{cat}_potential.tif"
             ),
             shapes=wc.shapes,
-            scenario=scenarios,
-            cycle=cycles,
+            scenario=SCENARIOS,
+            cycle=CYCLES,
             **(
                 {}
                 if config["method_2d_aggregation"] == "LCOE_minimization"
-                else {"cat": depth_categories_labels}
+                else {"cat": DEPTH_CATEGORY_LABELS}
             ),
         ),
     output:
@@ -43,9 +43,9 @@ rule overall_potential:
     message:
         "Summarize geothermal potential across all configured scenarios."
     params:
-        baseline=baseline_scenario,
+        baseline=BASELINE_SCENARIO,
     conda:
-        "../envs/module_geothermal.yaml"
+        "../envs/module.yaml"
     script:
         "../scripts/overall_potential.py"
 
@@ -57,19 +57,19 @@ if config["perform_sensitivity"]:
             scenario_table=rules.build_scenario_table.output.tsv,
             shapes="<shapes>",
             reference_lcoe=(
-                f"<resources>/automatic/{{shapes}}/scenarios/{baseline_scenario}/documents/{cycles[0]}_2d_lcoe.tif"
+                f"<resources>/automatic/{{shapes}}/scenarios/{BASELINE_SCENARIO}/documents/{CYCLES[0]}_2d_lcoe.tif"
                 if config["method_2d_aggregation"] == "LCOE_minimization"
                 else []
             ),
             metrics=lambda wc: expand(
                 "<resources>/automatic/{shapes}/scenarios/{scenario}/documents/sensitivity_metrics.tsv",
                 shapes=wc.shapes,
-                scenario=scenarios_no_base,
+                scenario=NON_BASELINE_SCENARIOS,
             ),
             boxplot_data=lambda wc: expand(
                 "<resources>/automatic/{shapes}/scenarios/{scenario}/documents/sensitivity_boxplot_data.parquet",
                 shapes=wc.shapes,
-                scenario=scenarios,
+                scenario=SCENARIOS,
             ),
         output:
             boxplot_lcoe_top6_winner="<resources>/automatic/{shapes}/scenarios/_overview/boxplot_lcoe_top_6_winner.png",
@@ -80,11 +80,11 @@ if config["perform_sensitivity"]:
         message:
             "Plot study-wide geothermal sensitivity results for {wildcards.shapes}."
         params:
-            baseline=baseline_scenario,
+            baseline=BASELINE_SCENARIO,
             metric_name="mean_abs_pct_change_sens",
             top_n=6,
             include_all=False,
         conda:
-            "../envs/module_geothermal.yaml"
+            "../envs/module.yaml"
         script:
             "../scripts/sensitivity_vis.py"

@@ -130,10 +130,13 @@ cd module_geothermal
 pixi install --all
 ```
 
-Pixi's single `default` environment contains both development tools and runtime
-packages. Snakemake rules remain reproducible through two smaller Conda files:
-`workflow/envs/shell.yaml` supplies Curl to download inputs, while
-`workflow/envs/module_geothermal.yaml` supplies the Python computation stack.
+Pixi separates the development environment from the minimal `module`
+environment used by Snakemake rules. After changing runtime dependencies,
+regenerate the Conda environment and platform pins with:
+
+```shell
+pixi run export-snakemake-env module
+```
 
 Run the quick checks used during development with:
 

@@ -1,13 +1,18 @@
 # Changes here will be overwritten by Copier
 # DO NOT MANUALLY MODIFY THIS FILE
-_commit: latest
+_commit: v1.0.3
 _src_path: https://github.com/calliope-project/data-module-template.git
-author_email: y.f.egberink@tudelft.nl
-author_family_name: Egberink
-author_given_name: Yannick
+authors:
+-   email: y.f.egberink@tudelft.nl
+    family_name: Egberink
+    given_name: Yannick
 github_org: calliope-project
 license: Apache-2.0
+maintainers:
+-   email: y.f.egberink@tudelft.nl
+    family_name: Egberink
+    given_name: Yannick
+module_code_name: module_geothermal
 module_description: This module calculates geothermal heat or power production based
     on a temperature model by Limberger et al. (2014).
-module_long_name: Data module for calculating geothermal potential and costs.
-module_short_name: geo_module
+module_human_name: Geothermal Potential and Costs

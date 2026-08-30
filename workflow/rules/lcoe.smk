@@ -1,31 +1,5 @@
 """Scenario setup, input preparation, and LCOE calculation rules."""
 
-import re
-
-
-def depthcat_labels():
-    return [
-        f"{int(start/1000)}-{int(stop/1000)}km"
-        for start, stop in config.get("depth_categories") or []
-    ]
-
-
-cycles = config["which_cycles"]
-depth_categories_labels = depthcat_labels()
-baseline_scenario = config["baseline_scenario"]
-baseline_scenario_re = re.escape(baseline_scenario)
-scenario_rows = build_scenario_rows(config)
-scenarios = [row["scenario"] for row in scenario_rows]
-scenarios_no_base = [s for s in scenarios if s != baseline_scenario]
-make_2d_figure_outputs = (
-    {
-        "overview_fig": "<results>/{shapes}/{scenario}/lcoe_overview.png",
-        "technology_cumulative_four_panel_fig": "<resources>/automatic/{shapes}/scenarios/{scenario}/figures/lcoe_potential_cumulative_four_panel.png",
-    }
-    if config["method_2d_aggregation"] == "LCOE_minimization"
-    else {}
-)
-
 
 rule build_scenario_table:
     """Generate the scenario TSV from config sensitivity settings."""
@@ -38,7 +12,7 @@ rule build_scenario_table:
     params:
         config=config,
     conda:
-        "../envs/module_geothermal.yaml"
+        "../envs/module.yaml"
     script:
         "../scripts/build_scenario_table.py"
 
@@ -56,7 +30,7 @@ rule crop_to_speed_up:
     params:
         pad_m=25_000,
     conda:
-        "../envs/module_geothermal.yaml"
+        "../envs/module.yaml"
     script:
         "../scripts/crop_to_speed_up.py"
 
@@ -76,7 +50,7 @@ rule resample_gst1_sediment:
         member=internal["resources"]["automatic"]["gst1"]["member"],
         doi=internal["resources"]["automatic"]["gst1"]["doi"],
     conda:
-        "../envs/module_geothermal.yaml"
+        "../envs/module.yaml"
     script:
         "../scripts/resample_gst1.py"
 
@@ -102,6 +76,6 @@ rule calculate_LCOE:
     params:
         cycle=lambda wc: wc.cycle,
     conda:
-        "../envs/module_geothermal.yaml"
+        "../envs/module.yaml"
     script:
         "../scripts/calculate_LCOE.py"

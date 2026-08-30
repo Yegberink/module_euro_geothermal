@@ -198,8 +198,8 @@ and its sensitivity envelope in TW.
 
 ## Development environments
 
-The repository intentionally uses one Pixi `default` environment containing
-runtime and development dependencies. Rule-time dependencies are kept in the
-existing Conda environments: `workflow/envs/shell.yaml` for Curl-based download
-and failure rules, and `workflow/envs/module_geothermal.yaml` for Python
-computations. Run `pixi run test-quick` for the fast validation suite.
+The repository separates its Pixi development environment from the minimal
+`module` environment used by Snakemake rules. After changing runtime
+dependencies, run `pixi run export-snakemake-env module` to regenerate
+`workflow/envs/module.yaml` and its platform pin files. Run
+`pixi run test-quick` for the fast validation suite.
