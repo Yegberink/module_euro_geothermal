@@ -44,16 +44,6 @@ rule make_2d_base:
                 cat=depth_categories_labels,
             )
         ),
-        temp_tifs=(
-            expand(
-                "<resources>/automatic/{shapes}/scenarios/{scenario}/documents/{cycle}_2d_temperature_at_min.tif",
-                shapes="{shapes}",
-                scenario="{scenario}",
-                cycle=cycles,
-            )
-            if config["method_2d_aggregation"] == "LCOE_minimization"
-            else []
-        ),
     log:
         "<logs>/{shapes}/{scenario}/make_2d.log",
     message:
@@ -190,3 +180,34 @@ rule aggregate_to_regions:
         "../envs/module_geothermal.yaml"
     script:
         "../scripts/aggregate_to_regions.py"
+
+
+if (
+    config["method_2d_aggregation"] == "LCOE_minimization"
+    and config["method_region_aggregation"] == "cutoff"
+):
+
+    cutoff_label = f"{float(config['lcoe_cutoff']):g}"
+
+    rule regional_potential_overview:
+        """Plot regional potential below the configured LCOE cutoff."""
+        input:
+            geoparquet="<geothermal_regions>",
+            shapes="<shapes>",
+        output:
+            fig=(
+                f"<results>/{{shapes}}/{{scenario}}/figures/"
+                f"potential_overview_all_depths_cutoff_{cutoff_label}.png"
+            ),
+        log:
+            "<logs>/{shapes}/{scenario}/regional_potential_overview.log",
+        message:
+            "Plot geothermal potential below the configured LCOE cutoff for {wildcards.scenario}."
+        params:
+            cycles=cycles,
+            depth_category="all_depths",
+            bin_id=f"cutoff_{cutoff_label}",
+        conda:
+            "../envs/module_geothermal.yaml"
+        script:
+            "../scripts/regional_potential_overview.py"

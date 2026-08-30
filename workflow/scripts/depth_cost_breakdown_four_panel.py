@@ -1,141 +1,113 @@
-"""Combine three optimal-depth maps with the LCOE cost breakdown."""
+"""Prepare optimal-depth and cost-share data for the four-panel figure."""
 
 import sys
 from pathlib import Path
 
-import cost_breakdown
-import make_2d
-import matplotlib.pyplot as plt
+import _plots
+import geopandas as gpd
 import numpy as np
+import rioxarray  # noqa: F401  Register the xarray ``rio`` accessor.
 import xarray as xr
-from matplotlib import cm
+from rasterio.features import geometry_mask
 
 if "snakemake" in dir():
     sys.stdout = sys.stderr = open(snakemake.log[0], "w", buffering=1)
+
+
+COMPONENTS = ("drilling", "stimulation", "pump", "power_plant", "fixed_om")
 
 
 def _cycle_from_cube(path):
     return Path(path).name.replace("_lcoe_cube.nc", "").lower()
 
 
+def _ensure_raster_metadata(da, crs=None):
+    da = da.transpose("y", "x").rio.set_spatial_dims(
+        x_dim="x", y_dim="y", inplace=False
+    )
+    crs = crs or da.attrs.get("crs")
+    if crs is not None:
+        da = da.rio.write_crs(crs, inplace=False)
+    return da
+
+
 def _depth_at_minimum_lcoe(cube_path):
-    """Return the optimal-depth map in metres for one technology cube."""
-    with xr.open_dataset(cube_path) as ds:
-        lcoe = ds["lcoe"]
+    with xr.open_dataset(cube_path) as dataset:
+        lcoe = dataset["lcoe"]
         argmin = lcoe.where(np.isfinite(lcoe), np.inf).argmin(dim="depth_m")
         valid = np.isfinite(lcoe.min(dim="depth_m", skipna=True))
-        depth = ds["depth_m"].isel(depth_m=argmin).where(valid).load()
-        crs = ds.attrs.get("crs") or lcoe.attrs.get("crs")
+        depth = dataset["depth_m"].isel(depth_m=argmin).where(valid).load()
+        crs = dataset.attrs.get("crs") or lcoe.attrs.get("crs")
     depth.attrs.update({"crs": crs, "units": "m"})
-    return make_2d._ensure_raster_metadata(depth, crs=crs)
+    return _ensure_raster_metadata(depth, crs=crs)
 
 
-def make_four_panel_figure(cubes, shapes_path, output_path):
-    """Render the three technology depth maps and cost boxplots."""
+def _geographic_mask(shapes_path, reference, crs):
+    shapes = gpd.read_parquet(shapes_path)
+    if "shape_class" in shapes.columns:
+        shapes = shapes.loc[shapes["shape_class"] == "land"].copy()
+    shapes = shapes.loc[shapes.geometry.notna() & ~shapes.geometry.is_empty].copy()
+    raster = _ensure_raster_metadata(reference, crs=crs)
+    if raster.rio.crs is not None and shapes.crs != raster.rio.crs:
+        shapes = shapes.to_crs(raster.rio.crs)
+    return geometry_mask(
+        shapes.geometry,
+        out_shape=(raster.sizes["y"], raster.sizes["x"]),
+        transform=raster.rio.transform(),
+        invert=True,
+    )
+
+
+def _component_shares_for_cube(cube_path, shapes_path):
+    """Return cell-level LCOE component shares at each cell's optimal depth."""
+    with xr.open_dataset(cube_path) as dataset:
+        required = ["lcoe", *(f"lcoe_{name}" for name in COMPONENTS)]
+        missing = [name for name in required if name not in dataset]
+        if missing:
+            raise ValueError(
+                f"{cube_path} lacks cost variables {missing}; regenerate the LCOE cube."
+            )
+        lcoe = dataset["lcoe"]
+        argmin = lcoe.where(np.isfinite(lcoe), np.inf).argmin(dim="depth_m")
+        valid_depth = np.isfinite(lcoe.min(dim="depth_m", skipna=True))
+        total = lcoe.isel(depth_m=argmin).where(valid_depth).load()
+        inside = _geographic_mask(
+            shapes_path, total, dataset.attrs.get("crs") or total.attrs.get("crs")
+        )
+        valid_total = inside & np.isfinite(total) & (total > 0)
+        shares = {}
+        for component in COMPONENTS:
+            contribution = (
+                dataset[f"lcoe_{component}"]
+                .isel(depth_m=argmin)
+                .where(valid_depth)
+                .load()
+            )
+            shares[component] = (100 * contribution / total).where(valid_total)
+    technology = _cycle_from_cube(cube_path)
+    return xr.Dataset(shares).expand_dims(technology=[technology])
+
+
+def main():
+    """Prepare the inputs and render the requested four-panel figure."""
+    cubes = list(snakemake.input["cubes"])
     cubes_by_technology = {_cycle_from_cube(path): path for path in cubes}
-    technologies = [
-        technology
-        for technology in make_2d.TECH_LABELS
-        if technology in cubes_by_technology
-    ]
-    if not technologies:
-        make_2d._schemas.write_blank_png(output_path, figsize=(8.27, 8.27))
-        return
-
+    technologies = [t for t in _plots.TECH_LABELS if t in cubes_by_technology]
     depth_maps = {
         technology: _depth_at_minimum_lcoe(cubes_by_technology[technology])
         for technology in technologies
     }
     technology_shares = [
-        cost_breakdown.component_shares_for_cube(
-            cubes_by_technology[technology], shapes_path
+        _component_shares_for_cube(
+            cubes_by_technology[technology], snakemake.input["shapes"]
         )
         for technology in technologies
     ]
-
-    reference = depth_maps[technologies[0]]
-    countries = make_2d._country_layer(Path(shapes_path), reference)
-    extent = make_2d._map_extent(reference)
-    arrays = [
-        make_2d._plot_values(depth_maps[technology], countries, value_scale=1000.0)
-        for technology in technologies
-    ]
-    vmin, vmax = make_2d._finite_limits(arrays)
-    cmap = plt.get_cmap(make_2d.LCOE_OVERVIEW_CMAP).copy()
-    cmap.set_bad((0, 0, 0, 0))
-
-    fig, axes = plt.subplots(2, 2, figsize=(8.27, 8.27))
-    map_axes = [axes[0, 0], axes[0, 1], axes[1, 0]]
-    for index, (ax, technology, values) in enumerate(
-        zip(map_axes, technologies, arrays)
-    ):
-        make_2d._decorate_map(ax, countries, extent, make_2d._map_crs(reference))
-        image = ax.imshow(
-            values,
-            origin="lower",
-            extent=extent,
-            interpolation="nearest",
-            cmap=cmap,
-            vmin=vmin,
-            vmax=vmax,
-            aspect="auto",
-            zorder=2,
-        )
-        ax.text(
-            0.02,
-            0.98,
-            f"{make_2d.PANEL_LETTERS[index]}) "
-            f"{make_2d.TECH_LABELS.get(technology, technology.upper())}",
-            transform=ax.transAxes,
-            ha="left",
-            va="top",
-            fontsize=14,
-            fontweight="bold",
-            color="black",
-        )
-        make_2d._clean_map_axes(ax)
-        ax.set_box_aspect(1)
-
-    cost_ax = axes[1, 1]
-    cost_breakdown.plot_cost_breakdown(cost_ax, technology_shares, compact=True)
-    cost_ax.set_box_aspect(1)
-    cost_ax.text(
-        0.02,
-        0.98,
-        "d)",
-        transform=cost_ax.transAxes,
-        ha="left",
-        va="top",
-        fontsize=14,
-        fontweight="bold",
-        bbox=dict(facecolor="white", edgecolor="none", alpha=0.82, pad=2.0),
-        zorder=6,
-    )
-
-    fig.subplots_adjust(
-        left=0.055, right=0.985, top=0.98, bottom=0.12, wspace=0.16, hspace=0.16
-    )
-    cax = fig.add_axes([0.09, 0.045, 0.38, 0.022])
-    colorbar = fig.colorbar(
-        cm.ScalarMappable(norm=image.norm, cmap=image.cmap),
-        cax=cax,
-        orientation="horizontal",
-    )
-    colorbar.set_label("Depth at minimum LCOE (km)", fontsize=12)
-    colorbar.ax.tick_params(length=0, labelsize=11)
-
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, dpi=200)
-    plt.close(fig)
-
-
-def main():
-    """Write the combined depth-map and cost-breakdown figure."""
-    make_four_panel_figure(
-        list(snakemake.input["cubes"]),
-        snakemake.input["shapes"],
-        snakemake.output["fig"],
+    _plots.make_depth_cost_breakdown_four_panel(
+        depth_maps=depth_maps,
+        technology_shares=technology_shares,
+        shapes_path=snakemake.input["shapes"],
+        out_path=snakemake.output["fig"],
     )
 
 

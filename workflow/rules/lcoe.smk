@@ -20,25 +20,7 @@ scenarios_no_base = [s for s in scenarios if s != baseline_scenario]
 make_2d_figure_outputs = (
     {
         "overview_fig": "<results>/{shapes}/{scenario}/lcoe_overview.png",
-        "potential_presentation_fig": "<results>/{shapes}/{scenario}/potential_overview_presentation.png",
-        "scatter_fig": "<resources>/automatic/{shapes}/scenarios/{scenario}/figures/lcoe_vs_potential_scatter.png",
-        "technology_boxplot_fig": "<resources>/automatic/{shapes}/scenarios/{scenario}/figures/lcoe_potential_boxplots.png",
-        "technology_split_boxplot_fig": "<resources>/automatic/{shapes}/scenarios/{scenario}/figures/lcoe_potential_split_boxplots.png",
         "technology_cumulative_four_panel_fig": "<resources>/automatic/{shapes}/scenarios/{scenario}/figures/lcoe_potential_cumulative_four_panel.png",
-        "avg_potential_depth_fig": "<resources>/automatic/{shapes}/scenarios/{scenario}/figures/average_potential_per_cell_by_depth.png",
-        "depth_profile_figs": expand(
-            "<resources>/automatic/{{shapes}}/scenarios/{{scenario}}/figures/depth_profile_{cycle}.png",
-            cycle=cycles,
-        ),
-        "cumulative_curve_fig": "<resources>/automatic/{shapes}/scenarios/{scenario}/figures/cumulative_potential_vs_lcoe.png",
-        "cumulative_depth_fig": "<resources>/automatic/{shapes}/scenarios/{scenario}/figures/cumulative_potential_vs_depth.png",
-        "cumulative_temperature_fig": "<resources>/automatic/{shapes}/scenarios/{scenario}/figures/cumulative_potential_vs_temperature.png",
-        "temperature_lcoe_potential_fig": "<resources>/automatic/{shapes}/scenarios/{scenario}/figures/potential_temperature_lcoe_heatmap.png",
-        "temperature_lcoe_scatter_fig": "<resources>/automatic/{shapes}/scenarios/{scenario}/figures/temperature_vs_lcoe_scatter.png",
-        "temperature_lcoe_isopotential_fig": "<resources>/automatic/{shapes}/scenarios/{scenario}/figures/temperature_lcoe_isopotential_contours.png",
-        "temperature_lcoe_potential_scatter_fig": "<resources>/automatic/{shapes}/scenarios/{scenario}/figures/temperature_lcoe_potential_scatter.png",
-        "potential_overview_fig": "<resources>/automatic/{shapes}/scenarios/{scenario}/figures/potential_overview.png",
-        "depth_overview_fig": "<resources>/automatic/{shapes}/scenarios/{scenario}/figures/depth_at_min_overview.png",
     }
     if config["method_2d_aggregation"] == "LCOE_minimization"
     else {}

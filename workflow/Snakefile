@@ -8,7 +8,7 @@ from snakemake.utils import min_version, validate
 min_version("9.19")
 
 sys.path.insert(0, os.path.dirname(workflow.source_path("scripts/scenario_config.py")))
-from scenario_config import validate_module_config
+from scenario_config import build_scenario_rows, validate_module_config
 
 
 def deep_update(base, overrides):
@@ -66,6 +66,7 @@ include: "rules/sensitivity.smk"
 # explicitly used as a script or input in a snakemake rule.
 workflow.source_path("scripts/scenario_config.py")
 workflow.source_path("scripts/_schemas.py")
+workflow.source_path("scripts/_plots.py")
 
 
 rule all:

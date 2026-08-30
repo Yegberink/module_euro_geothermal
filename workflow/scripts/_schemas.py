@@ -183,16 +183,6 @@ def ensure_parent(path) -> None:
         parent.mkdir(parents=True, exist_ok=True)
 
 
-def write_blank_png(path, figsize=(6, 4)) -> None:
-    import matplotlib.pyplot as plt
-
-    ensure_parent(path)
-    fig, ax = plt.subplots(figsize=figsize)
-    ax.axis("off")
-    fig.savefig(path, dpi=200, bbox_inches="tight")
-    plt.close(fig)
-
-
 def empty_dataarray_like(da: xr.DataArray) -> xr.DataArray:
     out = xr.full_like(da.astype("float32"), np.nan)
     out.attrs.update(da.attrs)

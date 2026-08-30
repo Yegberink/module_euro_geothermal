@@ -1,66 +1,19 @@
-"""Create study-wide visual summaries of geothermal sensitivity results."""
+"""Prepare study-wide data for the retained sensitivity figures."""
+
+# The small procedural helpers are intentionally public within this Snakemake script.
+# ruff: noqa: D103
 
 import sys
 import textwrap
 
+import _plots
 import _schemas
-import geopandas as gpd
-import matplotlib.pyplot as plt
-import matplotlib.transforms as mtransforms
 import numpy as np
 import pandas as pd
-import rasterio
-from cycler import cycler
-from matplotlib.colors import BoundaryNorm, ListedColormap
-from matplotlib.patches import Patch
 
 if "snakemake" in dir():
     sys.stdout = sys.stderr = open(snakemake.log[0], "w", buffering=1)
 
-
-# =========================
-# Scientific plot styling
-# =========================
-plt.rcParams.update(
-    {
-        "figure.dpi": 200,
-        "savefig.dpi": 300,
-        "font.family": "serif",
-        "font.serif": ["Times New Roman"],
-        "mathtext.fontset": "stix",
-        "axes.unicode_minus": False,
-        "font.size": 12,
-        "axes.labelsize": 14,
-        "axes.titlesize": 15,
-        "legend.fontsize": 11,
-        "axes.linewidth": 0.8,
-        "xtick.direction": "out",
-        "ytick.direction": "out",
-        "xtick.major.size": 4,
-        "ytick.major.size": 4,
-        "xtick.minor.size": 2.5,
-        "ytick.minor.size": 2.5,
-    }
-)
-
-okabe_ito = [
-    "#000000",
-    "#E69F00",
-    "#56B4E9",
-    "#009E73",
-    "#F0E442",
-    "#0072B2",
-    "#D55E00",
-    "#CC79A7",
-]
-plt.rcParams["axes.prop_cycle"] = cycler(color=okabe_ito)
-
-TECH_LABELS = {"orc": "ORC", "flash": "Flash", "kalina": "Kalina"}
-PANEL_LETTERS = "abcdefghijklmnopqrstuvwxyz"
-MAP_BACKGROUND_COLOR = "#DCEEF4"
-GEOTHERMAL_NOT_POSSIBLE_COLOR = "#D9D9D9"
-UNCHANGED_COLOR = "#FFFFFF"
-COUNTRY_EDGE_COLOR = "#4D5960"
 
 PARAM_LABELS = {
     "EGS_cutoff": "EGS cutoff (m)",
@@ -87,71 +40,49 @@ PARAM_LABELS = {
 }
 
 
-# =========================
-# Utilities
-# =========================
 def pretty_param_name(param: str, width: int = 34) -> str:
-    """Return a wrapped human-readable parameter label."""
     label = PARAM_LABELS.get(param, param.replace("_", " "))
     return "\n".join(textwrap.wrap(label, width=width))
 
 
 def load_scenario_table(path):
-    """Load and normalize the scenario table."""
     df = pd.read_csv(path, sep="\t", comment="#").replace({np.nan: None})
     df["scenario"] = df["scenario"].astype(str)
     return df.set_index("scenario")
 
 
 def read_metric_value(metrics_tsv, metric_name):
-    """Read one named value from a scenario metrics table."""
     df = pd.read_csv(metrics_tsv, sep="\t")
-    row = df.loc[df["metric"] == metric_name, "value"]
-    val = row.iloc[0]
-    return float(val)
+    return float(df.loc[df["metric"] == metric_name, "value"].iloc[0])
 
 
 def get_scenario_name_from_metrics(metrics_tsv):
-    """Read the scenario identifier from a metrics table."""
     df = pd.read_csv(metrics_tsv, sep="\t")
-    row = df.loc[df["metric"] == "scenario", "value"]
-    return str(row.iloc[0])
+    return str(df.loc[df["metric"] == "scenario", "value"].iloc[0])
 
 
-def infer_scenario_from_path(p):
-    """Infer a scenario identifier from an internal result path."""
-    p2 = str(p).replace("\\", "/")
-    parts = p2.split("/scenarios/")
-    return parts[1].split("/")[0]
+def infer_scenario_from_path(path):
+    return str(path).replace("\\", "/").split("/scenarios/")[1].split("/")[0]
 
 
 def load_boxplot_table(path):
-    """Load sensitivity boxplot data from Parquet, TSV, or CSV."""
     path = str(path)
-    if path.endswith(".parquet"):
-        return pd.read_parquet(path)
-    elif path.endswith(".tsv"):
+    if path.endswith(".tsv"):
         return pd.read_csv(path, sep="\t")
-    elif path.endswith(".csv"):
+    if path.endswith(".csv"):
         return pd.read_csv(path)
     return pd.read_parquet(path)
 
 
 def build_baseline_winner_df(df, baseline_name="base"):
-    """Build one fixed baseline winner table per pixel.
-
-    - cheapest baseline tech by lcoe_base.
-    """
     df = df.sort_values(["row", "col", "tech"]).copy()
-
-    base_idx = (
+    idx = (
         df.loc[np.isfinite(df["lcoe_base"])]
         .groupby(["row", "col"], sort=True)["lcoe_base"]
         .idxmin()
     )
-
     out = (
-        df.loc[base_idx, ["row", "col", "tech", "lcoe_base", "potential_base"]]
+        df.loc[idx, ["row", "col", "tech", "lcoe_base", "potential_base"]]
         .rename(
             columns={
                 "tech": "tech_base_winner",
@@ -161,26 +92,19 @@ def build_baseline_winner_df(df, baseline_name="base"):
         )
         .reset_index(drop=True)
     )
-
     out["baseline"] = baseline_name
     return out
 
 
 def build_scenario_winner_df(df, scenario_name, baseline_name="base"):
-    """Build one scenario winner table per pixel.
-
-    - cheapest scenario tech by lcoe_scen.
-    """
     df = df.sort_values(["row", "col", "tech"]).copy()
-
-    scen_idx = (
+    idx = (
         df.loc[np.isfinite(df["lcoe_scen"])]
         .groupby(["row", "col"], sort=True)["lcoe_scen"]
         .idxmin()
     )
-
     out = (
-        df.loc[scen_idx, ["row", "col", "tech", "lcoe_scen", "potential_scen"]]
+        df.loc[idx, ["row", "col", "tech", "lcoe_scen", "potential_scen"]]
         .rename(
             columns={
                 "tech": "tech_scen_winner",
@@ -190,88 +114,53 @@ def build_scenario_winner_df(df, scenario_name, baseline_name="base"):
         )
         .reset_index(drop=True)
     )
-
     out["scenario"] = scenario_name
     out["baseline"] = baseline_name
     return out
 
 
 def make_parameter_box_label(param, base_value, scenario_value):
-    """Create a boxplot label describing a parameter change."""
-    change = f"{base_value} -> {scenario_value}"
-    return f"{pretty_param_name(param, width=18)}\n({change})"
+    return f"{pretty_param_name(param, width=18)}\n({base_value} -> {scenario_value})"
 
 
-def summarise_lcoe(values, baseline_mean=None):
-    """Summarize finite LCOE values and optional baseline change."""
-    vals = np.asarray(values, dtype=float)
-    vals = vals[np.isfinite(vals)]
-    if not vals.size:
-        return ""
-    mean = float(np.nanmean(vals))
-    label = f"Mean: {np.round(mean, 0):.0f} €/MWh"
-    if baseline_mean is not None and not np.isclose(float(baseline_mean), 0.0):
-        label += f"\n({100.0 * mean / float(baseline_mean):.0f}% of baseline)"
-    return label
-
-
-def summarise_potential_tw(values, baseline_total=None):
-    """Summarize finite potential values in TW."""
-    vals = np.asarray(values, dtype=float)
-    vals = vals[np.isfinite(vals)]
-    if not vals.size:
-        return ""
-    total = float(np.nansum(vals))
-    label = f"Total: {total / 1e6:.1f} TW"
-    if baseline_total is not None and not np.isclose(float(baseline_total), 0.0):
-        label += f"\n({100.0 * total / float(baseline_total):.0f}% of baseline)"
-    return label
+def summarise_potential_tw(values):
+    values = np.asarray(values, dtype=float)
+    values = values[np.isfinite(values)]
+    return f"Total: {np.nansum(values) / 1e6:.1f} TW" if values.size else ""
 
 
 def mean_absolute_change(base_values, scenario_values):
-    """Calculate mean absolute percentage change over paired finite values."""
-    base_vals = np.asarray(base_values, dtype=float)
-    scen_vals = np.asarray(scenario_values, dtype=float)
-    base_vals = base_vals[np.isfinite(base_vals)]
-    scen_vals = scen_vals[np.isfinite(scen_vals)]
-    if base_vals.size == 0 or scen_vals.size == 0:
+    base = np.asarray(base_values, dtype=float)
+    scenario = np.asarray(scenario_values, dtype=float)
+    base = base[np.isfinite(base)]
+    scenario = scenario[np.isfinite(scenario)]
+    if not base.size or not scenario.size:
         return np.nan
-    return abs(float(np.nanmean(scen_vals)) - float(np.nanmean(base_vals)))
+    return abs(float(np.nanmean(scenario)) - float(np.nanmean(base)))
 
 
 def total_potential_change_pct(base_values, scenario_values):
-    """Calculate the percentage change in total finite potential."""
-    base_vals = np.asarray(base_values, dtype=float)
-    scen_vals = np.asarray(scenario_values, dtype=float)
-    base_total = float(np.nansum(base_vals[np.isfinite(base_vals)]))
-    scen_total = float(np.nansum(scen_vals[np.isfinite(scen_vals)]))
-    if np.isclose(base_total, 0.0):
-        return abs(scen_total - base_total)
-    return abs((scen_total - base_total) / base_total) * 100.0
+    base = np.asarray(base_values, dtype=float)
+    scenario = np.asarray(scenario_values, dtype=float)
+    base_total = float(np.nansum(base[np.isfinite(base)]))
+    scenario_total = float(np.nansum(scenario[np.isfinite(scenario)]))
+    if np.isclose(base_total, 0):
+        return abs(scenario_total - base_total)
+    return abs((scenario_total - base_total) / base_total) * 100
 
 
 def select_representative_scenarios_per_parameter(df, parameter_order):
-    """Select at most one scenario per parameter for box plotting.
-
-    Selection rule:
-      - highest metric_value
-      - then largest change magnitude
-      - then scenario name for deterministic tie-breaking
-    """
-    selected_rows = []
-
-    for param in parameter_order:
-        g = df.loc[df["parameter"] == param].copy()
-        if g.empty:
+    selected = []
+    for parameter in parameter_order:
+        group = df.loc[df["parameter"] == parameter].copy()
+        if group.empty:
             continue
-
-        g = g.sort_values(
+        group = group.sort_values(
             ["metric_value", "sort_magnitude", "scenario"],
             ascending=[False, False, True],
         )
-
-        selected_rows.append(
-            g.iloc[0][
+        selected.append(
+            group.iloc[0][
                 [
                     "parameter",
                     "scenario",
@@ -282,24 +171,10 @@ def select_representative_scenarios_per_parameter(df, parameter_order):
                 ]
             ]
         )
-
-    if not selected_rows:
-        return pd.DataFrame(
-            columns=[
-                "parameter",
-                "scenario",
-                "label",
-                "sort_magnitude",
-                "metric_value",
-                "transition_total_pixels",
-            ]
-        )
-
-    return pd.DataFrame(selected_rows).reset_index(drop=True)
+    return pd.DataFrame(selected).reset_index(drop=True) if selected else pd.DataFrame()
 
 
 def sort_representative_scenarios(df):
-    """Sort representative scenarios by parameter and change magnitude."""
     if df.empty:
         return df
     return df.sort_values(
@@ -309,792 +184,188 @@ def sort_representative_scenarios(df):
 
 
 def include_required_parameters(selected, available, required):
-    """Add required parameters to a selected parameter list when available."""
-    out = list(selected)
-    for param in required:
-        if param in available.index and param not in out:
-            out.append(param)
-    return out
+    output = list(selected)
+    for parameter in required:
+        if parameter in available.index and parameter not in output:
+            output.append(parameter)
+    return output
 
 
-def make_single_baseline_plus_parameter_boxplot(
-    specs,
-    value_key,
-    ylabel,
-    out_path,
-    summary_fn=None,
-    summary_position="top",
-    show_mean_dot=False,
-    mean_label_fn=None,
-):
-    """Plot one baseline box plus one box per selected parameter.
-
-    specs: list of dicts with keys:
-      - label
-      - values
-      - kind in {"baseline", "scenario"}
-    """
-    positions = []
-    data = []
-    labels = []
-    kinds = []
-    summaries = []
-    means = []
-    plot_specs = []
-
-    pos = 1
-    for spec in specs:
-        vals = np.asarray(spec[value_key], dtype=float)
-        vals = vals[np.isfinite(vals)]
-        if vals.size == 0:
-            continue
-
-        positions.append(pos)
-        data.append(vals)
-        labels.append(spec["label"])
-        kinds.append(spec["kind"])
-        summaries.append(summary_fn(vals) if summary_fn is not None else None)
-        means.append(float(np.nanmean(vals)))
-        plot_specs.append(spec)
-        pos += 1
-
-    fig_w = max(12, 2.25 * len(data))
-    fig, ax = plt.subplots(figsize=(fig_w, 8.5))
-
-    bp = ax.boxplot(
-        data, positions=positions, patch_artist=True, widths=0.7, showfliers=False
-    )
-
-    kind_colors = {"baseline": "#BDBDBD", "scenario": "#1F78B4"}
-
-    for patch, kind in zip(bp["boxes"], kinds):
-        patch.set_facecolor(kind_colors[kind])
-        patch.set_alpha(0.80)
-        patch.set_linewidth(0.8)
-
-    for element in ["whiskers", "caps", "medians"]:
-        for item in bp[element]:
-            item.set_linewidth(0.8)
-
-    ax.set_xticks(positions)
-    ax.set_xticklabels(labels, rotation=0, fontsize=18)
-    ax.set_ylabel(ylabel, fontsize=18)
-    ax.tick_params(axis="y", labelsize=18)
-    ax.grid(False)
-
-    if show_mean_dot:
-        ax.scatter(
-            positions,
-            means,
-            s=64,
-            marker="o",
-            facecolor="white",
-            edgecolor="#202020",
-            linewidth=1.2,
-            zorder=4,
-            label="Mean",
-        )
-
-    legend_handles = [
-        Patch(
-            facecolor=kind_colors["baseline"],
-            edgecolor="black",
-            alpha=0.80,
-            label="Baseline",
-        ),
-        Patch(
-            facecolor=kind_colors["scenario"],
-            edgecolor="black",
-            alpha=0.80,
-            label="Scenario",
-        ),
-    ]
-    if show_mean_dot:
-        legend_handles.append(
-            plt.Line2D(
-                [0],
-                [0],
-                marker="o",
-                color="none",
-                markerfacecolor="white",
-                markeredgecolor="#202020",
-                markeredgewidth=1.2,
-                markersize=8,
-                label="Mean",
-            )
-        )
-    ax.legend(
-        handles=legend_handles,
-        loc="upper right",
-        frameon=True,
-        facecolor="white",
-        framealpha=0.9,
-        edgecolor="#BBBBBB",
-        fontsize=16,
-    )
-
-    for spine in ax.spines.values():
-        spine.set_visible(True)
-
-    ymin, ymax = ax.get_ylim()
-    yrange = ymax - ymin if ymax > ymin else 1.0
-    top_pad = 0.08 * yrange if summary_position == "top" else 0.04 * yrange
-    ax.set_ylim(ymin, ymax + top_pad)
-
-    text_transform = mtransforms.blended_transform_factory(ax.transData, ax.transAxes)
-
-    if mean_label_fn is not None:
-        for x, mean, spec in zip(positions, means, plot_specs):
-            label = mean_label_fn(mean, spec)
-            if not label:
-                continue
-            ax.annotate(
-                label,
-                (x, mean),
-                xytext=(0, 8),
-                textcoords="offset points",
-                ha="center",
-                va="bottom",
-                fontsize=18,
-                color="#202020",
-                bbox=dict(facecolor="white", edgecolor="none", alpha=0.85, pad=1.5),
-                zorder=5,
-            )
-
-    if summary_position not in {"top", "bottom"}:
-        summaries = [None] * len(summaries)
-
-    for x, summary in zip(positions, summaries):
-        if not summary:
-            continue
-        y = 1.03 if summary_position == "top" else -0.13
-        va = "bottom" if summary_position == "top" else "top"
-        ax.text(
-            x,
-            y,
-            summary,
-            transform=text_transform,
-            ha="center",
-            va=va,
-            fontsize=18,
-            clip_on=False,
-        )
-
-    fig.tight_layout()
-    if summary_position == "bottom":
-        fig.subplots_adjust(bottom=0.22)
-    fig.savefig(out_path)
-    plt.close(fig)
+def _write_blank_outputs():
+    for name in (
+        "boxplot_lcoe_top6_winner",
+        "boxplot_potential_top6_winner",
+        "map_switch_transition_top4",
+    ):
+        _plots.write_blank_png(snakemake.output[name])
 
 
-def make_top_switch_rate_barplot(df, top_n, out_path, required_params=None):
-    """Plot a horizontal bar chart for the scenarios with the largest pixel switch rate.
-
-    Expects one representative scenario per parameter with columns:
-      - parameter
-      - label
-      - transition_total_pixels
-    """
-    plot_df = df.copy()
-    plot_df = plot_df.loc[:, ~plot_df.columns.duplicated()].copy()
-    plot_df = plot_df.loc[
-        np.isfinite(plot_df["transition_total_pixels"].to_numpy(dtype=float))
-    ].copy()
-    plot_df = plot_df.sort_values(
-        ["transition_total_pixels", "sort_magnitude", "parameter"],
-        ascending=[False, False, True],
-    )
-    required_params = required_params or []
-    required_df = plot_df.loc[plot_df["parameter"].isin(required_params)]
-    plot_df = (
-        pd.concat([plot_df.head(top_n), required_df], ignore_index=True)
-        .drop_duplicates(subset=["parameter"], keep="first")
-        .sort_values(
-            ["transition_total_pixels", "sort_magnitude", "parameter"],
-            ascending=[False, False, True],
-        )
-    )
-
-    labels = plot_df["label"].tolist()
-    values = plot_df["transition_total_pixels"].to_numpy(dtype=float) * 100.0
-
-    fig_h = max(5.0, 0.9 * len(plot_df) + 1.8)
-    fig, ax = plt.subplots(figsize=(10, fig_h))
-
-    y = np.arange(len(plot_df))
-    bars = ax.barh(
-        y, values, color="#D55E00", edgecolor="#7F2704", alpha=0.85, height=0.7
-    )
-
-    ax.set_yticks(y)
-    ax.set_yticklabels(labels)
-    ax.invert_yaxis()
-    ax.set_xlabel("Pixels with changed cheapest technology (%)")
-    ax.grid(False)
-
-    xmax = float(np.nanmax(values)) if len(values) else 0.0
-    if not np.isfinite(xmax):
-        xmax = 0.0
-    ax.set_xlim(0.0, xmax * 1.15 if xmax > 0 else 1.0)
-
-    for bar, value in zip(bars, values):
-        ax.text(
-            bar.get_width() + max(xmax * 0.015, 0.3),
-            bar.get_y() + bar.get_height() / 2.0,
-            f"{value:.1f}%",
-            va="center",
-            ha="left",
-            fontsize=10,
-        )
-
-    for spine in ax.spines.values():
-        spine.set_visible(True)
-
-    fig.tight_layout()
-    fig.savefig(out_path)
-    plt.close(fig)
-
-
-def transition_label(tech_from: str, tech_to: str) -> str:
-    """Return a readable technology-transition label."""
-    return f"{TECH_LABELS.get(tech_from, tech_from.upper())} to {TECH_LABELS.get(tech_to, tech_to.upper())}"
-
-
-def transition_color_map(transitions):
-    """Assign stable colors to observed technology transitions."""
-    preferred = {
-        "ORC to Kalina": "#0072B2",
-        "Kalina to ORC": "#D55E00",
-        "ORC to Flash": "#009E73",
-        "Flash to ORC": "#CC79A7",
-        "Kalina to Flash": "#E69F00",
-        "Flash to Kalina": "#56B4E9",
-    }
-    fallback = ["#000000", "#F0E442", "#8C564B", "#9467BD", "#17BECF", "#7F7F7F"]
-    colors = {}
-    fallback_idx = 0
-    for label in transitions:
-        if label in preferred:
-            colors[label] = preferred[label]
-        else:
-            colors[label] = fallback[fallback_idx % len(fallback)]
-            fallback_idx += 1
-    return colors
-
-
-def make_switch_transition_map_figure(
-    switch_df,
-    scenario_to_boxplot,
-    baseline_winner_df,
-    baseline,
-    top_n,
-    out_path,
-    shapes_path,
-    reference_raster_path,
-    required_params=None,
-):
-    """Plot spatial technology switches for selected sensitivity scenarios."""
-    plot_df = switch_df.copy()
-    plot_df = plot_df.loc[
-        np.isfinite(plot_df["transition_total_pixels"].to_numpy(dtype=float))
-    ].copy()
-    plot_df = plot_df.sort_values(
-        ["transition_total_pixels", "sort_magnitude", "parameter"],
-        ascending=[False, False, True],
-    )
-    required_params = required_params or []
-    required_df = plot_df.loc[plot_df["parameter"].isin(required_params)]
-    plot_df = (
-        pd.concat([plot_df.head(top_n), required_df], ignore_index=True)
-        .drop_duplicates(subset=["parameter"], keep="first")
-        .sort_values(
-            ["transition_total_pixels", "sort_magnitude", "parameter"],
-            ascending=[False, False, True],
-        )
-        .head(top_n)
-    )
-
-    if plot_df.empty:
-        _schemas.write_blank_png(out_path)
-        return
-
-    if not reference_raster_path:
-        _schemas.write_blank_png(out_path)
-        return
-
-    with rasterio.open(reference_raster_path) as src:
-        height = src.height
-        width = src.width
-        bounds = src.bounds
-        extent = [
-            min(bounds.left, bounds.right),
-            max(bounds.left, bounds.right),
-            min(bounds.bottom, bounds.top),
-            max(bounds.bottom, bounds.top),
-        ]
-        raster_crs = src.crs
-
-    countries = gpd.read_parquet(shapes_path)
-    if "shape_class" in countries.columns:
-        countries = countries.loc[countries["shape_class"] == "land"].copy()
-    if raster_crs is not None and countries.crs != raster_crs:
-        countries = countries.to_crs(raster_crs)
-
-    panel_specs = []
-    transitions_seen = []
-    base_cols = ["row", "col", "tech_base_winner"]
-    for _, row in plot_df.iterrows():
-        scenario = row["scenario"]
-        if scenario not in scenario_to_boxplot:
-            continue
-
-        df_box = _schemas.SensitivityBoxplotSchema.validate(
-            load_boxplot_table(scenario_to_boxplot[scenario])
-        )
-        if df_box.empty:
-            continue
-
-        scen_winner_df = build_scenario_winner_df(
-            df_box, scenario_name=scenario, baseline_name=baseline
-        )
-        joined = baseline_winner_df[base_cols].merge(
-            scen_winner_df[["row", "col", "tech_scen_winner"]],
-            on=["row", "col"],
-            how="inner",
-        )
-        comparable = joined.loc[
-            joined["tech_base_winner"].notna() & joined["tech_scen_winner"].notna()
-        ].copy()
-        changed = joined.loc[
-            joined["tech_base_winner"].notna()
-            & joined["tech_scen_winner"].notna()
-            & (joined["tech_base_winner"] != joined["tech_scen_winner"])
-        ].copy()
-        unchanged = comparable.loc[
-            comparable["tech_base_winner"] == comparable["tech_scen_winner"]
-        ].copy()
-
-        labels = [
-            transition_label(t_from, t_to)
-            for t_from, t_to in zip(
-                changed["tech_base_winner"], changed["tech_scen_winner"]
-            )
-        ]
-        if not labels:
-            continue
-        changed["_transition"] = labels
-        transitions_seen.extend(labels)
-
-        panel_specs.append(
-            {
-                "label": row["label"],
-                "changed": changed,
-                "unchanged": unchanged,
-                "switch_rate": float(row["transition_total_pixels"]) * 100.0,
-            }
-        )
-
-    if not panel_specs or not transitions_seen:
-        _schemas.write_blank_png(out_path)
-        return
-
-    transitions = sorted(set(transitions_seen))
-    colors = transition_color_map(transitions)
-    transition_to_code = {label: i + 2 for i, label in enumerate(transitions)}
-    cmap = ListedColormap(
-        [
-            (1.0, 1.0, 1.0, 0.0),
-            UNCHANGED_COLOR,
-            *[colors[label] for label in transitions],
-        ]
-    )
-    norm = BoundaryNorm(np.arange(-0.5, len(transitions) + 2.5, 1.0), cmap.N)
-
-    data_aspect = (extent[3] - extent[2]) / (extent[1] - extent[0])
-    fig_w = 8.9
-    fig_h = 8.35
-    legend_h = 0.78
-    margin_l = 0.18
-    margin_r = 0.18
-    margin_t = 0.10
-    margin_b = legend_h
-    gap_x = 0.08
-    gap_y = 0.12
-    available_w = fig_w - margin_l - margin_r - gap_x
-    available_h = fig_h - margin_t - margin_b - gap_y
-    panel_w = min(available_w / 2.0, (available_h / 2.0) / data_aspect)
-    panel_h = panel_w * data_aspect
-    start_x = margin_l + 0.5 * (available_w - 2.0 * panel_w - gap_x)
-    start_y = margin_b + 0.5 * (available_h - 2.0 * panel_h - gap_y)
-
-    fig = plt.figure(figsize=(fig_w, fig_h))
-    axes = []
-    for row_idx in range(2):
-        for col_idx in range(2):
-            x0 = (start_x + col_idx * (panel_w + gap_x)) / fig_w
-            y0 = (start_y + (1 - row_idx) * (panel_h + gap_y)) / fig_h
-            axes.append(fig.add_axes([x0, y0, panel_w / fig_w, panel_h / fig_h]))
-
-    for idx, ax in enumerate(axes):
-        ax.set_facecolor(MAP_BACKGROUND_COLOR)
-        countries.plot(
-            ax=ax, facecolor=GEOTHERMAL_NOT_POSSIBLE_COLOR, edgecolor="none", zorder=1
-        )
-        countries.boundary.plot(
-            ax=ax, color=COUNTRY_EDGE_COLOR, linewidth=0.25, zorder=4
-        )
-        ax.set_xticks([])
-        ax.set_yticks([])
-        for spine in ax.spines.values():
-            spine.set_visible(True)
-            spine.set_linewidth(0.8)
-
-        if idx >= len(panel_specs):
-            ax.axis("off")
-            continue
-
-        spec = panel_specs[idx]
-        image = np.zeros((height, width), dtype=np.int16)
-        for _, unchanged_row in spec["unchanged"].iterrows():
-            r = int(unchanged_row["row"])
-            c = int(unchanged_row["col"])
-            if 0 <= r < height and 0 <= c < width:
-                image[r, c] = 1
-        for _, changed_row in spec["changed"].iterrows():
-            r = int(changed_row["row"])
-            c = int(changed_row["col"])
-            if 0 <= r < height and 0 <= c < width:
-                image[r, c] = transition_to_code[changed_row["_transition"]]
-
-        ax.imshow(
-            image,
-            cmap=cmap,
-            norm=norm,
-            interpolation="nearest",
-            extent=extent,
-            origin="upper",
-            zorder=2,
-        )
-        ax.set_xlim(extent[0], extent[1])
-        ax.set_ylim(extent[2], extent[3])
-        ax.set_aspect("equal")
-        ax.text(
-            0.02,
-            0.985,
-            f"{PANEL_LETTERS[idx]}) {spec['label']}\n{spec['switch_rate']:.1f}% switched",
-            transform=ax.transAxes,
-            ha="left",
-            va="top",
-            fontsize=11,
-            linespacing=1.08,
-            bbox=dict(facecolor="white", edgecolor="none", alpha=0.82, pad=1.2),
-            zorder=5,
-        )
-
-    legend_handles = [
-        Patch(
-            facecolor=GEOTHERMAL_NOT_POSSIBLE_COLOR,
-            edgecolor=COUNTRY_EDGE_COLOR,
-            label="Geothermal not possible",
-        ),
-        Patch(facecolor=UNCHANGED_COLOR, edgecolor="#666666", label="Not changed"),
-    ] + [
-        Patch(facecolor=colors[label], edgecolor="none", label=label)
-        for label in transitions
-    ]
-    fig.legend(
-        handles=legend_handles,
-        loc="lower center",
-        bbox_to_anchor=(0.5, 0.005),
-        ncol=min(3, len(legend_handles)),
-        frameon=False,
-        fontsize=11,
-    )
-    fig.savefig(out_path, dpi=300)
-    plt.close(fig)
-
-
-# =========================
-# Main
-# =========================
 def main():
-    """Build the study-wide sensitivity figures requested by Snakemake."""
-    scenario_table = snakemake.input["scenario_table"]
-    metrics_files = list(snakemake.input["metrics"])
-    boxplot_files = list(snakemake.input["boxplot_data"])
-
     baseline = snakemake.params["baseline"]
     metric_name = snakemake.params.get("metric_name", "mean_abs_pct_change_sens")
     top_n = int(snakemake.params.get("top_n", 6))
-    bar_top_n = int(snakemake.params.get("bar_top_n", 4))
+    map_top_n = 4
     include_all = bool(snakemake.params.get("include_all", False))
     required_params = ["well_spacing", "stimulation_cost_per_doublet"]
+    scenario_table = load_scenario_table(snakemake.input["scenario_table"])
 
-    scen_df = load_scenario_table(scenario_table)
-    scenario_to_metric = {}
-    for p in metrics_files:
-        scen_name = get_scenario_name_from_metrics(p) or infer_scenario_from_path(p)
-        scenario_to_metric[scen_name] = p
-
+    scenario_to_metric = {
+        get_scenario_name_from_metrics(path) or infer_scenario_from_path(path): path
+        for path in snakemake.input["metrics"]
+    }
     rows = []
-    for scen_name, metrics_path in scenario_to_metric.items():
-        if scen_name == baseline:
+    for scenario, metrics_path in scenario_to_metric.items():
+        if scenario == baseline or scenario not in scenario_table.index:
             continue
-        if scen_name not in scen_df.index:
+        scenario_row = scenario_table.loc[scenario]
+        parameter = scenario_row.get("sensitivity_parameter")
+        if parameter is None or pd.isna(parameter):
             continue
-
-        row = scen_df.loc[scen_name]
-        param = row.get("sensitivity_parameter")
-        if param is None or pd.isna(param):
-            continue
-
-        sens_val = read_metric_value(metrics_path, metric_name)
-        pixels_val = read_metric_value(metrics_path, "switch_rate_pixels")
-        base_value = row.get("sensitivity_base_value")
-        scenario_value = row.get("sensitivity_scenario_value")
-        sort_magnitude = row.get("sensitivity_sort_magnitude")
-
+        pixels = read_metric_value(metrics_path, "switch_rate_pixels")
+        magnitude = scenario_row.get("sensitivity_sort_magnitude")
         rows.append(
-            dict(
-                scenario=scen_name,
-                parameter=str(param),
-                label=make_parameter_box_label(param, base_value, scenario_value),
-                metric_value=float(sens_val),
-                transition_total_pixels=float(pixels_val)
-                if pd.notna(pixels_val)
-                else np.nan,
-                sort_magnitude=(
-                    float(sort_magnitude) if pd.notna(sort_magnitude) else 1.0
+            {
+                "scenario": scenario,
+                "parameter": str(parameter),
+                "label": make_parameter_box_label(
+                    parameter,
+                    scenario_row.get("sensitivity_base_value"),
+                    scenario_row.get("sensitivity_scenario_value"),
                 ),
-            )
+                "metric_value": read_metric_value(metrics_path, metric_name),
+                "transition_total_pixels": float(pixels)
+                if pd.notna(pixels)
+                else np.nan,
+                "sort_magnitude": float(magnitude) if pd.notna(magnitude) else 1,
+            }
         )
-
-    df = pd.DataFrame(rows)
-    if df.empty:
-        _schemas.write_blank_png(snakemake.output["boxplot_lcoe_top6_winner"])
-        _schemas.write_blank_png(snakemake.output["boxplot_potential_top6_winner"])
-        _schemas.write_blank_png(snakemake.output["barplot_switch_rate_top6"])
-        _schemas.write_blank_png(snakemake.output["map_switch_transition_top4"])
+    ranking_data = pd.DataFrame(rows)
+    if ranking_data.empty:
+        _write_blank_outputs()
         return
 
-    rank_params = (
-        df.groupby("parameter")["metric_value"].max().sort_values(ascending=False)
+    ranked_parameters = (
+        ranking_data.groupby("parameter")["metric_value"]
+        .max()
+        .sort_values(ascending=False)
+    )
+    selected_parameters = (
+        ranked_parameters.index.tolist()
+        if include_all
+        else ranked_parameters.head(top_n).index.tolist()
+    )
+    selected_parameters = include_required_parameters(
+        selected_parameters, ranked_parameters, required_params
     )
 
-    if not include_all:
-        selected_params = rank_params.head(top_n).index.tolist()
-    else:
-        selected_params = rank_params.index.tolist()
-    selected_params = include_required_parameters(
-        selected_params, rank_params, required_params
-    )
-
-    # -----------------------------------
-    # Boxplot selection: baseline once +
-    # one representative scenario/parameter
-    # -----------------------------------
-    scenario_to_boxplot = {}
-    for p in boxplot_files:
-        scen_name = infer_scenario_from_path(p)
-        scenario_to_boxplot[scen_name] = p
-
-    df_box_base = _schemas.SensitivityBoxplotSchema.validate(
+    scenario_to_boxplot = {
+        infer_scenario_from_path(path): path for path in snakemake.input["boxplot_data"]
+    }
+    if baseline not in scenario_to_boxplot:
+        _write_blank_outputs()
+        return
+    baseline_table = _schemas.SensitivityBoxplotSchema.validate(
         load_boxplot_table(scenario_to_boxplot[baseline])
     )
-    if df_box_base.empty:
-        _schemas.write_blank_png(snakemake.output["boxplot_lcoe_top6_winner"])
-        _schemas.write_blank_png(snakemake.output["boxplot_potential_top6_winner"])
-        _schemas.write_blank_png(snakemake.output["barplot_switch_rate_top6"])
-        _schemas.write_blank_png(snakemake.output["map_switch_transition_top4"])
+    if baseline_table.empty:
+        _write_blank_outputs()
         return
-    baseline_winner_df = build_baseline_winner_df(df_box_base, baseline_name=baseline)
-    baseline_lcoe_values = baseline_winner_df["winner_lcoe_base"].to_numpy()
-    baseline_potential_values = baseline_winner_df["winner_potential_base"].to_numpy()
+    baseline_winners = build_baseline_winner_df(baseline_table, baseline)
+    baseline_lcoe = baseline_winners["winner_lcoe_base"].to_numpy()
+    baseline_potential = baseline_winners["winner_potential_base"].to_numpy()
 
     scenario_specs = []
-    for _, row in df.iterrows():
-        param = row["parameter"]
-        scen_name = row["scenario"]
-
-        df_box = _schemas.SensitivityBoxplotSchema.validate(
-            load_boxplot_table(scenario_to_boxplot[scen_name])
-        )
-        if df_box.empty:
+    for _, row in ranking_data.iterrows():
+        scenario = row["scenario"]
+        if scenario not in scenario_to_boxplot:
             continue
-        scen_winner_df = build_scenario_winner_df(
-            df_box, scenario_name=scen_name, baseline_name=baseline
+        table = _schemas.SensitivityBoxplotSchema.validate(
+            load_boxplot_table(scenario_to_boxplot[scenario])
         )
-
+        if table.empty:
+            continue
+        winners = build_scenario_winner_df(table, scenario, baseline)
+        scenario_lcoe = winners["winner_lcoe_scen"].to_numpy()
+        scenario_potential = winners["winner_potential_scen"].to_numpy()
         scenario_specs.append(
             {
                 "kind": "scenario",
-                "parameter": param,
-                "scenario": scen_name,
+                "parameter": row["parameter"],
+                "scenario": scenario,
                 "label": row["label"],
-                "lcoe_values": scen_winner_df["winner_lcoe_scen"].to_numpy(),
-                "potential_values": scen_winner_df["winner_potential_scen"].to_numpy(),
-                "lcoe_metric_value": mean_absolute_change(
-                    baseline_lcoe_values, scen_winner_df["winner_lcoe_scen"].to_numpy()
-                ),
+                "lcoe_values": scenario_lcoe,
+                "potential_values": scenario_potential,
+                "lcoe_metric_value": mean_absolute_change(baseline_lcoe, scenario_lcoe),
                 "potential_metric_value": mean_absolute_change(
-                    baseline_potential_values,
-                    scen_winner_df["winner_potential_scen"].to_numpy(),
+                    baseline_potential, scenario_potential
                 ),
                 "potential_total_metric_value": total_potential_change_pct(
-                    baseline_potential_values,
-                    scen_winner_df["winner_potential_scen"].to_numpy(),
+                    baseline_potential, scenario_potential
                 ),
                 "sort_magnitude": float(row["sort_magnitude"]),
                 "transition_total_pixels": float(row["transition_total_pixels"]),
             }
         )
-
     if not scenario_specs:
-        _schemas.write_blank_png(snakemake.output["boxplot_lcoe_top6_winner"])
-        _schemas.write_blank_png(snakemake.output["boxplot_potential_top6_winner"])
-        _schemas.write_blank_png(snakemake.output["barplot_switch_rate_top6"])
-        _schemas.write_blank_png(snakemake.output["map_switch_transition_top4"])
+        _write_blank_outputs()
         return
 
-    rank_params_lcoe = (
-        pd.DataFrame(
+    def representative_specs(metric_key):
+        rank_df = pd.DataFrame(
             [
                 {
                     "parameter": spec["parameter"],
-                    "metric_value": spec["lcoe_metric_value"],
+                    "scenario": spec["scenario"],
+                    "label": spec["label"],
+                    "sort_magnitude": spec["sort_magnitude"],
+                    "metric_value": spec[metric_key],
+                    "transition_total_pixels": spec["transition_total_pixels"],
                 }
                 for spec in scenario_specs
             ]
         )
-        .groupby("parameter")["metric_value"]
-        .max()
-        .sort_values(ascending=False)
-    )
-    if not include_all:
-        selected_params_lcoe = rank_params_lcoe.head(top_n).index.tolist()
-    else:
-        selected_params_lcoe = rank_params_lcoe.index.tolist()
-
-    df_lcoe_rank = pd.DataFrame(
-        [
-            {
-                "parameter": spec["parameter"],
-                "scenario": spec["scenario"],
-                "label": spec["label"],
-                "sort_magnitude": spec["sort_magnitude"],
-                "metric_value": spec["lcoe_metric_value"],
-                "transition_total_pixels": spec["transition_total_pixels"],
-            }
-            for spec in scenario_specs
-        ]
-    )
-    representative_lcoe_df = select_representative_scenarios_per_parameter(
-        df=df_lcoe_rank, parameter_order=selected_params_lcoe
-    )
-    representative_lcoe_df = sort_representative_scenarios(representative_lcoe_df)
-
-    rank_params_potential = (
-        pd.DataFrame(
-            [
-                {
-                    "parameter": spec["parameter"],
-                    "metric_value": spec["potential_metric_value"],
-                }
-                for spec in scenario_specs
-            ]
+        parameter_order = (
+            rank_df.groupby("parameter")["metric_value"]
+            .max()
+            .sort_values(ascending=False)
         )
-        .groupby("parameter")["metric_value"]
-        .max()
-        .sort_values(ascending=False)
-    )
-    if not include_all:
-        selected_params_potential = rank_params_potential.head(top_n).index.tolist()
-    else:
-        selected_params_potential = rank_params_potential.index.tolist()
+        parameter_order = (
+            parameter_order.index.tolist()
+            if include_all
+            else parameter_order.head(top_n).index.tolist()
+        )
+        return sort_representative_scenarios(
+            select_representative_scenarios_per_parameter(rank_df, parameter_order)
+        )
 
-    df_potential_rank = pd.DataFrame(
-        [
-            {
-                "parameter": spec["parameter"],
-                "scenario": spec["scenario"],
-                "label": spec["label"],
-                "sort_magnitude": spec["sort_magnitude"],
-                "metric_value": spec["potential_metric_value"],
-                "transition_total_pixels": spec["transition_total_pixels"],
-            }
-            for spec in scenario_specs
-        ]
-    )
-    representative_potential_df = select_representative_scenarios_per_parameter(
-        df=df_potential_rank, parameter_order=selected_params_potential
-    )
-    representative_potential_df = sort_representative_scenarios(
-        representative_potential_df
-    )
-
-    box_specs_lcoe = [
-        {
-            "kind": "baseline",
-            "parameter": None,
-            "scenario": baseline,
-            "pct_change": 0.0,
-            "label": "Baseline",
-            "lcoe_values": baseline_lcoe_values,
-            "potential_values": baseline_potential_values,
-        }
-    ]
-
+    representative_lcoe = representative_specs("lcoe_metric_value")
+    representative_potential = representative_specs("potential_metric_value")
     spec_by_scenario = {spec["scenario"]: spec for spec in scenario_specs}
-
-    for _, row in representative_lcoe_df.iterrows():
-        spec = spec_by_scenario[row["scenario"]]
-        box_specs_lcoe.append(
-            {
-                "kind": "scenario",
-                "parameter": spec["parameter"],
-                "scenario": spec["scenario"],
-                "label": spec["label"],
-                "lcoe_values": spec["lcoe_values"],
-                "potential_values": spec["potential_values"],
-            }
-        )
-
-    box_specs_potential = [
-        {
-            "kind": "baseline",
-            "parameter": None,
-            "scenario": baseline,
-            "pct_change": 0.0,
-            "label": "Baseline",
-            "lcoe_values": baseline_lcoe_values,
-            "potential_values": baseline_potential_values,
-        }
+    baseline_spec = {
+        "kind": "baseline",
+        "scenario": baseline,
+        "label": "Baseline",
+        "lcoe_values": baseline_lcoe,
+        "potential_values": baseline_potential,
+    }
+    lcoe_specs = [baseline_spec] + [
+        spec_by_scenario[row["scenario"]] for _, row in representative_lcoe.iterrows()
+    ]
+    potential_specs = [baseline_spec] + [
+        spec_by_scenario[row["scenario"]]
+        for _, row in representative_potential.iterrows()
     ]
 
-    for _, row in representative_potential_df.iterrows():
-        spec = spec_by_scenario[row["scenario"]]
-        box_specs_potential.append(
-            {
-                "kind": "scenario",
-                "parameter": spec["parameter"],
-                "scenario": spec["scenario"],
-                "label": spec["label"],
-                "lcoe_values": spec["lcoe_values"],
-                "potential_values": spec["potential_values"],
-            }
-        )
-
-    make_single_baseline_plus_parameter_boxplot(
-        specs=box_specs_lcoe,
+    _plots.make_sensitivity_boxplot(
+        specs=lcoe_specs,
         value_key="lcoe_values",
         ylabel="LCOE (€/MWh)",
         out_path=snakemake.output["boxplot_lcoe_top6_winner"],
         summary_position="none",
         show_mean_dot=True,
     )
-
-    make_single_baseline_plus_parameter_boxplot(
-        specs=box_specs_potential,
+    _plots.make_sensitivity_boxplot(
+        specs=potential_specs,
         value_key="potential_values",
         ylabel="Potential (GW per 10x10km grid cell)",
         out_path=snakemake.output["boxplot_potential_top6_winner"],
@@ -1103,26 +374,19 @@ def main():
         show_mean_dot=True,
     )
 
-    df_switch = df.copy()
-    df_switch["metric_value"] = df_switch["transition_total_pixels"]
+    switch_ranking = ranking_data.copy()
+    switch_ranking["metric_value"] = switch_ranking["transition_total_pixels"]
     switch_df = select_representative_scenarios_per_parameter(
-        df=df_switch, parameter_order=selected_params
+        switch_ranking, selected_parameters
     )
     switch_df["transition_total_pixels"] = switch_df["metric_value"]
     switch_df = switch_df.drop(columns=["metric_value"])
-
-    make_top_switch_rate_barplot(
-        df=switch_df,
-        top_n=bar_top_n,
-        out_path=snakemake.output["barplot_switch_rate_top6"],
-        required_params=required_params,
-    )
-    make_switch_transition_map_figure(
+    _plots.make_switch_transition_map(
         switch_df=switch_df,
         scenario_to_boxplot=scenario_to_boxplot,
-        baseline_winner_df=baseline_winner_df,
+        baseline_winner_df=baseline_winners,
         baseline=baseline,
-        top_n=bar_top_n,
+        top_n=map_top_n,
         out_path=snakemake.output["map_switch_transition_top4"],
         shapes_path=snakemake.input["shapes"],
         reference_raster_path=snakemake.input["reference_lcoe"],

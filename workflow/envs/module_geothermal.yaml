@@ -17,7 +17,7 @@ dependencies:
   - pandera-geopandas >=0.24,<0.25
   - pyarrow >=23,<24
   - rasterio >=1.5,<2
-  - rioxarray >=0.21,<0.22
+  - rioxarray >=0.23,<0.24
   - scipy >=1.17,<2
   - seaborn >=0.13,<0.14
-  - xarray >=2026.1,<2027
+  - xarray >=2026.2,<2027

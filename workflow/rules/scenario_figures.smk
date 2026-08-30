@@ -1,28 +1,6 @@
 """Rules for per-scenario cost and sensitivity figures."""
 
 
-rule cost_breakdown:
-    """Plot technology-specific LCOE cost-share boxplots."""
-    input:
-        shapes="<shapes>",
-        cubes=lambda wc: expand(
-            rules.calculate_LCOE.output.cube,
-            shapes=wc.shapes,
-            scenario=wc.scenario,
-            cycle=cycles,
-        ),
-    output:
-        fig="<resources>/automatic/{shapes}/scenarios/{scenario}/figures/cost_breakdown.png",
-    log:
-        "<logs>/{shapes}/{scenario}/cost_breakdown.log",
-    message:
-        "Plot LCOE cost components for geothermal scenario {wildcards.scenario}."
-    conda:
-        "../envs/module_geothermal.yaml"
-    script:
-        "../scripts/cost_breakdown.py"
-
-
 rule depth_cost_breakdown_four_panel:
     """Combine the three optimal-depth maps and cost breakdown in one figure."""
     input:
@@ -45,7 +23,7 @@ rule depth_cost_breakdown_four_panel:
         "../scripts/depth_cost_breakdown_four_panel.py"
 
 
-rule scenario_summary_fig:
+rule sensitivity_summary:
     input:
         base_lcoe=lambda wc: expand(
             "<resources>/automatic/{shapes}/scenarios/{scenario}/documents/{cycle}_2d_lcoe.tif",
@@ -72,11 +50,10 @@ rule scenario_summary_fig:
             cycle=cycles,
         ),
     output:
-        fig="<resources>/automatic/{shapes}/scenarios/{scenario}/figures/sensitivity_summary.png",
         metrics="<resources>/automatic/{shapes}/scenarios/{scenario}/documents/sensitivity_metrics.tsv",
         boxplot_data="<resources>/automatic/{shapes}/scenarios/{scenario}/documents/sensitivity_boxplot_data.parquet",
     log:
-        "<logs>/{shapes}/{scenario}/scenario_summary_fig.log",
+        "<logs>/{shapes}/{scenario}/sensitivity_summary.log",
     message:
         "Compare geothermal scenario {wildcards.scenario} with the baseline."
     params:
@@ -87,21 +64,3 @@ rule scenario_summary_fig:
         "../envs/module_geothermal.yaml"
     script:
         "../scripts/sensitivity_summary.py"
-
-
-rule sensitivity_boxplot_per_scenario:
-    input:
-        scenario_table=rules.build_scenario_table.output.tsv,
-        boxplot_data="<resources>/automatic/{shapes}/scenarios/{scenario}/documents/sensitivity_boxplot_data.parquet",
-    output:
-        base_fig="<resources>/automatic/{shapes}/scenarios/{scenario}/figures/boxplot_base_dual_axis.png",
-        lcoe_fig="<resources>/automatic/{shapes}/scenarios/{scenario}/figures/boxplot_lcoe.png",
-        potential_fig="<resources>/automatic/{shapes}/scenarios/{scenario}/figures/boxplot_potential.png",
-    log:
-        "<logs>/{shapes}/{scenario}/sensitivity_boxplot_per_scenario.log",
-    message:
-        "Plot sensitivity distributions for geothermal scenario {wildcards.scenario}."
-    conda:
-        "../envs/module_geothermal.yaml"
-    script:
-        "../scripts/sensitivity_boxplot_per_scenario.py"

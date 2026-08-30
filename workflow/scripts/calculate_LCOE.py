@@ -543,7 +543,7 @@ def main():
             "crs": crs_str,
             "tech": str(cycle_key),
             "carrier_out": str(carrier_out),
-            "include_egs": bool(include_egs),
+            "include_egs": int(include_egs),
             "SED_NAN_POLICY": str(SED_NAN_POLICY),
             "EGS_cutoff_rule": "cutoff(x,y)=min(EGS_cutoff, sed_thickness_m(x,y)) with NaN policy applied",
         },
