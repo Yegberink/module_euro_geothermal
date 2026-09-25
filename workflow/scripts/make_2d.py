@@ -153,7 +153,7 @@ def _outputs_by_key(paths) -> dict[tuple[str, str | None], str]:
 
 
 def main():
-    """Reduce all requested cubes and render the two per-scenario figures."""
+    """Reduce all requested cubes and render the two model figures."""
     cycles = [str(c).strip().lower() for c in snakemake.params.get("cycles")]
     method = (
         snakemake.params.get("method_2d_aggregation")

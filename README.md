@@ -4,9 +4,9 @@ This module calculates geothermal electricity production and levelized cost of
 electricity (LCOE) from a European subsurface-temperature model based on
 Limberger et al. (2014).
 
-![Baseline geothermal LCOE and least-cost conversion technology across Europe](./figures/lcoe_overview.png)
+![Geothermal LCOE and least-cost conversion technology across Europe](./figures/lcoe_overview.png)
 
-*Baseline LCOE for ORC, Flash, and Kalina cycles, with the least-cost technology
+*LCOE for ORC, Flash, and Kalina cycles, with the least-cost technology
 in each feasible grid cell. Grey areas are not feasible within the configured
 maximum depth.*
 
@@ -23,54 +23,35 @@ For more information, consult the Modelblocks
 
 ## How the module works
 
-![Published overview of the geothermal modelling workflow](./figures/module_workflow_overview.png)
-
-*Overview of the 3-D input data, voxel-level LCOE calculation, 2-D reduction,
-and sensitivity evaluation used in the accompanying publication.*
-
 The module works through the following stages:
 
 1. **Prepare inputs.** Download the temperature voxel model and GST-1 sediment
    thickness data, align the sediment data to the temperature grid, and crop the
    model to the supplied study-area polygons.
-2. **Build scenarios.** Write a scenario table containing the baseline and
-   either explicitly configured scenarios or one-at-a-time sensitivity
-   variations.
-3. **Calculate geothermal performance.** For every scenario and selected power
-   cycle, calculate depth-resolved energy potential and LCOE cubes. The model
+2. **Calculate geothermal performance.** Use the configured parameters for each
+   selected power cycle to calculate depth-resolved energy potential and LCOE cubes. The model
    distinguishes conventional hydrothermal resources from Enhanced Geothermal
    Systems (EGS).
-4. **Reduce the 3-D results to maps.** Either select the least-cost depth in each
+3. **Reduce the 3-D results to maps.** Either select the least-cost depth in each
    grid cell or retain separate configured depth bands. This stage produces the
    LCOE, potential, optimal-depth, and technology-comparison figures and rasters.
-5. **Aggregate to regions.** Combine the gridded LCOE and potential results with
+4. **Aggregate to regions.** Combine the gridded LCOE and potential results with
    the user-provided polygons using quantiles, fixed LCOE bins, or a single LCOE
    cutoff.
-6. **Summarize sensitivity.** Compare each scenario with the baseline, calculate
-   potential and technology-switch metrics, and produce overview plots when
-   `perform_sensitivity` is enabled.
-
-The sensitivity analysis shows where an input change alters the least-cost
-conversion technology. In the example below, blue, orange, and green cells mark
-technology transitions; white cells retain the baseline technology.
-
-![Technology switches for the four most influential sensitivity scenarios](./figures/map_switch_transition_top_4.png)
-
-*Technology switches caused by the four sensitivity scenarios with the largest
-spatial effect in the European example.*
+5. **Summarize potential.** Report study-wide potential by technology and for
+   the portfolio selecting the lowest-LCOE technology in each cell.
 
 ## Rule graph
 
-The graph below was generated from the Snakemake rule graph for the baseline and
-sensitivity outputs. `make_2d_scenario` and the sensitivity summary rules are
-only needed when additional scenarios are requested.
+The graph below includes regional results, model diagnostics, and the
+study-wide potential summary for one configured run.
 
 ![Snakemake rule graph for the geothermal workflow](./figures/rulegraph.svg)
 
 ## Configuration
 
 See the [configuration guide](./config/README.md) for all workflow controls,
-model parameters, aggregation choices, and sensitivity settings. A complete
+model parameters and aggregation choices. A complete
 worked configuration is available in [`config/config.yaml`](./config/config.yaml).
 
 ## Input and output structure
@@ -106,17 +87,11 @@ module module_geothermal:
 use rule * from module_geothermal as module_geothermal_*
 ```
 
-Module users can also provide named scenarios explicitly instead of using the
-built-in parameter sweep:
-
-```yaml
-module_geothermal:
-  perform_sensitivity: true
-  scenarios:
-    base: {}
-    high_lifetime:
-      lifetime: 40.0
-```
+Request `<results>/{shapes}/geothermal_regions.parquet` for regional results
+and `<results>/{shapes}/overall_potential_summary.tsv` for study-wide totals.
+Each invocation uses one parameter set from config for all selected cycles.
+To run different parameter sets, import the module separately with distinct
+resource and result directories.
 
 ## Development
 
@@ -142,6 +117,13 @@ Run the quick checks used during development with:
 
 ```shell
 pixi run test-quick
+```
+
+Run isolated workflow checks (without downloads) and small numerical checks with:
+
+```shell
+pixi run pytest tests/test_workflow_config.py
+pixi run -e module python -m unittest discover -s tests -p test_model_outputs.py
 ```
 
 The integration definition is retained for dedicated workflow testing, but is

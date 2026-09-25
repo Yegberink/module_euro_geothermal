@@ -3,25 +3,20 @@
 # =============================================================================
 # Quick-start: the only keys you normally need to change are in the first
 # section ("Workflow control"). Everything else has sensible
-# defaults that the sensitivity analysis will vary for you (if you want that).
+# defaults. Each run uses exactly the configured parameter values.
 # =============================================================================
 
 
 # -----------------------------------------------------------------------------
 # Workflow control
 # -----------------------------------------------------------------------------
-baseline_scenario: base
-
-perform_sensitivity: true     # false → only the baseline scenario is run
-
 method_region_aggregation: cutoff
 # options:
 #   quantiles    → divide LCOE distribution into n_quantiles cost classes per region
 #   fixed_bins   → user-defined LCOE bins (€2020/MWh) applied uniformly
 #   cutoff       → single capacity figure below lcoe_cutoff and average LCOE of that capacity
 
-# for sensitivity runs cutoff is advised to speed up processing;
-# for detailed LCOE distributions used in an energy system model, use quantiles or fixed_bins
+# For detailed LCOE distributions used in an energy system model, use quantiles or fixed_bins
 
 # -----------------------------------------------------------------------------
 # Conversion cycles
@@ -46,7 +41,7 @@ SED_NAN_POLICY: always_egs    # how to treat missing sediment thickness after re
                               #   always_egs  → treat NaN as 0 m sediment → EGS at all depths
                               #   depth_only  → treat NaN as EGS_cutoff   → EGS only below EGS_cutoff
 
-drilling_cost_curve: thermogis  # options configured below; used as the baseline drilling cost relation
+drilling_cost_curve: thermogis  # options configured below; used as the drilling cost relation
 stimulation_cost_per_doublet: 3.0   # EGS stimulation cost per doublet (M€2020)
 
 drilling_cost_curve_definitions:
@@ -130,106 +125,3 @@ fixed_bins:
 
 # Used only when method_region_aggregation: cutoff (€2020/MWh)
 lcoe_cutoff: 75.0
-
-# -----------------------------------------------------------------------------
-# Sensitivity analysis
-# -----------------------------------------------------------------------------
-
-# Technology used as the reference in sensitivity summary plots.
-sens_tech: orc                # options: orc, flash, kalina
-
-# Parameters to vary in the sweep.
-# Comment out any line to exclude that parameter from the current run.
-# Ranges and step counts are defined in `sensitivity_parameters` below.
-active_sensitivity_parameters:
-  - max_depth
-  - EGS_cutoff
-  - drilling_cost_curve
-  - stimulation_cost_per_doublet
-  - pump_cost
-  - lifetime
-  - capacity_factor
-  - fixed_OM_rate
-  - parasitic_fraction
-  - orc_money_per_kw
-  - flash_money_per_kw
-  - kalina_money_per_kw
-  - temp_turbine_out_ORC
-  - temp_turbine_out_Flash
-  - temp_turbine_out_Kalina
-  - include_egs
-  - SED_NAN_POLICY
-  - min_dt
-  - well_spacing
-  - flowrate_egs
-  - flowrate_conventional
-
-# Sensitivity ranges.
-# For numeric parameters: max_dev_pct is the maximum deviation in percent from
-# the base value (symmetric), steps is the number of steps on each side.
-# Example: max_dev_pct=50, steps=2 → −50 %, −25 %, +25 %, +50 %.
-# For boolean/categorical parameters, the value is ignored (use default value as a placeholder);
-# all alternative values are automatically explored.
-sensitivity_parameters:
-  # --- Reservoir & drilling ---
-  max_depth:
-    absolute_values: [3000, 9000]  # override percentage-based deviations with absolute values (m)
-  EGS_cutoff:
-    absolute_values: [2000, 5000]  # override percentage-based deviations with absolute values (m)
-  stimulation_cost_per_doublet:
-    absolute_values: [1.03, 10]
-  well_spacing:
-    absolute_values: [0.8, 2.0]  # override percentage-based deviations with absolute values (km)
-  flowrate_egs:
-    max_dev_pct: 30
-    steps: 1
-  flowrate_conventional:
-    max_dev_pct: 30
-    steps: 1
-
-  # --- Plant economics ---
-  pump_cost:
-    max_dev_pct: 30
-    steps: 1
-  lifetime:
-    absolute_values: [20, 40]  # years
-  capacity_factor:
-    absolute_values: [0.6, 0.91]  # fraction
-  fixed_OM_rate:
-    absolute_values: [0.008, 0.02]  # fraction/year
-  parasitic_fraction:
-    absolute_values: [0.02, 0.6]  # fraction
-  orc_money_per_kw:
-    max_dev_pct: 30
-    steps: 1
-  flash_money_per_kw:
-    max_dev_pct: 30
-    steps: 1
-  kalina_money_per_kw:
-    max_dev_pct: 30
-    steps: 1
-  # --- Turbine outlet temperatures ---
-  temp_turbine_out_ORC:
-    max_dev_pct: 30
-    steps: 1
-  temp_turbine_out_Flash:
-    max_dev_pct: 30
-    steps: 1
-  temp_turbine_out_Kalina:
-    max_dev_pct: 30
-    steps: 1
-  # --- Minimum temperature difference ---
-  min_dt:
-    max_dev_pct: 30
-    steps: 1
-  # --- Boolean (flips the base value) ---
-  include_egs: true
-  # --- Categorical (multiple values explored) ---
-  SED_NAN_POLICY:
-    - always_egs
-    - depth_only
-  drilling_cost_curve:
-    - thermogis
-    - shamoushaki_2021
-    - getem_2017
-    - getem_2025

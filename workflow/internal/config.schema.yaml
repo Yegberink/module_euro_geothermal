@@ -5,32 +5,6 @@ type: object
 additionalProperties: false
 
 properties:
-  perform_sensitivity:
-    type: boolean
-    description: "Whether to run the sensitivity analysis in addition to the baseline scenario."
-
-  baseline_scenario:
-    type: string
-    pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]*$"
-    description: "Name of the baseline scenario."
-
-  scenarios:
-    description: "Optional explicit scenarios for module users. Mapping keys or list entries define scenario names; values override baseline model settings."
-    oneOf:
-      - type: object
-        additionalProperties:
-          type: object
-          additionalProperties: true
-      - type: array
-        items:
-          type: object
-          required: ["scenario"]
-          additionalProperties: true
-          properties:
-            scenario:
-              type: string
-              pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]*$"
-
   include_egs:
     type: boolean
     description: "Whether to include Enhanced Geothermal Systems (EGS)."
@@ -205,76 +179,7 @@ properties:
     minimum: 0
     description: "LCOE cutoff (EUR2020/MWh) used when method_region_aggregation=cutoff."
 
-  sens_tech:
-    type: string
-    enum: ["orc", "flash", "kalina"]
-    description: "Technology used as the reference in sensitivity summary plots."
-
-  active_sensitivity_parameters:
-    type: array
-    description: "List of parameter names to vary in the sensitivity sweep."
-    items:
-      type: string
-      enum:
-        - max_depth
-        - EGS_cutoff
-        - drilling_cost_curve
-        - stimulation_cost_per_doublet
-        - pump_cost
-        - lifetime
-        - capacity_factor
-        - fixed_OM_rate
-        - parasitic_fraction
-        - orc_money_per_kw
-        - flash_money_per_kw
-        - kalina_money_per_kw
-        - temp_turbine_out_ORC
-        - temp_turbine_out_Flash
-        - temp_turbine_out_Kalina
-        - include_egs
-        - SED_NAN_POLICY
-        - min_dt
-        - well_spacing
-        - flowrate_egs
-        - flowrate_conventional
-    uniqueItems: true
-
-  sensitivity_parameters:
-    type: object
-    description: "Definitions of sensitivity ranges or categorical/boolean alternatives per parameter."
-    additionalProperties:
-      anyOf:
-        - type: boolean
-        - type: array
-          minItems: 1
-          items:
-            anyOf:
-              - type: string
-              - type: boolean
-              - type: number
-        - type: object
-          additionalProperties: false
-          properties:
-            max_dev_pct:
-              type: number
-              minimum: 0
-            steps:
-              type: integer
-              minimum: 1
-            absolute_values:
-              type: array
-              minItems: 1
-              items:
-                type: number
-          allOf:
-            - if:
-                required: ["max_dev_pct"]
-              then:
-                required: ["steps"]
-
 required:
-  - baseline_scenario
-  - perform_sensitivity
   - include_egs
   - carrier_out
   - max_depth
@@ -297,9 +202,6 @@ required:
   - min_dt
   - method_2d_aggregation
   - method_region_aggregation
-  - sens_tech
-  - active_sensitivity_parameters
-  - sensitivity_parameters
 
 allOf:
   - properties:

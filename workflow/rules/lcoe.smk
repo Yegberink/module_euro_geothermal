@@ -1,20 +1,4 @@
-"""Scenario setup, input preparation, and LCOE calculation rules."""
-
-
-rule build_scenario_table:
-    """Generate the scenario TSV from config sensitivity settings."""
-    output:
-        tsv="<resources>/automatic/scenario_table.tsv",
-    log:
-        "<logs>/build_scenario_table.log",
-    message:
-        "Build the configured geothermal scenario table."
-    params:
-        config=config,
-    conda:
-        "../envs/module.yaml"
-    script:
-        "../scripts/build_scenario_table.py"
+"""Input preparation and LCOE calculation rules."""
 
 
 rule crop_to_speed_up:
@@ -66,15 +50,15 @@ rule calculate_LCOE:
         drilling_costs_2025=workflow.source_path(
             "../internal/baseline_drilling_2025.csv"
         ),
-        scenario_table=rules.build_scenario_table.output.tsv,
     output:
-        cube="<resources>/automatic/{shapes}/scenarios/{scenario}/documents/{cycle}_lcoe_cube.nc",
+        cube="<resources>/automatic/{shapes}/documents/{cycle}_lcoe_cube.nc",
     log:
-        "<logs>/{shapes}/{scenario}/{cycle}/calculate_LCOE.log",
+        "<logs>/{shapes}/{cycle}/calculate_LCOE.log",
     message:
-        "Calculate {wildcards.cycle} geothermal potential and LCOE for {wildcards.scenario}."
+        "Calculate {wildcards.cycle} geothermal potential and LCOE for {wildcards.shapes}."
     params:
         cycle=lambda wc: wc.cycle,
+        model=model_parameters(config),
     conda:
         "../envs/module.yaml"
     script:

@@ -20,13 +20,6 @@ resources:
 
 
 defaults:
-  baseline_scenario: base
-  perform_sensitivity: false
-  sens_tech: orc
-
-  active_sensitivity_parameters: []
-  sensitivity_parameters: {}
-
   method_region_aggregation: cutoff
   n_quantiles: 4
   fixed_bins:

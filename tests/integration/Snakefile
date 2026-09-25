@@ -18,7 +18,7 @@ module module_geothermal:
         # Redirect specific user resources (inputs)
         shapes=rules.create_external_shapes.output[0],
         # Redirect specific module results (outputs)
-        geothermal_regions="results/output/{shapes}/{scenario}/geothermal_regions.parquet",
+        geothermal_regions="results/output/{shapes}/geothermal_regions.parquet",
         # Redirect intermediate files that are internal to the module
         logs="resources/module/logs",
         resources="resources/module/resources",
@@ -37,6 +37,6 @@ use rule * from module_geothermal as module_geothermal_*
 rule all:
     default_target: True
     input:
-        "results/output/test/base/geothermal_regions.parquet",
+        "results/output/test/geothermal_regions.parquet",
     message:
         "A generic dry-run test case for the geothermal module."

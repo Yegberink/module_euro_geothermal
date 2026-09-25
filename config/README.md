@@ -11,34 +11,17 @@ passed to the module's `config` directive, for example:
 
 ```yaml
 module_geothermal:
-  baseline_scenario: base
-  perform_sensitivity: false
   which_cycles: [orc]
   carrier_out: power
   # Add the remaining model parameters from config/config.yaml.
 ```
 
-## Workflow and scenario controls
+## Workflow controls
 
-| Setting | Meaning |
-| --- | --- |
-| `baseline_scenario` | Name used for the reference scenario, normally `base`. |
-| `perform_sensitivity` | Enables the study-wide sensitivity figures and summaries. Set it to `false` for a baseline-only run. |
-| `scenarios` | Optional mapping or list of named scenario overrides. When supplied, it takes precedence over automatic scenario expansion. |
-
-Explicit scenarios inherit all baseline model values and replace only the
-listed settings:
-
-```yaml
-baseline_scenario: base
-perform_sensitivity: true
-scenarios:
-  base: {}
-  shallow:
-    max_depth: 3000
-  long_lifetime:
-    lifetime: 40.0
-```
+Each run uses the configured model parameters for every selected conversion
+cycle and shape set. Stable defaults fill omitted optional settings; supplied
+values take precedence. Model settings are tracked by Snakemake so changes
+trigger recalculation.
 
 ## Conversion technologies
 
@@ -113,59 +96,9 @@ path variable. Select the regional method with `method_region_aggregation`:
 - `cutoff` reports the potential at or below `lcoe_cutoff` and the mean LCOE of
   that potential. The cutoff is expressed in €2020/MWh.
 
-`cutoff` is the quickest choice for large sensitivity sweeps. Use `quantiles`
-or `fixed_bins` when downstream models need a cost-supply distribution.
-
-## Sensitivity analysis
-
-Set `perform_sensitivity: true`, list the variables to vary in
-`active_sensitivity_parameters`, and define each variable in
-`sensitivity_parameters`. The automatic sweep changes one parameter at a time
-while keeping all other baseline assumptions fixed.
-
-Numeric parameters support either symmetric percentage changes:
-
-```yaml
-active_sensitivity_parameters: [flowrate_egs]
-sensitivity_parameters:
-  flowrate_egs:
-    max_dev_pct: 30
-    steps: 1
-```
-
-or explicit values:
-
-```yaml
-active_sensitivity_parameters: [max_depth]
-sensitivity_parameters:
-  max_depth:
-    absolute_values: [3000, 9000]
-```
-
-For a boolean parameter, provide a boolean placeholder and the workflow flips
-the baseline value. For a categorical parameter, provide the values to explore:
-
-```yaml
-active_sensitivity_parameters: [include_egs, drilling_cost_curve]
-sensitivity_parameters:
-  include_egs: true
-  drilling_cost_curve:
-    - thermogis
-    - shamoushaki_2021
-    - getem_2017
-    - getem_2025
-```
-
-`sens_tech` (`orc`, `flash`, or `kalina`) selects the reference technology for
-sensitivity summary plots. See the repository's
-[`config/config.yaml`](./config.yaml) for the full set of supported sensitivity
-parameters and example ranges.
-
-Configuration validation rejects unsafe or duplicate scenario names, unknown
-sensitivity parameters, missing sensitivity definitions, invalid explicit
-overrides, and drilling-cost curves without a selected definition. It also
-requires ordered, non-overlapping depth and LCOE bins. Scenario names may use
-letters, digits, `_`, `-`, and `.`, and must begin with a letter or digit.
+Use `quantiles` or `fixed_bins` when downstream models need a cost-supply
+distribution. Configuration validation requires valid model values, a defined
+selected drilling-cost curve, and ordered, non-overlapping depth and LCOE bins.
 
 ## Inputs and outputs
 
@@ -192,9 +125,34 @@ optional; rows with `shape_class: maritime` are excluded from aggregation.
 | `n_cells` | Number of contributing raster cells. |
 | `geometry` | Aggregation-region polygon in the input CRS. |
 
-`overall_potential_by_scenario.tsv` reports study-wide potential in TW by
-scenario and technology. `overall_potential_summary.tsv` reports the baseline
-and its sensitivity envelope in TW.
+The regional output and its `geothermal_region_outputs.tsv` manifest live
+under `<results>/{shapes}/`. Model cubes and rasters live under
+`<resources>/automatic/{shapes}/documents/`, and diagnostic figures under
+`<resources>/automatic/{shapes}/figures/`. The LCOE overview remains in
+`<results>/{shapes}/lcoe_overview.png`; regional-potential figures live under
+`<results>/{shapes}/figures/`.
+
+`<results>/{shapes}/overall_potential_summary.tsv` contains `technology` and
+`potential_tw` columns. It reports study-wide potential in TW for each selected
+technology and a `lowest_lcoe_technology` portfolio choosing the lowest-cost
+available technology in each cell. For depth-category aggregation, totals are
+summed across configured depth bands. These are raster-wide totals; regional
+price bins and cutoffs are not applied to this summary.
+
+The LCOE overview and cumulative-potential figures are produced for
+`LCOE_minimization`. The regional-potential overview additionally requires
+`cutoff` aggregation. Depth/cost diagnostics are available for both 2-D methods.
+Technology comparisons within one run remain available.
+
+### Migrating existing imports
+
+Remove `baseline_scenario`, `perform_sensitivity`, `scenarios`, `sens_tech`,
+`active_sensitivity_parameters`, and `sensitivity_parameters` from old configs;
+these keys are no longer accepted. Remove the scenario directory (including
+`base`) from result targets and path overrides. Replace the former study-wide
+comparison tables with `overall_potential_summary.tsv`; its columns are now
+`technology` and `potential_tw`. Existing generated files are not migrated or
+deleted automatically.
 
 ## Development environments
 

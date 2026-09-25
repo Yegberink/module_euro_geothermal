@@ -16,14 +16,10 @@ pathvars:
       description: GeoParquet polygons used to crop and aggregate geothermal potential.
   results:
     geothermal_regions:
-      default: "<results>/{shapes}/{scenario}/geothermal_regions.parquet"
+      default: "<results>/{shapes}/geothermal_regions.parquet"
       description: Geothermal LCOE and potential aggregated to user-provided polygons.
-    overall_potential_by_scenario:
-      default: "<results>/{shapes}/overall_potential_by_scenario.tsv"
-      description: Study-wide potential in TW by sensitivity scenario and technology.
     overall_potential_summary:
       default: "<results>/{shapes}/overall_potential_summary.tsv"
-      description: Baseline study-wide potential and min-max sensitivity envelope in TW.
+      description: Study-wide potential in TW by technology and for the lowest-LCOE portfolio.
 wildcards:
   shapes: Name of the provided shape set.
-  scenario: Scenario name; defaults to "base" and can include sensitivity scenarios.

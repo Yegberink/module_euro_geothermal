@@ -1,13 +1,11 @@
 pathvars:
     shapes="<resources>/user/{shapes}/shapes.parquet",
-    geothermal_regions="<results>/{shapes}/{scenario}/geothermal_regions.parquet",
-    overall_potential_by_scenario="<results>/{shapes}/overall_potential_by_scenario.tsv",
+    geothermal_regions="<results>/{shapes}/geothermal_regions.parquet",
     overall_potential_summary="<results>/{shapes}/overall_potential_summary.tsv",
 
 
 wildcard_constraints:
     shapes="[A-Za-z0-9][A-Za-z0-9_-]*",
-    scenario="[A-Za-z0-9][A-Za-z0-9_.-]*",
     cycle="orc|flash|kalina",
 
 
@@ -20,14 +18,14 @@ include: "rules/_utils.smk"
 include: "rules/automatic.smk"
 include: "rules/lcoe.smk"
 include: "rules/spatial_aggregation.smk"
-include: "rules/scenario_figures.smk"
-include: "rules/sensitivity.smk"
+include: "rules/figures.smk"
+include: "rules/overall_potential.smk"
 
 
 # Add additional files to be delivered alongside the workflow here.
 # This is needed e.g. for python code files that are never
 # explicitly used as a script or input in a snakemake rule.
-workflow.source_path("scripts/scenario_config.py")
+workflow.source_path("scripts/model_config.py")
 workflow.source_path("scripts/_schemas.py")
 workflow.source_path("scripts/_plots.py")
 
@@ -44,6 +42,3 @@ rule all:
         "envs/module.yaml"
     shell:
         'echo "This workflow must be called as a snakemake module." > {log.stderr}'
-
-
-ruleorder: make_2d_base > make_2d_scenario

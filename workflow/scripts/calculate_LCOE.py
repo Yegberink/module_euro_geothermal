@@ -12,50 +12,16 @@ if "snakemake" in dir():
     sys.stdout = sys.stderr = open(snakemake.log[0], "w", buffering=1)
 
 
-def _parse_scalar(value):
-    if value is None or pd.isna(value):
-        return None
-    if isinstance(value, (bool, int, float)):
-        return value
-
-    text = str(value).strip()
-    if text.lower() in ("true", "yes", "y", "1"):
-        return True
-    if text.lower() in ("false", "no", "n", "0"):
-        return False
-    try:
-        return float(text)
-    except ValueError:
-        return text
-
-
-def _scenario_row():
-    rows = pd.read_csv(snakemake.input.scenario_table, sep="\t")
-    row = rows.loc[rows["scenario"].astype(str) == str(snakemake.wildcards.scenario)]
-    return {key: _parse_scalar(value) for key, value in row.iloc[0].items()}
-
-
-SCENARIO = _scenario_row()
-
-
 def cfg(key, default=None):
-    """Read a scenario override followed by the module's baseline value."""
-    value = SCENARIO.get(key)
-    if value is not None:
-        return value
-
-    if key.startswith("temp_turbine_out_"):
-        cycle = key.removeprefix("temp_turbine_out_")
-        return snakemake.config["temp_turbine_out"][cycle]
-
+    """Read a validated model setting tracked in the rule parameters."""
     if default is not None:
-        return snakemake.config.get(key, default)
-    return snakemake.config[key]
+        return snakemake.params.model.get(key, default)
+    return snakemake.params.model[key]
 
 
 def drilling_cost_curve_definitions():
     """Resolve configured drilling-curve files to Snakemake input paths."""
-    definitions = dict(snakemake.config["drilling_cost_curve_definitions"])
+    definitions = dict(cfg("drilling_cost_curve_definitions"))
     if "getem_2017" in definitions:
         definitions["getem_2017"] = dict(definitions["getem_2017"])
         definitions["getem_2017"]["csv_path"] = snakemake.input.drilling_costs_2017
@@ -458,7 +424,7 @@ def main():
         output_dtypes=[np.float32],
     )
 
-    t_out = float(cfg(f"temp_turbine_out_{cycle_key}"))
+    t_out = float(cfg("temp_turbine_out")[cycle_key])
 
     # Total LCOE and its exact additive cost-component contributions.
     lcoe_outputs = xr.apply_ufunc(
