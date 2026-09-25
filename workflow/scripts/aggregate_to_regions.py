@@ -21,8 +21,8 @@ import geopandas as gpd
 import gregor
 import numpy as np
 import pandas as pd
-import rioxarray as rxr
 import xarray as xr
+from _heat import align_to_grid, check_grid, read_raster
 
 if "snakemake" in dir():
     sys.stdout = sys.stderr = open(snakemake.log[0], "w", buffering=1)
@@ -130,8 +130,8 @@ def inherit_rio_meta(dst: xr.DataArray, src: xr.DataArray) -> xr.DataArray:
 
 def load_aligned_rasters(lcoe_path: str, pot_path: str):
     """Open LCOE and potential rasters, verify alignment, and return as float64 DataArrays."""
-    lcoe = rxr.open_rasterio(lcoe_path).squeeze(drop=True).astype("float64")
-    pot = rxr.open_rasterio(pot_path).squeeze(drop=True).astype("float64")
+    lcoe, pot = read_raster(lcoe_path), read_raster(pot_path)
+    check_grid(lcoe, pot)
 
     return lcoe, pot
 
@@ -217,6 +217,7 @@ def aggregate_one_tech(
     fixed_bins: list,
     lcoe_cutoff: float | None,
     depth_category: str = "all_depths",
+    used_fraction=None,
 ) -> tuple[pd.DataFrame, object]:
     """Aggregate LCOE and potential for a single (tech, depth_category) pair.
 
@@ -231,6 +232,11 @@ def aggregate_one_tech(
     lcoe = ensure_north_up(lcoe)
     pot = ensure_north_up(pot)
 
+    fraction = (
+        align_to_grid(used_fraction, pot).clip(0, 1)
+        if used_fraction is not None
+        else xr.zeros_like(pot)
+    )
     regions = regions_gdf.to_crs(lcoe.rio.crs)
     bins = _bins_for_method(method, lcoe, n_quantiles, fixed_bins, lcoe_cutoff)
 
@@ -260,52 +266,65 @@ def aggregate_one_tech(
 
         valid = in_bin & xr.ufuncs.isfinite(lcoe) & xr.ufuncs.isfinite(pot) & (pot > 0)
 
-        # Fast skip when no valid cells exist
-        n_valid = int(valid.sum().values)
-        if n_valid == 0:
-            continue
+        original_valid = valid
+        categories = [("power", 1 - fraction)]
+        if used_fraction is not None:
+            categories.append(("contested", fraction))
+        for category, share in categories:
+            category_pot = pot * share
+            valid = original_valid & (category_pot > 0)
+            # Fast skip when no valid cells exist
+            n_valid = int(valid.sum().values)
+            if n_valid == 0:
+                continue
 
-        # Weighted-sum rasters (potential, lcoe*potential, cell count)
-        pot_bin = inherit_rio_meta(pot.where(valid, other=0.0), pot)
-        lp_bin = inherit_rio_meta((lcoe * pot).where(valid, other=0.0), pot)
-        cnt_bin = inherit_rio_meta(xr.where(valid, 1.0, 0.0), pot)
+            # Weighted-sum rasters (potential, lcoe*potential, cell count)
+            pot_bin = inherit_rio_meta(category_pot.where(valid, other=0.0), pot)
+            lp_bin = inherit_rio_meta(
+                (lcoe * category_pot).where(valid, other=0.0), pot
+            )
+            cnt_bin = inherit_rio_meta(xr.where(valid, 1.0, 0.0), pot)
 
-        agg_p = gregor.aggregate.aggregate_raster_to_polygon(
-            pot_bin, regions, stats="sum"
-        )
-        agg_lp = gregor.aggregate.aggregate_raster_to_polygon(
-            lp_bin, regions, stats="sum"
-        )
-        agg_n = gregor.aggregate.aggregate_raster_to_polygon(
-            cnt_bin, regions, stats="sum"
-        )
+            agg_p = gregor.aggregate.aggregate_raster_to_polygon(
+                pot_bin, regions, stats="sum"
+            )
+            agg_lp = gregor.aggregate.aggregate_raster_to_polygon(
+                lp_bin, regions, stats="sum"
+            )
+            agg_n = gregor.aggregate.aggregate_raster_to_polygon(
+                cnt_bin, regions, stats="sum"
+            )
 
-        if agg_p is None or len(agg_p) == 0 or "sum" not in agg_p.columns:
-            continue
+            if agg_p is None or len(agg_p) == 0 or "sum" not in agg_p.columns:
+                continue
 
-        total_pot = agg_p["sum"].astype(float)
-        if (total_pot.fillna(0.0) <= 0.0).all():
-            continue
+            total_pot = agg_p["sum"].astype(float)
+            if (total_pot.fillna(0.0) <= 0.0).all():
+                continue
 
-        mean_lcoe = agg_lp["sum"].astype(float) / total_pot.replace(0.0, np.nan)
+            mean_lcoe = agg_lp["sum"].astype(float) / total_pot.replace(0.0, np.nan)
 
-        df = pd.DataFrame(
-            {
-                "technology": tech,
-                "depth_category": str(depth_category),
-                "bin_id": bin_id,
-                "region_id": agg_p.index.astype(str),
-                "price_bin": bin_label,
-                "bin_left": bin_left_v,
-                "bin_right": bin_right_v,
-                "potential": total_pot.values,
-                "mean_lcoe": mean_lcoe.values,
-                "n_cells": agg_n["sum"].fillna(0).round().astype(np.int64).values,
-            }
-        )
-        df = df[np.isfinite(df["potential"]) & (df["potential"] > 0)]
-        if not df.empty:
-            rows.append(df)
+            df = pd.DataFrame(
+                {
+                    "category": category,
+                    "carrier": "power",
+                    "potential_unit": "MW_e",
+                    "mean_lcoh": np.nan,
+                    "technology": tech,
+                    "depth_category": str(depth_category),
+                    "bin_id": bin_id,
+                    "region_id": agg_p.index.astype(str),
+                    "price_bin": bin_label,
+                    "bin_left": bin_left_v,
+                    "bin_right": bin_right_v,
+                    "potential": total_pot.values,
+                    "mean_lcoe": mean_lcoe.values,
+                    "n_cells": agg_n["sum"].fillna(0).round().astype(np.int64).values,
+                }
+            )
+            df = df[np.isfinite(df["potential"]) & (df["potential"] > 0)]
+            if not df.empty:
+                rows.append(df)
 
     if rows:
         out_df = pd.concat(rows, ignore_index=True)
@@ -333,6 +352,53 @@ def aggregate_one_tech(
 # ---------------------------------------------------------------------------
 
 
+def power_eligibility(costs, capacities, method, n_quantiles, fixed_bins, cutoff):
+    """Identify retained power before reservation, using the original bin edges."""
+    bins = _bins_for_method(method, costs, n_quantiles, fixed_bins, cutoff)
+    eligible = xr.zeros_like(costs, dtype=bool)
+    for index, (left, right) in enumerate(bins):
+        if method == "cutoff":
+            inside = costs <= right
+        elif index == len(bins) - 1:
+            inside = (costs >= left) & (costs <= right)
+        else:
+            inside = (costs >= left) & (costs < right)
+        eligible |= inside
+    return eligible & np.isfinite(costs) & np.isfinite(capacities) & (capacities > 0)
+
+
+def aggregate_heat(ledger, eligible, region_ids, combined):
+    """Attribute allocated heat to consumers, without duplicating power options."""
+    ledger = ledger.copy()
+    ledger["category"] = "heat"
+    if combined and len(ledger):
+        contested = eligible.values[ledger.row.to_numpy(), ledger.col.to_numpy()]
+        ledger.loc[contested, "category"] = "contested"
+    ledger["annual_cost"] = ledger.heat_mwh_per_year * ledger.lcoh_eur_per_mwh
+    grouped = ledger.groupby(["region_id", "category"]).agg(
+        potential=("heat_mwh_per_year", "sum"),
+        annual_cost=("annual_cost", "sum"),
+        n_cells=("cell_id", "nunique"),
+    )
+    categories = ["heat", "contested"] if combined else ["heat"]
+    index = pd.MultiIndex.from_product(
+        [region_ids.astype(str), categories], names=["region_id", "category"]
+    )
+    grouped = grouped.reindex(index, fill_value=0).reset_index()
+    grouped["mean_lcoh"] = grouped.annual_cost / grouped.potential.replace(0, np.nan)
+    grouped = grouped.drop(columns="annual_cost")
+    grouped["carrier"] = "heat"
+    grouped["potential_unit"] = "MWh_th/year"
+    grouped["technology"] = "geothermal_heat"
+    grouped["depth_category"] = "target_temperature"
+    grouped["price_bin"] = "all"
+    grouped["bin_id"] = "all"
+    grouped["bin_left"] = np.nan
+    grouped["bin_right"] = np.nan
+    grouped["mean_lcoe"] = np.nan
+    return grouped
+
+
 def main():
     """Aggregate all configured technology rasters to the supplied regions."""
     # --- Inputs / outputs from Snakemake ---------------------------------
@@ -342,6 +408,11 @@ def main():
     out_path = snakemake.output["geoparquet"]
     manifest_path = snakemake.output["manifest"]
     resultdir = os.path.dirname(out_path)
+    heat_enabled = snakemake.params.get("carrier_out", "power") != "power"
+    used_fraction = (
+        read_raster(snakemake.input.heat_fraction[0]) if heat_enabled else None
+    )
+    heat_eligible = xr.zeros_like(used_fraction, dtype=bool) if heat_enabled else None
 
     # --- Parameters -------------------------------------------------------
     cycles = [str(c).strip().lower() for c in (snakemake.params.get("cycles") or [])]
@@ -387,6 +458,16 @@ def main():
     # --- Aggregate each (tech, depth_category) pair -----------------------
     frames = []
     for tech, depth_cat in pairs:
+        if heat_enabled:
+            costs, capacities = load_aligned_rasters(
+                lcoe_map[(tech, depth_cat)], pot_map[(tech, depth_cat)]
+            )
+            eligible = power_eligibility(
+                costs, capacities, method, n_quantiles, fixed_bins, lcoe_cutoff
+            )
+            heat_eligible = heat_eligible | align_to_grid(
+                eligible, used_fraction, fill=False
+            )
         df, _ = aggregate_one_tech(
             tech=tech,
             lcoe_path=lcoe_map[(tech, depth_cat)],
@@ -397,9 +478,21 @@ def main():
             fixed_bins=fixed_bins,
             lcoe_cutoff=lcoe_cutoff,
             depth_category=depth_cat,
+            used_fraction=used_fraction,
         )
         if not df.empty:
             frames.append(df)
+
+    if heat_enabled:
+        ledger = pd.read_parquet(snakemake.input.heat_allocations[0])
+        frames.append(
+            aggregate_heat(
+                ledger,
+                heat_eligible,
+                regions.index,
+                snakemake.params["carrier_out"] == "heat_and_power",
+            )
+        )
 
     # --- Assemble output GeoDataFrame -------------------------------------
     regions2 = regions.copy()

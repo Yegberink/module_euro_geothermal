@@ -58,3 +58,9 @@ defaults:
       currency_year: 2025
 
   carrier_out: power
+
+  heat_production_temperature: 80.0
+  heat_reinjection_temperature: 40.0
+  thermal_plant_cost_per_kw: 234.0
+  heat_capacity_factor: 0.88
+  heat_network_buffer_km: 10.0

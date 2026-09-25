@@ -1,58 +1,59 @@
 """Rules for reducing LCOE cubes to 2D rasters and regional outputs."""
 
+if POWER_ENABLED:
 
-rule make_2d:
-    input:
-        shapes="<shapes>",
-        cubes=lambda wc: expand(
-            rules.calculate_LCOE.output.cube,
-            shapes=wc.shapes,
-            cycle=CYCLES,
-        ),
-    output:
-        **MAKE_2D_FIGURE_OUTPUTS,
-        lcoe_tifs=(
-            expand(
-                "<resources>/automatic/{shapes}/documents/{cycle}_2d_lcoe.tif",
-                shapes="{shapes}",
+    rule make_2d:
+        input:
+            shapes="<shapes>",
+            cubes=lambda wc: expand(
+                rules.calculate_LCOE.output.cube,
+                shapes=wc.shapes,
                 cycle=CYCLES,
-            )
-            if config["method_2d_aggregation"] == "LCOE_minimization"
-            else expand(
-                "<resources>/automatic/{shapes}/documents/{cycle}_2d_{cat}_lcoe.tif",
-                shapes="{shapes}",
-                cycle=CYCLES,
-                cat=DEPTH_CATEGORY_LABELS,
-            )
-        ),
-        pot_tifs=(
-            expand(
-                "<resources>/automatic/{shapes}/documents/{cycle}_2d_potential.tif",
-                shapes="{shapes}",
-                cycle=CYCLES,
-            )
-            if config["method_2d_aggregation"] == "LCOE_minimization"
-            else expand(
-                "<resources>/automatic/{shapes}/documents/{cycle}_2d_{cat}_potential.tif",
-                shapes="{shapes}",
-                cycle=CYCLES,
-                cat=DEPTH_CATEGORY_LABELS,
-            )
-        ),
-    log:
-        "<logs>/{shapes}/make_2d.log",
-    message:
-        "Reduce geothermal results for {wildcards.shapes} to 2-D rasters."
-    params:
-        method_2d_aggregation=config["method_2d_aggregation"],
-        depth_categories=config.get("depth_categories"),
-        depthcat_labels=DEPTH_CATEGORY_LABELS,
-        cycles=CYCLES,
-        max_depth=config["max_depth"],
-    conda:
-        "../envs/module.yaml"
-    script:
-        "../scripts/make_2d.py"
+            ),
+        output:
+            **MAKE_2D_FIGURE_OUTPUTS,
+            lcoe_tifs=(
+                expand(
+                    "<resources>/automatic/{shapes}/documents/{cycle}_2d_lcoe.tif",
+                    shapes="{shapes}",
+                    cycle=CYCLES,
+                )
+                if config["method_2d_aggregation"] == "LCOE_minimization"
+                else expand(
+                    "<resources>/automatic/{shapes}/documents/{cycle}_2d_{cat}_lcoe.tif",
+                    shapes="{shapes}",
+                    cycle=CYCLES,
+                    cat=DEPTH_CATEGORY_LABELS,
+                )
+            ),
+            pot_tifs=(
+                expand(
+                    "<resources>/automatic/{shapes}/documents/{cycle}_2d_potential.tif",
+                    shapes="{shapes}",
+                    cycle=CYCLES,
+                )
+                if config["method_2d_aggregation"] == "LCOE_minimization"
+                else expand(
+                    "<resources>/automatic/{shapes}/documents/{cycle}_2d_{cat}_potential.tif",
+                    shapes="{shapes}",
+                    cycle=CYCLES,
+                    cat=DEPTH_CATEGORY_LABELS,
+                )
+            ),
+        log:
+            "<logs>/{shapes}/make_2d.log",
+        message:
+            "Reduce geothermal results for {wildcards.shapes} to 2-D rasters."
+        params:
+            method_2d_aggregation=config["method_2d_aggregation"],
+            depth_categories=config.get("depth_categories"),
+            depthcat_labels=DEPTH_CATEGORY_LABELS,
+            cycles=CYCLES,
+            max_depth=config["max_depth"],
+        conda:
+            "../envs/module.yaml"
+        script:
+            "../scripts/make_2d.py"
 
 
 rule aggregate_to_regions:
@@ -86,6 +87,10 @@ rule aggregate_to_regions:
                 cat=DEPTH_CATEGORY_LABELS,
             )
         ),
+        heat_fraction=([rules.allocate_heat.output.fraction] if HEAT_ENABLED else []),
+        heat_allocations=(
+            [rules.allocate_heat.output.allocations] if HEAT_ENABLED else []
+        ),
         shapes="<shapes>",
     output:
         geoparquet="<geothermal_regions>",
@@ -95,6 +100,7 @@ rule aggregate_to_regions:
     message:
         "Aggregate geothermal results to {wildcards.shapes}."
     params:
+        carrier_out=config["carrier_out"],
         cycles=CYCLES,
         method_region_aggregation=config["method_region_aggregation"],
         n_quantiles=config.get("n_quantiles", 5),
@@ -107,7 +113,8 @@ rule aggregate_to_regions:
 
 
 if (
-    config["method_2d_aggregation"] == "LCOE_minimization"
+    POWER_ENABLED
+    and config["method_2d_aggregation"] == "LCOE_minimization"
     and config["method_region_aggregation"] == "cutoff"
 ):
 

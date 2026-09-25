@@ -14,10 +14,19 @@ pathvars:
     shapes:
       default: "<resources>/user/{shapes}/shapes.parquet"
       description: GeoParquet polygons used to crop and aggregate geothermal potential.
+    district_heating:
+      default: "<resources>/user/{shapes}/areas.parquet"
+      description: Heat-mode GeoParquet with unique area_id, connected heat_potential_mwh_per_year, valid polygons, and a CRS.
   results:
     geothermal_regions:
       default: "<results>/{shapes}/geothermal_regions.parquet"
-      description: Geothermal LCOE and potential aggregated to user-provided polygons.
+      description: Regional resource alternatives with category, carrier, potential_unit, mean_lcoe, and mean_lcoh.
+    geothermal_heat_networks:
+      default: "<results>/{shapes}/geothermal_heat_networks.parquet"
+      description: Original network attributes plus region_id, supplied and unmet annual geothermal heat, and weighted geothermal LCOH.
+    geothermal_heat_allocations:
+      default: "<results>/{shapes}/geothermal_heat_allocations.parquet"
+      description: Cell-to-network allocations with source coordinates, annual heat, cell fraction, and LCOH; preserves cross-region resource links.
     overall_potential_summary:
       default: "<results>/{shapes}/overall_potential_summary.tsv"
       description: Study-wide potential in TW by technology and for the lowest-LCOE portfolio.

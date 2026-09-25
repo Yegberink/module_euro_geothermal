@@ -732,6 +732,8 @@ def make_regional_potential_overview(
 ):
     """Plot regional potential for one configured depth/category bin."""
     gdf = gpd.read_parquet(geoparquet_path)
+    if "category" in gdf:
+        gdf = gdf[(gdf["category"] == "power") & (gdf["carrier"] == "power")]
     gdf = gdf.loc[
         (gdf["depth_category"].astype(str) == str(depth_category))
         & (gdf["bin_id"].astype(str) == str(bin_id))

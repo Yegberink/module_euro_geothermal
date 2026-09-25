@@ -39,27 +39,29 @@ rule resample_gst1_sediment:
         "../scripts/resample_gst1.py"
 
 
-rule calculate_LCOE:
-    input:
-        nc=rules.crop_to_speed_up.output.clipped_temp_voxel,
-        sed=rules.resample_gst1_sediment.output.sediment,
-        eff=workflow.source_path("../internal/efficiency_curves.csv"),
-        drilling_costs_2017=workflow.source_path(
-            "../internal/baseline_drilling_2017.csv"
-        ),
-        drilling_costs_2025=workflow.source_path(
-            "../internal/baseline_drilling_2025.csv"
-        ),
-    output:
-        cube="<resources>/automatic/{shapes}/documents/{cycle}_lcoe_cube.nc",
-    log:
-        "<logs>/{shapes}/{cycle}/calculate_LCOE.log",
-    message:
-        "Calculate {wildcards.cycle} geothermal potential and LCOE for {wildcards.shapes}."
-    params:
-        cycle=lambda wc: wc.cycle,
-        model=model_parameters(config),
-    conda:
-        "../envs/module.yaml"
-    script:
-        "../scripts/calculate_LCOE.py"
+if POWER_ENABLED:
+
+    rule calculate_LCOE:
+        input:
+            nc=rules.crop_to_speed_up.output.clipped_temp_voxel,
+            sed=rules.resample_gst1_sediment.output.sediment,
+            eff=workflow.source_path("../internal/efficiency_curves.csv"),
+            drilling_costs_2017=workflow.source_path(
+                "../internal/baseline_drilling_2017.csv"
+            ),
+            drilling_costs_2025=workflow.source_path(
+                "../internal/baseline_drilling_2025.csv"
+            ),
+        output:
+            cube="<resources>/automatic/{shapes}/documents/{cycle}_lcoe_cube.nc",
+        log:
+            "<logs>/{shapes}/{cycle}/calculate_LCOE.log",
+        message:
+            "Calculate {wildcards.cycle} geothermal potential and LCOE for {wildcards.shapes}."
+        params:
+            cycle=lambda wc: wc.cycle,
+            model=model_parameters(config),
+        conda:
+            "../envs/module.yaml"
+        script:
+            "../scripts/calculate_LCOE.py"

@@ -1,5 +1,8 @@
 pathvars:
     shapes="<resources>/user/{shapes}/shapes.parquet",
+    district_heating="<resources>/user/{shapes}/areas.parquet",
+    geothermal_heat_networks="<results>/{shapes}/geothermal_heat_networks.parquet",
+    geothermal_heat_allocations="<results>/{shapes}/geothermal_heat_allocations.parquet",
     geothermal_regions="<results>/{shapes}/geothermal_regions.parquet",
     overall_potential_summary="<results>/{shapes}/overall_potential_summary.tsv",
 
@@ -17,9 +20,14 @@ configfile: workflow.source_path("../config/config.yaml")
 include: "rules/_utils.smk"
 include: "rules/automatic.smk"
 include: "rules/lcoe.smk"
+include: "rules/heat.smk"
 include: "rules/spatial_aggregation.smk"
-include: "rules/figures.smk"
-include: "rules/overall_potential.smk"
+
+
+if POWER_ENABLED:
+
+    include: "rules/figures.smk"
+    include: "rules/overall_potential.smk"
 
 
 # Add additional files to be delivered alongside the workflow here.
@@ -28,6 +36,7 @@ include: "rules/overall_potential.smk"
 workflow.source_path("scripts/model_config.py")
 workflow.source_path("scripts/_schemas.py")
 workflow.source_path("scripts/_plots.py")
+workflow.source_path("scripts/_heat.py")
 
 
 rule all:

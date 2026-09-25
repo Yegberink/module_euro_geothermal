@@ -11,7 +11,7 @@ from snakemake.utils import min_version, validate
 min_version("9.19")
 
 sys.path.insert(0, os.path.dirname(workflow.source_path("../scripts/model_config.py")))
-from model_config import model_parameters, validate_module_config
+from model_config import heat_model_parameters, model_parameters, validate_module_config
 
 
 def _deep_update(base, overrides):
@@ -54,7 +54,9 @@ validate_module_config(config)
 # Shared rule constants.
 CURL_ARGS = "--fail --silent --show-error --location --retry 5 --retry-delay 5 --retry-all-errors --continue-at -"
 AUTOMATIC_DATASETS = internal["resources"]["automatic"]["datasets"]
-CYCLES = config["which_cycles"]
+POWER_ENABLED = config["carrier_out"] != "heat"
+HEAT_ENABLED = config["carrier_out"] != "power"
+CYCLES = config.get("which_cycles", []) if POWER_ENABLED else []
 DEPTH_CATEGORY_LABELS = _get_depth_category_labels()
 MAKE_2D_FIGURE_OUTPUTS = (
     {

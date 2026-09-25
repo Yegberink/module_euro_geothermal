@@ -60,7 +60,8 @@ def test_example_config_passes_schema_and_relationship_validation(
 @pytest.mark.parametrize(
     ("change", "message"),
     [
-        ({"carrier_out": "heat"}, "Only carrier_out='power'"),
+        ({"carrier_out": "invalid"}, "Unsupported carrier_out"),
+        ({"carrier_out": "heat", "heat_reinjection_temperature": 90}, "below production"),
         ({"drilling_cost_curve": "missing"}, "has no matching definition"),
         ({"depth_categories": [[0, 5000], [4000, 6000]]}, "non-overlapping"),
         ({"fixed_bins": ["50-100", "0-25"]}, "non-overlapping"),
@@ -81,6 +82,18 @@ def test_gregor_is_declared_as_a_module_dependency() -> None:
     with (MODULE_ROOT / "pixi.toml").open("rb") as manifest_file:
         manifest = tomllib.load(manifest_file)
     assert "gregor" in manifest["feature"]["module"]["dependencies"]
+
+
+def test_carrier_parameter_tracking_is_independent(example_config: dict) -> None:
+    """Allocation controls do not invalidate costs, nor heat mode power cubes."""
+    heat = MODEL_CONFIG.heat_model_parameters(example_config)
+    power = MODEL_CONFIG.model_parameters(example_config)
+    example_config.update(carrier_out="heat_and_power", heat_network_buffer_km=20)
+    assert MODEL_CONFIG.heat_model_parameters(example_config) == heat
+    assert MODEL_CONFIG.model_parameters(example_config) == power
+    example_config["heat_production_temperature"] = 90
+    assert MODEL_CONFIG.heat_model_parameters(example_config) != heat
+    assert MODEL_CONFIG.model_parameters(example_config) == power
 
 
 @pytest.mark.parametrize(

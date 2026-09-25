@@ -44,6 +44,16 @@ class ShapeSchema:
 class GeothermalRegionsSchema:
     schema = pa.DataFrameSchema(
         {
+            "category": pa.Column(
+                str, checks=pa.Check(lambda s: s.isin(["power", "heat", "contested"]))
+            ),
+            "carrier": pa.Column(
+                str, checks=pa.Check(lambda s: s.isin(["power", "heat"]))
+            ),
+            "potential_unit": pa.Column(
+                str, checks=pa.Check(lambda s: s.isin(["MW_e", "MWh_th/year"]))
+            ),
+            "mean_lcoh": pa.Column(float, nullable=True, coerce=True),
             "technology": pa.Column(str, coerce=True),
             "depth_category": pa.Column(str, coerce=True),
             "region_id": pa.Column(str, coerce=True),
@@ -81,6 +91,10 @@ class GeothermalRegionManifestSchema:
 
 
 GEOTHERMAL_REGION_COLUMNS = [
+    "category",
+    "carrier",
+    "potential_unit",
+    "mean_lcoh",
     "technology",
     "depth_category",
     "region_id",
@@ -98,6 +112,10 @@ MANIFEST_COLUMNS = ["kind", "depth_category", "bin_id", "price_bin", "path"]
 def empty_geothermal_regions(crs=None) -> gpd.GeoDataFrame:
     df = pd.DataFrame(
         {
+            "category": pd.Series(dtype="object"),
+            "carrier": pd.Series(dtype="object"),
+            "potential_unit": pd.Series(dtype="object"),
+            "mean_lcoh": pd.Series(dtype="float64"),
             "technology": pd.Series(dtype="object"),
             "depth_category": pd.Series(dtype="object"),
             "region_id": pd.Series(dtype="object"),

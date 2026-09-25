@@ -1,7 +1,7 @@
 # Modelblocks - Geothermal module
 
-This module calculates geothermal electricity production and levelized cost of
-electricity (LCOE) from a European subsurface-temperature model based on
+This module calculates geothermal electricity and district-heating potential,
+with levelized costs of electricity (LCOE) and heat (LCOH), from a European subsurface-temperature model based on
 Limberger et al. (2014).
 
 ![Geothermal LCOE and least-cost conversion technology across Europe](./figures/lcoe_overview.png)
@@ -41,6 +41,13 @@ The module works through the following stages:
 5. **Summarize potential.** Report study-wide potential by technology and for
    the portfolio selecting the lowest-LCOE technology in each cell.
 
+With `carrier_out: heat`, the workflow instead interpolates the shallowest depth
+reaching the configured district-heating temperature, calculates heat costs once
+per cell, and allocates heat jointly to nearby networks. `heat_and_power` runs
+both branches and reports competing resource uses. See the
+[heat configuration and allocation guide](./config/README.md#district-heating)
+for formulas, assumptions, and output units.
+
 ## Rule graph
 
 The graph below includes regional results, model diagnostics, and the
@@ -63,10 +70,12 @@ values, and valid Polygon or MultiPolygon geometry. An optional `shape_class`
 column may be included; rows whose value is `maritime` are excluded from
 regional aggregation.
 
-The regional `geothermal_regions.parquet` output contains one row for each
-region, technology, depth category, and price bin. Its `potential` values are
-net electric capacity in MW and `mean_lcoe` is the potential-weighted mean LCOE
-in €2020/MWh. See the [configuration guide](./config/README.md#inputs-and-outputs)
+The regional `geothermal_regions.parquet` output distinguishes `category` and
+`carrier` as well as region, technology, depth category, and price bin.
+Power `potential` is net electric capacity in MW; heat `potential` is allocated
+annual heat in MWh/year. Always interpret it together with `potential_unit`.
+`mean_lcoe` and `mean_lcoh` are weighted costs in €2020/MWh of the respective carrier.
+See the [configuration guide](./config/README.md#inputs-and-outputs)
 for the complete column contract and the study-wide TSV outputs.
 
 ## Using this module
@@ -89,6 +98,13 @@ use rule * from module_geothermal as module_geothermal_*
 
 Request `<results>/{shapes}/geothermal_regions.parquet` for regional results
 and `<results>/{shapes}/overall_potential_summary.tsv` for study-wide totals.
+For heat modes, provide `<resources>/user/{shapes}/areas.parquet` (or override
+the `district_heating` path variable), set `carrier_out: heat` or
+`heat_and_power`, and request the same regional target. Network results and
+the allocation ledger are also produced and have public path variables.
+The study-wide TSV and electrical diagnostic figures describe unconstrained
+electricity resources; they are available in modes evaluating power. The
+regional power overview shows capacity remaining after heat reservation.
 Each invocation uses one parameter set from config for all selected cycles.
 To run different parameter sets, import the module separately with distinct
 resource and result directories.

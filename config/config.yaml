@@ -26,7 +26,7 @@ which_cycles:
   - flash
   - kalina
 
-carrier_out: power            # geothermal electricity is the only supported carrier
+carrier_out: heat_and_power            # power | heat | heat_and_power
 
 
 # -----------------------------------------------------------------------------
@@ -125,3 +125,12 @@ fixed_bins:
 
 # Used only when method_region_aggregation: cutoff (€2020/MWh)
 lcoe_cutoff: 75.0
+
+# -----------------------------------------------------------------------------
+# District heating (heat and heat_and_power modes)
+# -----------------------------------------------------------------------------
+heat_production_temperature: 80.0  # °C; interpolate the shallowest reachable depth
+heat_reinjection_temperature: 40.0 # °C; must be below production temperature
+thermal_plant_cost_per_kw: 234.0   # €2020/kWth installed thermal capacity
+heat_capacity_factor: 0.88        # annual heat availability; no electric parasitic factor
+heat_network_buffer_km: 10.0      # cell centres within this distance of a network polygon

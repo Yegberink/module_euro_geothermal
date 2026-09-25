@@ -5,14 +5,31 @@ type: object
 additionalProperties: false
 
 properties:
+  heat_production_temperature:
+    type: number
+    exclusiveMinimum: 0
+  heat_reinjection_temperature:
+    type: number
+    minimum: 0
+  thermal_plant_cost_per_kw:
+    type: number
+    minimum: 0
+  heat_capacity_factor:
+    type: number
+    exclusiveMinimum: 0
+    maximum: 1
+  heat_network_buffer_km:
+    type: number
+    minimum: 0
+
   include_egs:
     type: boolean
     description: "Whether to include Enhanced Geothermal Systems (EGS)."
 
   carrier_out:
     type: string
-    const: "power"
-    description: "Output carrier. Only geothermal electricity is currently supported."
+    enum: ["power", "heat", "heat_and_power"]
+    description: "Resource alternatives to evaluate; combined mode is not cogeneration."
 
   max_depth:
     type: number
@@ -183,86 +200,90 @@ required:
   - include_egs
   - carrier_out
   - max_depth
-  - which_cycles
   - EGS_cutoff
   - SED_NAN_POLICY
   - drilling_cost_curve
   - stimulation_cost_per_doublet
   - pump_cost
   - lifetime
-  - capacity_factor
   - fixed_OM_rate
-  - parasitic_fraction
-  - orc_money_per_kw
-  - flash_money_per_kw
-  - kalina_money_per_kw
   - well_spacing
   - flowrate_egs
   - flowrate_conventional
-  - min_dt
-  - method_2d_aggregation
-  - method_region_aggregation
 
 allOf:
-  - properties:
-      which_cycles:
-        minItems: 1
-    required: ["temp_turbine_out"]
-
   - if:
       properties:
-        which_cycles:
-          contains:
-            const: "orc"
+        carrier_out:
+          enum: [power, heat_and_power]
     then:
-      properties:
-        temp_turbine_out:
-          required: ["ORC"]
+      required: [which_cycles, capacity_factor, parasitic_fraction, orc_money_per_kw, flash_money_per_kw, kalina_money_per_kw, min_dt, method_2d_aggregation, method_region_aggregation]
+      allOf:
+        - properties:
+            which_cycles:
+              minItems: 1
+          required: ["temp_turbine_out"]
 
+        - if:
+            properties:
+              which_cycles:
+                contains:
+                  const: "orc"
+          then:
+            properties:
+              temp_turbine_out:
+                required: ["ORC"]
+
+        - if:
+            properties:
+              which_cycles:
+                contains:
+                  const: "flash"
+          then:
+            properties:
+              temp_turbine_out:
+                required: ["Flash"]
+
+        - if:
+            properties:
+              which_cycles:
+                contains:
+                  const: "kalina"
+          then:
+            properties:
+              temp_turbine_out:
+                required: ["Kalina"]
+
+        - if:
+            properties:
+              method_2d_aggregation:
+                const: "depth_categories"
+          then:
+            required: ["depth_categories"]
+
+        - if:
+            properties:
+              method_region_aggregation:
+                const: "quantiles"
+          then:
+            required: ["n_quantiles"]
+
+        - if:
+            properties:
+              method_region_aggregation:
+                const: "fixed_bins"
+          then:
+            required: ["fixed_bins"]
+
+        - if:
+            properties:
+              method_region_aggregation:
+                const: "cutoff"
+          then:
+            required: ["lcoe_cutoff"]
   - if:
       properties:
-        which_cycles:
-          contains:
-            const: "flash"
+        carrier_out:
+          enum: [heat, heat_and_power]
     then:
-      properties:
-        temp_turbine_out:
-          required: ["Flash"]
-
-  - if:
-      properties:
-        which_cycles:
-          contains:
-            const: "kalina"
-    then:
-      properties:
-        temp_turbine_out:
-          required: ["Kalina"]
-
-  - if:
-      properties:
-        method_2d_aggregation:
-          const: "depth_categories"
-    then:
-      required: ["depth_categories"]
-
-  - if:
-      properties:
-        method_region_aggregation:
-          const: "quantiles"
-    then:
-      required: ["n_quantiles"]
-
-  - if:
-      properties:
-        method_region_aggregation:
-          const: "fixed_bins"
-    then:
-      required: ["fixed_bins"]
-
-  - if:
-      properties:
-        method_region_aggregation:
-          const: "cutoff"
-    then:
-      required: ["lcoe_cutoff"]
+      required: [heat_production_temperature, heat_reinjection_temperature, thermal_plant_cost_per_kw, heat_capacity_factor, heat_network_buffer_km]
