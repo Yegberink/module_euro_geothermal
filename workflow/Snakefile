@@ -18,9 +18,6 @@ wildcard_constraints:
 configfile: workflow.source_path("../config/config.yaml")
 
 
-report: "report/workflow.rst"
-
-
 # Add all your includes here.
 include: "rules/_utils.smk"
 include: "rules/automatic.smk"

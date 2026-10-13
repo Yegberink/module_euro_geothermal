@@ -124,7 +124,7 @@ pixi run snakemake --use-conda --cores 4 \
 
 The regional-results target also builds all applicable figures and the study-wide
 potential summary. The second command embeds those outputs,
-with captions and workflow metadata, into `results/euro_all/report.html`.
+with workflow metadata, into `results/euro_all/report.html`.
 Snakemake's `--report` renders existing results; it does not run missing jobs.
 Append `--dry-run` to the first command to preview the required work.
 

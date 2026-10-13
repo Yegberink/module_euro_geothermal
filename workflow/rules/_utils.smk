@@ -70,14 +70,12 @@ MAKE_2D_FIGURE_OUTPUTS = (
     {
         "overview_fig": report_output(
             "<results>/{shapes}/lcoe_overview.png",
-            caption=workflow.source_path("../report/lcoe.rst"),
             category="Electricity potential",
             subcategory="{shapes}",
             labels={"Figure": "LCOE and conversion technology"},
         ),
         "technology_cumulative_four_panel_fig": report_output(
             "<resources>/automatic/{shapes}/figures/lcoe_potential_cumulative_four_panel.png",
-            caption=workflow.source_path("../report/cumulative.rst"),
             category="Electricity potential",
             subcategory="{shapes}",
             labels={"Figure": "Cumulative potential"},
