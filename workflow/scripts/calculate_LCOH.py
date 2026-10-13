@@ -9,6 +9,7 @@ import json
 import sys
 from pathlib import Path
 
+import _schemas
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -129,8 +130,6 @@ def shallowest_depth(temperature, depths, target, max_depth):
     """
     depths = np.asarray(depths, dtype=float)
     temperature = np.asarray(temperature, dtype=float)
-    if not np.isfinite(depths).all() or np.any(np.diff(depths) <= 0):
-        raise ValueError("Temperature depths must be finite and strictly increasing.")
     result = np.full(temperature.shape[1:], np.nan)
     for index, depth in enumerate(depths):
         layer = temperature[index]
@@ -157,7 +156,7 @@ def shallowest_depth(temperature, depths, target, max_depth):
     return result
 
 
-def calculate_heat(temperature, depths, sediment, model):
+def calculate_heat(temperature, depths, sediment, model, eligibility_fraction=1.0):
     """Return depth, thermal capacity, annual heat and additive LCOH components.
 
     Like the electricity model, one source cell represents 100 km² and permits
@@ -181,7 +180,9 @@ def calculate_heat(temperature, depths, sediment, model):
 
     # `well_spacing` and `area_available` are both expressed in km / km^2 here.
     doublet_occupation = 2 * model["well_spacing"] ** 2  # km^2 per doublet
-    area_available = 100
+    fraction = np.asarray(eligibility_fraction, dtype=float)
+    valid &= fraction > 0
+    area_available = 100 * fraction
     n_pairs = area_available / doublet_occupation
     nr_wells = n_pairs * 2
     flowrate_wells = np.where(
@@ -215,7 +216,9 @@ def calculate_heat(temperature, depths, sediment, model):
     annuity_factor = (discount_rate * (1 + discount_rate) ** TT) / (
         (1 + discount_rate) ** TT - 1
     )
-    meur_to_eur_per_mwh = 1e6 / annual_heat
+    meur_to_eur_per_mwh = np.divide(
+        1e6, annual_heat, out=np.full_like(annual_heat, np.nan), where=annual_heat > 0
+    )
     components = {
         "lcoh_drilling": well_cost_no_stim * annuity_factor * meur_to_eur_per_mwh,
         "lcoh_stimulation": stimulation_investment
@@ -243,6 +246,7 @@ def main():
     """Read the prepared source window and write the three declared heat maps."""
     window = json.loads(Path(snakemake.input.extent).read_text())
     with xr.open_dataset(snakemake.input.nc) as source:
+        _schemas.TemperatureDepthSchema.validate(source.depth_m.values)
         crs = source.attrs.get("crs", "EPSG:3857")
         temperature = (
             source.temperature.isel(x=slice(*window["x"]), y=slice(*window["y"]))
@@ -258,7 +262,7 @@ def main():
         sediment = source.sediment_thickness_m.sel(
             x=temperature.x, y=temperature.y
         ).values
-    model = dict(snakemake.params.model)
+    model = dict(snakemake.params.items())
     definitions = {
         name: dict(spec)
         for name, spec in model["drilling_cost_curve_definitions"].items()
@@ -270,8 +274,13 @@ def main():
                 f"drilling_costs_{year}"
             ]
     model["drilling_cost_curve_definitions"] = definitions
+    from _eligibility import load_fraction
+
+    fraction = load_fraction(
+        snakemake.input.get("eligibility", []), temperature.x, temperature.y, crs
+    )
     values = calculate_heat(
-        temperature.values, temperature.depth_m.values, sediment, model
+        temperature.values, temperature.depth_m.values, sediment, model, fraction.values
     )
     from affine import Affine
 

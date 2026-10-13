@@ -1,4 +1,4 @@
-# Module settings that users cannot modify.
+# Internal resource metadata; model parameters belong in config/config.yaml.
 resources:
   automatic:
     datasets:
@@ -17,50 +17,3 @@ resources:
       doi: "10.5281/zenodo.15320474"
       version: "Version 1"
       license: CC-BY-4.0
-
-
-defaults:
-  method_region_aggregation: cutoff
-  n_quantiles: 4
-  fixed_bins:
-    - "0-50"
-    - "50-100"
-    - "100-150"
-    - "150-200"
-    - "200-250"
-  lcoe_cutoff: 75.0
-
-  method_2d_aggregation: LCOE_minimization
-  depth_categories:
-    - [0, 3000]
-    - [3000, 6000]
-    - [6000, 10000]
-
-  drilling_cost_curve_definitions:
-    thermogis:
-      curve_type: quadratic_eur2020
-      constant: 250000.0
-      linear: 700.0
-      quadratic: 0.2
-    shamoushaki_2021:
-      curve_type: log_quadratic_usd
-      a: 5.548e5
-      b: 0.2171
-      c: 8.135e5
-      currency_year: 2021
-    getem_2017:
-      curve_type: csv_fit_usd
-      csv_path: workflow/internal/baseline_drilling_2017.csv
-      currency_year: 2017
-    getem_2025:
-      curve_type: csv_fit_usd
-      csv_path: workflow/internal/baseline_drilling_2025.csv
-      currency_year: 2025
-
-  carrier_out: power
-
-  heat_production_temperature: 80.0
-  heat_reinjection_temperature: 40.0
-  thermal_plant_cost_per_kw: 234.0
-  heat_capacity_factor: 0.88
-  heat_network_buffer_km: 10.0

@@ -417,7 +417,9 @@ def main():
     # --- Parameters -------------------------------------------------------
     cycles = [str(c).strip().lower() for c in (snakemake.params.get("cycles") or [])]
     method = str(snakemake.params["method_region_aggregation"]).lower()
-    n_quantiles = int(snakemake.params.get("n_quantiles", 5))
+    n_quantiles = (
+        int(snakemake.params["n_quantiles"]) if cycles and method == "quantiles" else None
+    )
     fixed_bins = parse_fixed_bins(snakemake.params.get("fixed_bins", []))
     lcoe_cutoff = snakemake.params.get("lcoe_cutoff", None)
     if lcoe_cutoff is not None:

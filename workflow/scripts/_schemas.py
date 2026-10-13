@@ -8,6 +8,8 @@ import pandas as pd
 import pandera.pandas as pa
 import xarray as xr
 
+DEMAND_COLUMN = "heat_potential_mwh_per_year"
+
 
 def _valid_geometry(series):
     return series.notna() & ~series.is_empty & series.is_valid
@@ -39,6 +41,71 @@ class ShapeSchema:
                 "Shapes must contain only Polygon or MultiPolygon geometry."
             )
         return validated
+
+
+class HeatNetworksSchema(ShapeSchema):
+    """Network polygons with unique IDs and finite, nonnegative annual demand."""
+
+    schema = ShapeSchema.schema.rename_columns({"shape_id": "area_id"}).add_columns(
+        {
+            DEMAND_COLUMN: pa.Column(
+                float,
+                checks=pa.Check(
+                    lambda s: np.isfinite(s) & (s >= 0),
+                    error="Network heat demand must be finite and nonnegative.",
+                    ignore_na=False,
+                ),
+                nullable=True,
+                coerce=True,
+            )
+        }
+    )
+
+
+class SourceGridSchema:
+    """Coordinate contract for the regular subsurface grid."""
+
+    @staticmethod
+    def validate(source):
+        """Require at least two finite, regularly spaced centres per axis."""
+        for axis in (source.x.values, source.y.values):
+            if len(axis) < 2:
+                raise ValueError(
+                    "The source grid must contain at least two cells per axis."
+                )
+            spacing = np.diff(axis)
+            if (
+                not np.isfinite(axis).all()
+                or spacing[0] == 0
+                or not np.allclose(spacing, spacing[0])
+            ):
+                raise ValueError("Eligibility requires a regular source grid.")
+        return source
+
+
+class TemperatureDepthSchema:
+    """Depth coordinates used for temperature interpolation."""
+
+    @staticmethod
+    def validate(depths):
+        """Require finite, strictly increasing depths."""
+        if not np.isfinite(depths).all() or np.any(np.diff(depths) <= 0):
+            raise ValueError(
+                "Temperature depths must be finite and strictly increasing."
+            )
+        return depths
+
+
+class EligibilityFractionSchema:
+    """Available-area fractions on the model grid."""
+
+    @staticmethod
+    def validate(values):
+        """Require finite fractions in the closed unit interval."""
+        array = np.asarray(values)
+        if not np.isfinite(array).all() or ((array < 0) | (array > 1)).any():
+            raise ValueError("Eligibility fractions must be finite and within [0,1].")
+        return values
 
 
 class GeothermalRegionsSchema:

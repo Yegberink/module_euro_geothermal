@@ -65,7 +65,7 @@ rule aggregate_to_regions:
                 shapes="{shapes}",
                 cycle=CYCLES,
             )
-            if config["method_2d_aggregation"] == "LCOE_minimization"
+            if POWER_ENABLED and config["method_2d_aggregation"] == "LCOE_minimization"
             else expand(
                 "<resources>/automatic/{shapes}/documents/{cycle}_2d_{cat}_lcoe.tif",
                 shapes="{shapes}",
@@ -79,7 +79,7 @@ rule aggregate_to_regions:
                 shapes="{shapes}",
                 cycle=CYCLES,
             )
-            if config["method_2d_aggregation"] == "LCOE_minimization"
+            if POWER_ENABLED and config["method_2d_aggregation"] == "LCOE_minimization"
             else expand(
                 "<resources>/automatic/{shapes}/documents/{cycle}_2d_{cat}_potential.tif",
                 shapes="{shapes}",
@@ -102,8 +102,8 @@ rule aggregate_to_regions:
     params:
         carrier_out=config["carrier_out"],
         cycles=CYCLES,
-        method_region_aggregation=config["method_region_aggregation"],
-        n_quantiles=config.get("n_quantiles", 5),
+        method_region_aggregation=config.get("method_region_aggregation"),
+        n_quantiles=config.get("n_quantiles"),
         fixed_bins=config.get("fixed_bins", []),
         lcoe_cutoff=config.get("lcoe_cutoff"),
     conda:

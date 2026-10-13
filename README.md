@@ -156,3 +156,7 @@ snakemake --use-conda --cores 2
 - [3D subsurface temperature model of Europe](https://doi.org/10.5281/zenodo.22149195), Zenodo dataset, version 1, CC BY 4.0.
 - Limberger et al. (2014), [Assessing the prospective resource base for enhanced geothermal systems in Europe](https://doi.org/10.5194/gtes-2-55-2014), *Geothermal Energy Science* 2, 55–71.
 - [Global Sediment Thickness Dataset v1 (GST-1)](https://doi.org/10.5281/zenodo.15320474), Zenodo dataset, CC BY 4.0.
+
+Land-use exclusions can optionally constrain both heat and power using a supplied
+area-potential raster. The workflow resamples it once onto the subsurface grid.
+See the [eligibility configuration](config/README.md#land-eligibility).

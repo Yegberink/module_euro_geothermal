@@ -43,6 +43,7 @@ if POWER_ENABLED:
 
     rule calculate_LCOE:
         input:
+            eligibility=ELIGIBILITY_INPUT,
             nc=rules.crop_to_speed_up.output.clipped_temp_voxel,
             sed=rules.resample_gst1_sediment.output.sediment,
             eff=workflow.source_path("../internal/efficiency_curves.csv"),
@@ -60,7 +61,26 @@ if POWER_ENABLED:
             "Calculate {wildcards.cycle} geothermal potential and LCOE for {wildcards.shapes}."
         params:
             cycle=lambda wc: wc.cycle,
-            model=model_parameters(config),
+            max_depth=config["max_depth"],
+            include_egs=config["include_egs"],
+            EGS_cutoff=config["EGS_cutoff"],
+            SED_NAN_POLICY=config["SED_NAN_POLICY"],
+            drilling_cost_curve=config["drilling_cost_curve"],
+            drilling_cost_curve_definitions=config["drilling_cost_curve_definitions"],
+            stimulation_cost_per_doublet=config["stimulation_cost_per_doublet"],
+            pump_cost=config["pump_cost"],
+            lifetime=config["lifetime"],
+            capacity_factor=config["capacity_factor"],
+            fixed_OM_rate=config["fixed_OM_rate"],
+            parasitic_fraction=config["parasitic_fraction"],
+            orc_money_per_kw=config["orc_money_per_kw"],
+            flash_money_per_kw=config["flash_money_per_kw"],
+            kalina_money_per_kw=config["kalina_money_per_kw"],
+            well_spacing=config["well_spacing"],
+            flowrate_egs=config["flowrate_egs"],
+            flowrate_conventional=config["flowrate_conventional"],
+            min_dt=config["min_dt"],
+            temp_turbine_out=config["temp_turbine_out"],
         conda:
             "../envs/module.yaml"
         script:

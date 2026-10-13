@@ -26,7 +26,7 @@ which_cycles:
   - flash
   - kalina
 
-carrier_out: heat_and_power            # power | heat | heat_and_power
+carrier_out: power            # power | heat | heat_and_power
 
 
 # -----------------------------------------------------------------------------
@@ -134,3 +134,7 @@ heat_reinjection_temperature: 40.0 # °C; must be below production temperature
 thermal_plant_cost_per_kw: 234.0   # €2020/kWth installed thermal capacity
 heat_capacity_factor: 0.88        # annual heat availability; no electric parasitic factor
 heat_network_buffer_km: 10.0      # cell centres within this distance of a network polygon
+
+# Use the supplied area-potential raster for heat and power.
+eligibility:
+  enabled: true

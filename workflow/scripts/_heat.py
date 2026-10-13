@@ -7,23 +7,12 @@ import rioxarray as rxr
 from affine import Affine
 
 METRIC_CRS = "EPSG:3035"
-DEMAND_COLUMN = "heat_potential_mwh_per_year"
+DEMAND_COLUMN = _schemas.DEMAND_COLUMN
 
 
 def load_networks(path):
     """Validate networks without interpreting the existing network-cost columns."""
-    networks = gpd.read_parquet(path)
-    if "area_id" not in networks or DEMAND_COLUMN not in networks:
-        raise ValueError(f"Networks require area_id and {DEMAND_COLUMN}.")
-    if networks.area_id.isna().any():
-        raise ValueError("Network area_id values cannot be null.")
-    networks = networks.copy()
-    networks["area_id"] = networks.area_id.astype(str)
-    # Reuse the geometry contract while preserving the original network columns.
-    _schemas.ShapeSchema.validate(networks.assign(shape_id=networks.area_id))
-    demand = networks[DEMAND_COLUMN].to_numpy(dtype=float)
-    if not (np.isfinite(demand) & (demand >= 0)).all():
-        raise ValueError("Network heat demand must be finite and nonnegative.")
+    networks = _schemas.HeatNetworksSchema.validate(gpd.read_parquet(path))
     return networks.sort_values("area_id", kind="stable").reset_index(drop=True)
 
 

@@ -120,7 +120,7 @@ https://conda.anaconda.org/conda-forge/win-64/krb5-1.22.2-h719d79b_2.conda#93f5a
 https://conda.anaconda.org/conda-forge/win-64/libcurl-8.21.0-hdb0ef4a_5.conda#50861643cbe90dc7267feb7854b8efdf
 https://conda.anaconda.org/conda-forge/win-64/proj-9.8.1-hd30e2cd_1.conda#434616a1662714fe1a75a51ace8c72d6
 https://conda.anaconda.org/conda-forge/noarch/certifi-2026.7.22-pyhd8ed1ab_0.conda#37e13edbe3b48f1095a9d085ef9cd83b
-https://conda.anaconda.org/conda-forge/win-64/pyproj-3.7.2-py314h9d82244_5.conda#b7503bde09c3bce5c09d81485855f5a8
+https://conda.anaconda.org/conda-forge/win-64/pyproj-3.8.0-py314h9d82244_1.conda#58a16b67fe467a91766546b0c6e2f5e3
 https://conda.anaconda.org/conda-forge/win-64/xerces-c-3.3.0-hac47afa_1.conda#d1097e01041cfed41c81f1e3d1f52572
 https://conda.anaconda.org/conda-forge/win-64/muparser-2.3.5-he0c23c2_0.conda#013aabb169d59009bdf7d70319360e9b
 https://conda.anaconda.org/conda-forge/win-64/lz4-c-1.10.0-h6a83c73_2.conda#3e0691cb20fcaf922df78ccea08b771a
@@ -259,4 +259,5 @@ https://conda.anaconda.org/conda-forge/noarch/distributed-2026.8.0-pyhc364b38_0.
 https://conda.anaconda.org/conda-forge/noarch/bokeh-3.10.0-pyhd8ed1ab_0.conda#67d0ed593951a4933024453b76ef1355
 https://conda.anaconda.org/conda-forge/noarch/dask-2026.8.0-pyhc364b38_0.conda#e79afa78ebd31bb1e76de5fe117edb29
 https://conda.anaconda.org/conda-forge/noarch/gregor-0.1.0-pyhcf101f3_0.conda#36a2d7837350f7e8da83bcaad552d0b5
+https://conda.anaconda.org/conda-forge/win-64/gdal-3.12.4-np2py314h8fac773_5.conda#d386bf02b3a2a9dcddd0c943cb6f9231
 https://conda.anaconda.org/conda-forge/win-64/curl-8.21.0-hdb0ef4a_5.conda#b0dcd6182bfd56a219563a153d550d20

@@ -20,6 +20,7 @@ if HEAT_ENABLED:
 
     rule calculate_LCOH:
         input:
+            eligibility=ELIGIBILITY_INPUT,
             nc="<resources>/automatic/temperature_voxel.nc",
             extent=rules.prepare_heat_extent.output.extent,
             sed=rules.resample_gst1_sediment.output.sediment,
@@ -34,7 +35,23 @@ if HEAT_ENABLED:
             potential="<resources>/automatic/{shapes}/documents/heat_potential.tif",
             depth="<resources>/automatic/{shapes}/documents/heat_depth.tif",
         params:
-            model=heat_model_parameters(config),
+            max_depth=config["max_depth"],
+            include_egs=config["include_egs"],
+            EGS_cutoff=config["EGS_cutoff"],
+            SED_NAN_POLICY=config["SED_NAN_POLICY"],
+            drilling_cost_curve=config["drilling_cost_curve"],
+            drilling_cost_curve_definitions=config["drilling_cost_curve_definitions"],
+            stimulation_cost_per_doublet=config["stimulation_cost_per_doublet"],
+            pump_cost=config["pump_cost"],
+            lifetime=config["lifetime"],
+            fixed_OM_rate=config["fixed_OM_rate"],
+            well_spacing=config["well_spacing"],
+            flowrate_egs=config["flowrate_egs"],
+            flowrate_conventional=config["flowrate_conventional"],
+            heat_production_temperature=config["heat_production_temperature"],
+            heat_reinjection_temperature=config["heat_reinjection_temperature"],
+            thermal_plant_cost_per_kw=config["thermal_plant_cost_per_kw"],
+            heat_capacity_factor=config["heat_capacity_factor"],
         log:
             "<logs>/{shapes}/calculate_LCOH.log",
         message:

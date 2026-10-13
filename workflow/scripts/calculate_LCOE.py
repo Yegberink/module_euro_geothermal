@@ -6,22 +6,16 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import xarray as xr
+from _eligibility import load_fraction
 from scipy.optimize import curve_fit
 
 if "snakemake" in dir():
     sys.stdout = sys.stderr = open(snakemake.log[0], "w", buffering=1)
 
 
-def cfg(key, default=None):
-    """Read a validated model setting tracked in the rule parameters."""
-    if default is not None:
-        return snakemake.params.model.get(key, default)
-    return snakemake.params.model[key]
-
-
 def drilling_cost_curve_definitions():
     """Resolve configured drilling-curve files to Snakemake input paths."""
-    definitions = dict(cfg("drilling_cost_curve_definitions"))
+    definitions = dict(snakemake.params.drilling_cost_curve_definitions)
     if "getem_2017" in definitions:
         definitions["getem_2017"] = dict(definitions["getem_2017"])
         definitions["getem_2017"]["csv_path"] = snakemake.input.drilling_costs_2017
@@ -41,15 +35,14 @@ SEDIMENT_NC = snakemake.input.sed
 CSV_PATH = snakemake.input.eff
 
 # EGS cutoff rule:
-Z_THR_M = float(cfg("EGS_cutoff"))
+Z_THR_M = float(snakemake.params.EGS_cutoff)
 
 # How to handle NaNs in sed thickness after resampling:
-SED_NAN_POLICY = cfg("SED_NAN_POLICY")
+SED_NAN_POLICY = snakemake.params.SED_NAN_POLICY
 
 # other configs
-carrier_out = cfg("carrier_out")
-include_egs = bool(cfg("include_egs"))
-DRILLING_COST_CURVE = str(cfg("drilling_cost_curve", "thermogis"))
+include_egs = bool(snakemake.params.include_egs)
+DRILLING_COST_CURVE = str(snakemake.params.drilling_cost_curve)
 DRILLING_COST_CURVE_DEFINITIONS = drilling_cost_curve_definitions()
 
 CPI_US = {2017: 245.120, 2020: 258.811, 2021: 270.970}
@@ -197,6 +190,7 @@ def calculate_LCOE_components_vec(
     depth,
     temp_turb_out,
     sed_thickness,
+    area_available,
     lifetime,
     cycle_type,
     stimulation_cost_per_doublet,
@@ -207,7 +201,6 @@ def calculate_LCOE_components_vec(
     well_spacing,
     flowrate_egs,
     flowrate_conventional,
-    area_available,
     orc_money_per_kw,
     flash_money_per_kw,
     kalina_money_per_kw,
@@ -310,12 +303,12 @@ def calculate_capacity_vec(
     depth,
     temp_turb_out,
     sed_thickness,
+    area_available,
     min_dt,
     parasitic_fraction,
     well_spacing,
     flowrate_egs,
     flowrate_conventional,
-    area_available,
 ):
     """Calculate net installed capacity for one voxel."""
     Cp_water = 4250.0
@@ -377,10 +370,14 @@ def main():
     crs_str = str(ds.attrs.get("crs", "")).strip() or "EPSG:3857"
 
     T = ds[VAR]  # (depth_m, y, x)
+    fraction = load_fraction(
+        getattr(snakemake.input, "eligibility", []), T.x, T.y, crs_str
+    )
+    area = 100 * fraction
 
-    max_depth = float(cfg("max_depth", np.inf))
-    include_egs = bool(cfg("include_egs", True))
-    egs_cutoff = float(cfg("EGS_cutoff", np.inf))
+    max_depth = float(snakemake.params.max_depth)
+    include_egs = bool(snakemake.params.include_egs)
+    egs_cutoff = float(snakemake.params.EGS_cutoff)
 
     # Determine effective depth limit
     effective_max = max_depth
@@ -424,7 +421,7 @@ def main():
         output_dtypes=[np.float32],
     )
 
-    t_out = float(cfg("temp_turbine_out")[cycle_key])
+    t_out = float(snakemake.params.temp_turbine_out[cycle_key])
 
     # Total LCOE and its exact additive cost-component contributions.
     lcoe_outputs = xr.apply_ufunc(
@@ -434,7 +431,8 @@ def main():
         depth3d,
         t_out,
         sed3d,
-        input_core_dims=[[], [], [], [], []],
+        area,
+        input_core_dims=[[], [], [], [], [], []],
         output_core_dims=[[] for _ in range(1 + len(LCOE_COMPONENT_NAMES))],
         vectorize=True,
         dask=use_dask,
@@ -442,20 +440,19 @@ def main():
         keep_attrs=True,
         kwargs=dict(
             cycle_type=cycle,
-            stimulation_cost_per_doublet=cfg("stimulation_cost_per_doublet"),
-            pump_cost=cfg("pump_cost"),
-            fixed_OM_rate=cfg("fixed_OM_rate"),
-            parasitic_fraction=cfg("parasitic_fraction"),
-            capacity_factor=cfg("capacity_factor"),
-            orc_money_per_kw=cfg("orc_money_per_kw"),
-            flash_money_per_kw=cfg("flash_money_per_kw"),
-            kalina_money_per_kw=cfg("kalina_money_per_kw"),
-            lifetime=cfg("lifetime"),
-            min_dt=cfg("min_dt"),
-            well_spacing=cfg("well_spacing"),
-            flowrate_egs=cfg("flowrate_egs"),
-            flowrate_conventional=cfg("flowrate_conventional"),
-            area_available=100,
+            stimulation_cost_per_doublet=snakemake.params.stimulation_cost_per_doublet,
+            pump_cost=snakemake.params.pump_cost,
+            fixed_OM_rate=snakemake.params.fixed_OM_rate,
+            parasitic_fraction=snakemake.params.parasitic_fraction,
+            capacity_factor=snakemake.params.capacity_factor,
+            orc_money_per_kw=snakemake.params.orc_money_per_kw,
+            flash_money_per_kw=snakemake.params.flash_money_per_kw,
+            kalina_money_per_kw=snakemake.params.kalina_money_per_kw,
+            lifetime=snakemake.params.lifetime,
+            min_dt=snakemake.params.min_dt,
+            well_spacing=snakemake.params.well_spacing,
+            flowrate_egs=snakemake.params.flowrate_egs,
+            flowrate_conventional=snakemake.params.flowrate_conventional,
         ),
     )
     lcoe, *component_arrays = [
@@ -475,18 +472,18 @@ def main():
             depth3d,
             t_out,
             sed3d,
-            input_core_dims=[[], [], [], [], []],
+            area,
+            input_core_dims=[[], [], [], [], [], []],
             vectorize=True,
             dask=use_dask,
             output_dtypes=[np.float32],
             keep_attrs=True,
             kwargs=dict(
-                min_dt=cfg("min_dt"),
-                parasitic_fraction=cfg("parasitic_fraction"),
-                well_spacing=cfg("well_spacing"),
-                flowrate_egs=cfg("flowrate_egs"),
-                flowrate_conventional=cfg("flowrate_conventional"),
-                area_available=100,
+                min_dt=snakemake.params.min_dt,
+                parasitic_fraction=snakemake.params.parasitic_fraction,
+                well_spacing=snakemake.params.well_spacing,
+                flowrate_egs=snakemake.params.flowrate_egs,
+                flowrate_conventional=snakemake.params.flowrate_conventional,
             ),
         )
         .transpose("depth_m", "y", "x")
@@ -508,7 +505,7 @@ def main():
         attrs={
             "crs": crs_str,
             "tech": str(cycle_key),
-            "carrier_out": str(carrier_out),
+            "carrier_out": "power",
             "include_egs": int(include_egs),
             "SED_NAN_POLICY": str(SED_NAN_POLICY),
             "EGS_cutoff_rule": "cutoff(x,y)=min(EGS_cutoff, sed_thickness_m(x,y)) with NaN policy applied",

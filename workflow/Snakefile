@@ -1,4 +1,5 @@
 pathvars:
+    area_potential="<resources>/user/{shapes}/area_potential_geothermal.tif",
     shapes="<resources>/user/{shapes}/shapes.parquet",
     district_heating="<resources>/user/{shapes}/areas.parquet",
     geothermal_heat_networks="<results>/{shapes}/geothermal_heat_networks.parquet",
@@ -21,6 +22,7 @@ include: "rules/_utils.smk"
 include: "rules/automatic.smk"
 include: "rules/lcoe.smk"
 include: "rules/heat.smk"
+include: "rules/eligibility.smk"
 include: "rules/spatial_aggregation.smk"
 
 
@@ -33,10 +35,10 @@ if POWER_ENABLED:
 # Add additional files to be delivered alongside the workflow here.
 # This is needed e.g. for python code files that are never
 # explicitly used as a script or input in a snakemake rule.
-workflow.source_path("scripts/model_config.py")
 workflow.source_path("scripts/_schemas.py")
 workflow.source_path("scripts/_plots.py")
 workflow.source_path("scripts/_heat.py")
+workflow.source_path("scripts/_eligibility.py")
 
 
 rule all:

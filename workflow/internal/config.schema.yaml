@@ -5,6 +5,8 @@ type: object
 additionalProperties: false
 
 properties:
+  eligibility:
+    $ref: "#/$defs/eligibility"
   heat_production_temperature:
     type: number
     exclusiveMinimum: 0
@@ -175,8 +177,10 @@ properties:
       prefixItems:
         - type: number
           minimum: 0
+          maximum: 10000
         - type: number
           minimum: 0
+          maximum: 10000
 
   n_quantiles:
     type: integer
@@ -203,6 +207,7 @@ required:
   - EGS_cutoff
   - SED_NAN_POLICY
   - drilling_cost_curve
+  - drilling_cost_curve_definitions
   - stimulation_cost_per_doublet
   - pump_cost
   - lifetime
@@ -287,3 +292,12 @@ allOf:
           enum: [heat, heat_and_power]
     then:
       required: [heat_production_temperature, heat_reinjection_temperature, thermal_plant_cost_per_kw, heat_capacity_factor, heat_network_buffer_km]
+
+$defs:
+  eligibility:
+    type: object
+    additionalProperties: false
+    required: [enabled]
+    properties:
+      enabled:
+        type: boolean

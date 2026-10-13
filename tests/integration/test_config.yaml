@@ -1,3 +1,4 @@
+# Minimal power configuration: only the selected curve and aggregation settings.
 module_geothermal:
   which_cycles:
     - orc
@@ -8,6 +9,12 @@ module_geothermal:
   EGS_cutoff: 3000.0
   SED_NAN_POLICY: always_egs
   drilling_cost_curve: thermogis
+  drilling_cost_curve_definitions:
+    thermogis:
+      curve_type: quadratic_eur2020
+      constant: 250000.0
+      linear: 700.0
+      quadratic: 0.2
   stimulation_cost_per_doublet: 3.0
 
   orc_money_per_kw: 1978.0

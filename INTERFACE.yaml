@@ -11,6 +11,9 @@ pathvars:
       default: "<results>"
       description: Location of module result files.
   user_resources:
+    area_potential:
+      default: "<resources>/user/{shapes}/area_potential_geothermal.tif"
+      description: Area-potential module output in available square metres per pixel on a square WGS84 grid. Required when eligibility is enabled; resampled once for heat and power.
     shapes:
       default: "<resources>/user/{shapes}/shapes.parquet"
       description: GeoParquet polygons used to crop and aggregate geothermal potential.

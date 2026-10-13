@@ -96,15 +96,7 @@ def solve_allocation(edges, demand, capacity, cost):
     )
     if not len(edges):
         return np.zeros(0)
-    if not (np.isfinite(demand) & (demand >= 0)).all():
-        raise ValueError("Demand must be finite and nonnegative.")
     used_cells, cell_indices = np.unique(edges[:, 1], return_inverse=True)
-    if not (
-        np.isfinite(capacity[used_cells])
-        & (capacity[used_cells] > 0)
-        & np.isfinite(cost[used_cells])
-    ).all():
-        raise ValueError("Candidate cells require finite costs and positive capacity.")
     left, right = edges[:, 0], len(demand) + cell_indices
     graph = coo_matrix(
         (np.ones(2 * len(edges)), (np.r_[left, right], np.r_[right, left])),

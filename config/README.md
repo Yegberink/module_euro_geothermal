@@ -19,14 +19,16 @@ module_geothermal:
 ## Workflow controls
 
 Each run uses the configured model parameters for every selected conversion
-cycle and shape set. Stable defaults fill omitted optional settings; supplied
-values take precedence. Model settings are tracked by Snakemake so changes
+cycle and shape set. Supply all settings required by the selected modes; the
+schema rejects missing required values. Unused settings can be omitted. See
+[`tests/integration/test_config.yaml`](../tests/integration/test_config.yaml)
+for a minimal power configuration. Model settings are tracked by Snakemake so changes
 trigger recalculation.
 
 ## Conversion technologies
 
 `which_cycles` selects one or more of `orc`, `flash`, and `kalina`.
-`carrier_out` accepts `power` (default), `heat`, and `heat_and_power`.
+`carrier_out` must be supplied as `power`, `heat`, or `heat_and_power`.
 Heat-only targets do not calculate electricity or require cycle parameters.
 A turbine outlet temperature must be supplied for every
 selected electricity cycle:
@@ -326,3 +328,34 @@ For comparison, constructing full polygon buffers took 96.6 s and increased
 peak process RSS to 3,253.8 MiB in the preliminary implementation. The final
 indexed `dwithin` queries also include exact-distance candidates that polygonal
 approximations of circular buffers could miss.
+
+## Land eligibility
+
+Set `eligibility.enabled: true` (enabled in the example configuration) and supply
+`<resources>/user/{shapes}/area_potential_geothermal.tif`, or override the
+`area_potential` path variable. For `euro_all`, the default input is
+`resources/user/euro_all/area_potential_geothermal.tif`.
+Omitting eligibility or setting `eligibility.enabled: false` uses the full model
+cell area and requires no area-potential input.
+
+The input is the area-potential module output: one band of **available square
+metres per pixel**, on a square, north-up WGS84 (EPSG:4326) grid. Exclusions and
+buffers must already be applied by that module. This workflow no longer downloads
+exclusion datasets or generates an eligibility grid from individual criteria.
+
+`resample_eligibility` divides available area by each source pixel's WGS84
+ellipsoidal area, then uses average resampling directly onto the exact subsurface
+cell grid. Nodata source pixels contribute zero, and cells outside raster coverage
+receive zero. Normalization is streamed through a temporary file to limit memory;
+there is only one resampling operation and no intermediate fine-grid output.
+The shared output is
+`<resources>/automatic/{shapes}/eligibility/eligibility_fraction.tif`, with finite
+fractions in **0–1**. Its extent covers the union of heat and power cells; both
+calculations read exact grid subsets without further interpolation.
+
+The model uses its nominal `100 km² × eligibility_fraction` available area before
+calculating doublets, flow, thermal output, energy and investment. Positive fractions
+leave LCOE/LCOH unchanged. Zero fractions follow existing infeasible-cell conventions
+and supply no energy. Heat allocation and combined-mode resource reservation use
+the reduced resource consistently. All exclusion choices and source-data limitations
+now belong to the supplied area-potential dataset.

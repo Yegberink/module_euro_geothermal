@@ -1,7 +1,6 @@
 """Snakemake helper functions, configuration setup, and shared constants."""
 
-import os
-import sys
+import re
 
 import yaml
 
@@ -9,26 +8,6 @@ from snakemake.utils import min_version, validate
 
 
 min_version("9.19")
-
-sys.path.insert(0, os.path.dirname(workflow.source_path("../scripts/model_config.py")))
-from model_config import heat_model_parameters, model_parameters, validate_module_config
-
-
-def _deep_update(base, overrides):
-    """Recursively apply user configuration values to the module defaults."""
-    for key, value in (overrides or {}).items():
-        if isinstance(value, dict) and isinstance(base.get(key), dict):
-            _deep_update(base[key], value)
-        else:
-            base[key] = value
-    return base
-
-
-def _initialize_config(defaults, overrides):
-    """Fill stable defaults into the mutable Snakemake configuration."""
-    merged = _deep_update(defaults, overrides)
-    overrides.clear()
-    overrides.update(merged)
 
 
 def _get_depth_category_labels():
@@ -39,16 +18,44 @@ def _get_depth_category_labels():
     ]
 
 
-# Load internal settings separately so users cannot modify them.
+# Load internal resource metadata separately from model configuration.
 with open(workflow.source_path("../internal/settings.yaml"), "r") as f:
     internal = yaml.safe_load(f) or {}
 
 
-# Fill stable module defaults before validation. This lets external workflows
-# provide only the settings that matter for their requested target.
-_initialize_config(internal.get("defaults", {}), config)
+# Require explicit model settings for the selected calculation modes.
 validate(config, workflow.source_path("../internal/config.schema.yaml"))
-validate_module_config(config)
+# Check relationships between settings after validating their types and ranges.
+if config["carrier_out"] != "power":
+    if config["heat_reinjection_temperature"] >= config["heat_production_temperature"]:
+        raise ValueError(
+            "Heat reinjection temperature must be below production temperature."
+        )
+
+curve = config["drilling_cost_curve"]
+if curve not in config["drilling_cost_curve_definitions"]:
+    raise ValueError(f"drilling_cost_curve {curve!r} has no matching definition.")
+
+if config["carrier_out"] != "heat":
+    previous_stop = 0.0
+    for category in config.get("depth_categories", []):
+        start, stop = map(float, category)
+        if start >= stop:
+            raise ValueError(
+                f"Invalid depth category {category!r}; expected start < stop."
+            )
+        if start < previous_stop:
+            raise ValueError("depth_categories must be ordered and non-overlapping.")
+        previous_stop = stop
+
+    previous_stop = 0.0
+    for value in config.get("fixed_bins", []):
+        start, stop = map(float, value.split("-", maxsplit=1))
+        if start >= stop:
+            raise ValueError(f"Invalid fixed LCOE bin {value!r}.")
+        if start < previous_stop:
+            raise ValueError("fixed_bins must be ordered and non-overlapping.")
+        previous_stop = stop
 
 
 # Shared rule constants.
@@ -63,12 +70,21 @@ MAKE_2D_FIGURE_OUTPUTS = (
         "overview_fig": "<results>/{shapes}/lcoe_overview.png",
         "technology_cumulative_four_panel_fig": "<resources>/automatic/{shapes}/figures/lcoe_potential_cumulative_four_panel.png",
     }
-    if config["method_2d_aggregation"] == "LCOE_minimization"
+    if POWER_ENABLED and config["method_2d_aggregation"] == "LCOE_minimization"
     else {}
 )
 CUTOFF_LABEL = (
     f"{float(config['lcoe_cutoff']):g}"
-    if config["method_2d_aggregation"] == "LCOE_minimization"
+    if POWER_ENABLED
+    and config["method_2d_aggregation"] == "LCOE_minimization"
     and config["method_region_aggregation"] == "cutoff"
     else None
+)
+
+
+ELIGIBILITY_ENABLED = config.get("eligibility", {}).get("enabled", False)
+ELIGIBILITY_INPUT = (
+    ["<resources>/automatic/{shapes}/eligibility/eligibility_fraction.tif"]
+    if ELIGIBILITY_ENABLED
+    else []
 )
