@@ -1,4 +1,5 @@
 pathvars:
+    report_inputs="<results>/{shapes}/report_inputs.txt",
     area_potential="<resources>/user/{shapes}/area_potential_geothermal.tif",
     shapes="<resources>/user/{shapes}/shapes.parquet",
     district_heating="<resources>/user/{shapes}/areas.parquet",
@@ -17,6 +18,9 @@ wildcard_constraints:
 configfile: workflow.source_path("../config/config.yaml")
 
 
+report: "report/workflow.rst"
+
+
 # Add all your includes here.
 include: "rules/_utils.smk"
 include: "rules/automatic.smk"
@@ -30,6 +34,7 @@ if POWER_ENABLED:
 
     include: "rules/figures.smk"
     include: "rules/overall_potential.smk"
+    include: "rules/report.smk"
 
 
 # Add additional files to be delivered alongside the workflow here.

@@ -11,7 +11,13 @@ rule depth_cost_breakdown_four_panel:
             cycle=CYCLES,
         ),
     output:
-        fig="<resources>/automatic/{shapes}/figures/depth_cost_breakdown_four_panel.png",
+        fig=report(
+            "<resources>/automatic/{shapes}/figures/depth_cost_breakdown_four_panel.png",
+            caption="../report/depth_cost.rst",
+            category="Electricity potential",
+            subcategory="{shapes}",
+            labels={"Figure": "Optimal depth and cost breakdown"},
+        ),
     log:
         "<logs>/{shapes}/depth_cost_breakdown_four_panel.log",
     message:

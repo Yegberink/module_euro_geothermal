@@ -33,7 +33,13 @@ rule overall_potential:
             ),
         ),
     output:
-        summary="<overall_potential_summary>",
+        summary=report(
+            "<overall_potential_summary>",
+            caption="../report/summary.rst",
+            category="Electricity potential",
+            subcategory="{shapes}",
+            labels={"Figure": "Study-wide potential table"},
+        ),
     log:
         "<logs>/{shapes}/overall_potential.log",
     message:

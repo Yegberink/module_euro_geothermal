@@ -4,6 +4,7 @@ import re
 
 import yaml
 
+from snakemake.io import report as report_output
 from snakemake.utils import min_version, validate
 
 
@@ -67,8 +68,20 @@ CYCLES = config.get("which_cycles", []) if POWER_ENABLED else []
 DEPTH_CATEGORY_LABELS = _get_depth_category_labels()
 MAKE_2D_FIGURE_OUTPUTS = (
     {
-        "overview_fig": "<results>/{shapes}/lcoe_overview.png",
-        "technology_cumulative_four_panel_fig": "<resources>/automatic/{shapes}/figures/lcoe_potential_cumulative_four_panel.png",
+        "overview_fig": report_output(
+            "<results>/{shapes}/lcoe_overview.png",
+            caption=workflow.source_path("../report/lcoe.rst"),
+            category="Electricity potential",
+            subcategory="{shapes}",
+            labels={"Figure": "LCOE and conversion technology"},
+        ),
+        "technology_cumulative_four_panel_fig": report_output(
+            "<resources>/automatic/{shapes}/figures/lcoe_potential_cumulative_four_panel.png",
+            caption=workflow.source_path("../report/cumulative.rst"),
+            category="Electricity potential",
+            subcategory="{shapes}",
+            labels={"Figure": "Cumulative potential"},
+        ),
     }
     if POWER_ENABLED and config["method_2d_aggregation"] == "LCOE_minimization"
     else {}

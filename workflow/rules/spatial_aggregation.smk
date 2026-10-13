@@ -124,9 +124,13 @@ if (
             geoparquet="<geothermal_regions>",
             shapes="<shapes>",
         output:
-            fig=(
+            fig=report(
                 f"<results>/{{shapes}}/figures/"
-                f"potential_overview_all_depths_cutoff_{CUTOFF_LABEL}.png"
+                f"potential_overview_all_depths_cutoff_{CUTOFF_LABEL}.png",
+                caption="../report/regional.rst",
+                category="Regional potential",
+                subcategory="{shapes}",
+                labels={"Figure": "Regional electricity potential"},
             ),
         log:
             "<logs>/{shapes}/regional_potential_overview.log",

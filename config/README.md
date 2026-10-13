@@ -290,6 +290,14 @@ The LCOE overview and cumulative-potential figures are produced for
 `cutoff` aggregation. Depth/cost diagnostics are available for both 2-D methods.
 Technology comparisons within one run remain available.
 
+Request `<results>/{shapes}/report_inputs.txt` to build every figure applicable to
+the selected configuration plus the study-wide potential table. After this target
+completes, render the same target with `--report <results>/{shapes}/report.html`.
+Figures and the table are annotated for native Snakemake reports with captions
+and categories. The `report_inputs` path variable can redirect this preparation
+target in a parent workflow. See the [report commands](../README.md#figures-and-html-report).
+
+
 ### Migrating existing imports
 
 Remove `baseline_scenario`, `perform_sensitivity`, `scenarios`, `sens_tech`,

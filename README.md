@@ -109,6 +109,35 @@ Each invocation uses one parameter set from config for all selected cycles.
 To run different parameter sets, import the module separately with distinct
 resource and result directories.
 
+## Figures and HTML report
+
+From this repository's root, build the report inputs for `euro_all`, then render
+Snakemake's self-contained HTML report:
+
+```shell
+pixi run snakemake --snakefile workflow/Snakefile --cores 4 --use-conda \
+  results/euro_all/report_inputs.txt
+pixi run snakemake --snakefile workflow/Snakefile \
+  results/euro_all/report_inputs.txt --report results/euro_all/report.html
+```
+
+The first command builds all applicable figures and the study-wide potential
+summary, including any required calculations. The second embeds those outputs,
+with captions and workflow metadata, into `results/euro_all/report.html`.
+Snakemake's `--report` renders existing results; it does not run missing jobs.
+Append `--dry-run` to the first command to preview the required work.
+
+The report target selects figures from the current configuration: LCOE and
+cumulative-potential plots require `LCOE_minimization`; the regional map also
+requires `cutoff` aggregation. Depth/cost diagnostics and the summary are always
+included in power and combined modes. This electricity figure bundle is not
+available in heat-only mode.
+
+For a parent workflow importing this module, add `<report_inputs>` (by default
+`<results>/{shapes}/report_inputs.txt`) to its target inputs, then run the parent
+workflow with `--report`. The annotated figures also appear in reports whenever
+their generating rules are part of the requested workflow.
+
 ## Development
 
 We use [`pixi`](https://pixi.sh/) as our package manager for development. Once
