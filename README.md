@@ -111,32 +111,35 @@ resource and result directories.
 
 ## Figures and HTML report
 
-From this repository's root, build the report inputs for `euro_all`, then render
-Snakemake's self-contained HTML report:
+Reports use the same command pattern as `module_euro_building_heat`: run the
+normal result targets, then repeat that command with `--report`. From this
+repository's root, for example:
 
 ```shell
-pixi run snakemake --snakefile workflow/Snakefile --cores 4 --use-conda \
-  results/euro_all/report_inputs.txt
-pixi run snakemake --snakefile workflow/Snakefile \
-  results/euro_all/report_inputs.txt --report results/euro_all/report.html
+pixi run snakemake --use-conda --cores 4 \
+  results/euro_all/geothermal_regions.parquet
+pixi run snakemake --use-conda --cores 4 \
+  results/euro_all/geothermal_regions.parquet --report results/euro_all/report.html
 ```
 
-The first command builds all applicable figures and the study-wide potential
-summary, including any required calculations. The second embeds those outputs,
+The regional-results target also builds all applicable figures and the study-wide
+potential summary. The second command embeds those outputs,
 with captions and workflow metadata, into `results/euro_all/report.html`.
 Snakemake's `--report` renders existing results; it does not run missing jobs.
 Append `--dry-run` to the first command to preview the required work.
 
-The report target selects figures from the current configuration: LCOE and
+The workflow selects figures from the current configuration: LCOE and
 cumulative-potential plots require `LCOE_minimization`; the regional map also
 requires `cutoff` aggregation. Depth/cost diagnostics and the summary are always
 included in power and combined modes. This electricity figure bundle is not
 available in heat-only mode.
 
-For a parent workflow importing this module, add `<report_inputs>` (by default
-`<results>/{shapes}/report_inputs.txt`) to its target inputs, then run the parent
-workflow with `--report`. The annotated figures also appear in reports whenever
-their generating rules are part of the requested workflow.
+For a parent workflow importing this module, request `<geothermal_regions>` in
+its target inputs as usual. After running it, use `snakemake --report report.html`
+from that workflow's directory. No additional report target is needed.
+The optional `<report_inputs>` target is retained for compatibility with existing
+commands. Reports for other targets include the annotated outputs in their
+dependency graph.
 
 ## Development
 

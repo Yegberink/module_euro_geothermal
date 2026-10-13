@@ -550,3 +550,14 @@ def main():
 
 if "snakemake" in dir():
     main()
+    if snakemake.output.regional_fig:
+        import _plots
+
+        _plots.make_regional_potential_overview(
+            geoparquet_path=snakemake.output.geoparquet,
+            shapes_path=snakemake.input.shapes,
+            out_path=snakemake.output.regional_fig,
+            cycles=[str(c).strip().lower() for c in snakemake.params.cycles],
+            depth_category="all_depths",
+            bin_id=snakemake.params.bin_id,
+        )

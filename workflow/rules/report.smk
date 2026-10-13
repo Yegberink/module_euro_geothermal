@@ -11,7 +11,7 @@ rule prepare_report:
         ),
         depth_cost=rules.depth_cost_breakdown_four_panel.output.fig,
         regional=(
-            rules.regional_potential_overview.output.fig
+            rules.aggregate_to_regions.output.regional_fig
             if CUTOFF_LABEL is not None
             else []
         ),

@@ -92,9 +92,29 @@ rule aggregate_to_regions:
             [rules.allocate_heat.output.allocations] if HEAT_ENABLED else []
         ),
         shapes="<shapes>",
+        # Include standalone diagnostics in the normal results DAG so --report
+        # collects the complete figure bundle without a separate report target.
+        diagnostics=lambda wc: (
+            expand(rules.depth_cost_breakdown_four_panel.output.fig, shapes=wc.shapes)
+            if POWER_ENABLED
+            else []
+        ),
+        summary=(["<overall_potential_summary>"] if POWER_ENABLED else []),
     output:
         geoparquet="<geothermal_regions>",
         manifest="<results>/{shapes}/geothermal_region_outputs.tsv",
+        regional_fig=(
+            report(
+                f"<results>/{{shapes}}/figures/"
+                f"potential_overview_all_depths_cutoff_{CUTOFF_LABEL}.png",
+                caption="../report/regional.rst",
+                category="Regional potential",
+                subcategory="{shapes}",
+                labels={"Figure": "Regional electricity potential"},
+            )
+            if CUTOFF_LABEL is not None
+            else []
+        ),
     log:
         "<logs>/{shapes}/aggregate_to_regions.log",
     message:
@@ -106,41 +126,8 @@ rule aggregate_to_regions:
         n_quantiles=config.get("n_quantiles"),
         fixed_bins=config.get("fixed_bins", []),
         lcoe_cutoff=config.get("lcoe_cutoff"),
+        bin_id=f"cutoff_{CUTOFF_LABEL}",
     conda:
         "../envs/module.yaml"
     script:
         "../scripts/aggregate_to_regions.py"
-
-
-if (
-    POWER_ENABLED
-    and config["method_2d_aggregation"] == "LCOE_minimization"
-    and config["method_region_aggregation"] == "cutoff"
-):
-
-    rule regional_potential_overview:
-        """Plot regional potential below the configured LCOE cutoff."""
-        input:
-            geoparquet="<geothermal_regions>",
-            shapes="<shapes>",
-        output:
-            fig=report(
-                f"<results>/{{shapes}}/figures/"
-                f"potential_overview_all_depths_cutoff_{CUTOFF_LABEL}.png",
-                caption="../report/regional.rst",
-                category="Regional potential",
-                subcategory="{shapes}",
-                labels={"Figure": "Regional electricity potential"},
-            ),
-        log:
-            "<logs>/{shapes}/regional_potential_overview.log",
-        message:
-            "Plot geothermal potential below the configured LCOE cutoff for {wildcards.shapes}."
-        params:
-            cycles=CYCLES,
-            depth_category="all_depths",
-            bin_id=f"cutoff_{CUTOFF_LABEL}",
-        conda:
-            "../envs/module.yaml"
-        script:
-            "../scripts/regional_potential_overview.py"
