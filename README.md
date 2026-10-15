@@ -61,6 +61,9 @@ See the [configuration guide](./config/README.md) for all workflow controls,
 model parameters and aggregation choices. A complete
 worked configuration is available in [`config/config.yaml`](./config/config.yaml).
 
+All monetary inputs in euros and all cost results use **constant 2020 euros
+(EUR2020)**
+
 ## Input and output structure
 
 The required polygon input and the module's public result path variables are

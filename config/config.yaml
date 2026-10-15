@@ -4,6 +4,8 @@
 # Quick-start: the only keys you normally need to change are in the first
 # section ("Workflow control"). Everything else has sensible
 # defaults. Each run uses exactly the configured parameter values.
+# Monetary basis: all EUR inputs, cost cutoffs and results use constant 2020
+# euros (EUR2020).
 # =============================================================================
 
 
@@ -17,6 +19,23 @@ method_region_aggregation: cutoff
 #   cutoff       → single capacity figure below lcoe_cutoff and average LCOE of that capacity
 
 # For detailed LCOE distributions used in an energy system model, use quantiles or fixed_bins
+
+# Set the value of n_quantiles, fixed_bins, or lcoe_cutoff below depending on the chosen method_region_aggregation
+# These settings are only used if the method_region_aggregation is set to the corresponding value.
+
+# quantiles
+n_quantiles: 4
+
+# fixed_bins (€2020/MWh)
+fixed_bins:
+  - "0-50"
+  - "50-100"
+  - "100-150"
+  - "150-200"
+  - "200-250"
+
+# cutoff (€2020/MWh)
+lcoe_cutoff: 75.0
 
 # -----------------------------------------------------------------------------
 # Conversion cycles
@@ -45,6 +64,8 @@ drilling_cost_curve: thermogis  # options configured below; used as the drilling
 stimulation_cost_per_doublet: 3.0   # EGS stimulation cost per doublet (M€2020)
 
 drilling_cost_curve_definitions:
+  # ThermoGIS coefficients adopted as EUR2020 in the manuscript.
+  # Source: https://www.thermogis.nl/economisch-model
   thermogis:
     curve_type: quadratic_eur2020
     constant: 250000.0
@@ -61,6 +82,10 @@ drilling_cost_curve_definitions:
     csv_path: workflow/internal/baseline_drilling_2017.csv
     currency_year: 2017
   getem_2025:
+    # Alternative curve from Akindipe & Witter (2025), manuscript Fig. 2 / ref. 49.
+    # https://pangea.stanford.edu/ERE/pdf/IGAstandard/SGW/2025/Akindipe.pdf
+    # CSV costs are million USD per well. 2025 is an assumed source price year;
+    # the paper does not explicitly establish it. Results remain EUR2020.
     curve_type: csv_fit_usd
     csv_path: workflow/internal/baseline_drilling_2025.csv
     currency_year: 2025
@@ -70,6 +95,9 @@ drilling_cost_curve_definitions:
 # Power plant economics
 # -----------------------------------------------------------------------------
 # Capital costs per installed capacity
+# Manuscript: 38 MW plant; Hackstein & Madlener (2021), Eqs. 14-15,
+# https://doi.org/10.1186/s40517-021-00183-2 ; Kalina = ORC x 1.1.
+# Rounded values reproduce a USD2019 -> EUR2020 conversion (see config/README.md).
 orc_money_per_kw:   1978.0    # ORC plant (€2020/kW)
 flash_money_per_kw: 1528.0    # Flash plant (€2020/kW)
 kalina_money_per_kw: 2175.0   # Kalina plant (€2020/kW)
@@ -107,24 +135,6 @@ depth_categories:
   - [3000, 6000]              # 3–6 km
   - [6000, 10000]             # 6–10 km
 
-
-# -----------------------------------------------------------------------------
-# Region aggregation
-# -----------------------------------------------------------------------------
-
-# Used only when method_region_aggregation: quantiles
-n_quantiles: 4
-
-# Used only when method_region_aggregation: fixed_bins (€2020/MWh)
-fixed_bins:
-  - "0-50"
-  - "50-100"
-  - "100-150"
-  - "150-200"
-  - "200-250"
-
-# Used only when method_region_aggregation: cutoff (€2020/MWh)
-lcoe_cutoff: 75.0
 
 # -----------------------------------------------------------------------------
 # District heating (heat and heat_and_power modes)

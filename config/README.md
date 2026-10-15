@@ -205,11 +205,26 @@ all configured depth intervals must stay within that range.
 
 ### Currency conversion assumptions
 
-Heat and power share the currency conversion in
-[`_economics.py`](../workflow/scripts/_economics.py). The CPI proxy used for
-2025 costs has unverified provenance and reference period; it is retained for
-reproducibility and requires scientific assessment before it can be described
-as a sourced annual index.
+All euro-denominated inputs and results use **constant 2020 euros (EUR2020)**,
+
+Heat and power share the conversion in
+[`_economics.py`](../workflow/scripts/_economics.py):
+
+```text
+EUR2020 = source-year USD × (US CPI2020 / US CPI_source_year) / 1.1422
+```
+
+The CPI values are US city average, all-items CPI-U, not seasonally adjusted,
+annual averages (1982–84 = 100). The exchange rate is the 2020 annual average,
+**1 EUR = 1.1422 USD**. 
+
+| Source price year | US CPI-U | Multiplier from USD to EUR2020 |
+| --- | ---: | ---: |
+| 2017 | 245.120 | 0.924404 |
+| 2020 | 258.811 | 0.875503 |
+| 2021 | 270.970 | 0.836218 |
+| 2025 | 321.943 | 0.703820 |
+
 
 ## Spatial aggregation
 

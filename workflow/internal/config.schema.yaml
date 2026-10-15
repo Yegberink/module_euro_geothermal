@@ -90,12 +90,12 @@ properties:
   stimulation_cost_per_doublet:
     type: number
     minimum: 0
-    description: "Stimulation cost per doublet (million €)."
+    description: "Stimulation cost per doublet (million EUR2020)."
 
   pump_cost:
     type: number
     minimum: 0
-    description: "Pump cost (million €) per pair."
+    description: "Pump cost (million EUR2020) per pair."
 
   lifetime:
     type: number
@@ -123,17 +123,17 @@ properties:
   orc_money_per_kw:
     type: number
     minimum: 0
-    description: "ORC specific CAPEX (EUR/kW)."
+    description: "ORC specific CAPEX (EUR2020/kW)."
 
   flash_money_per_kw:
     type: number
     minimum: 0
-    description: "Flash specific CAPEX (EUR/kW)."
+    description: "Flash specific CAPEX (EUR2020/kW)."
 
   kalina_money_per_kw:
     type: number
     minimum: 0
-    description: "Kalina specific CAPEX (EUR/kW)."
+    description: "Kalina specific CAPEX (EUR2020/kW)."
 
   well_spacing:
     type: number

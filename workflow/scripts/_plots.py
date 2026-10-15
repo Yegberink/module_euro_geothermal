@@ -338,7 +338,7 @@ def _make_resource_overview(
         cbar.set_label(
             "Potential at minimum-LCOE depth (GW$_e$ per grid cell)"
             if potential
-            else "Levelized Cost of Electricity (€/MWh$_e$)"
+            else "Levelized Cost of Electricity (€2020/MWh$_e$)"
         )
         if potential:
             cbar.set_ticks(np.linspace(0, data_vmax, 5))
@@ -455,7 +455,7 @@ def make_lcoe_potential_cumulative_four_panel(
             )
 
         box_specs = [
-            (ax_lcoe_box, "LCOE", lcoe_data, "LCOE (€/MWh$_e$)", "a)"),
+            (ax_lcoe_box, "LCOE", lcoe_data, "LCOE (€2020/MWh$_e$)", "a)"),
             (
                 ax_potential_box,
                 "Potential",
@@ -502,7 +502,7 @@ def make_lcoe_potential_cumulative_four_panel(
             (
                 ax_lcoe_curve,
                 lcoe_maps,
-                "LCOE threshold (€/MWh$_e$)",
+                "LCOE threshold (€2020/MWh$_e$)",
                 False,
                 "c)",
                 "lower right",
@@ -544,7 +544,7 @@ def make_lcoe_potential_cumulative_four_panel(
                         zorder=4,
                     )
                     ax.annotate(
-                        f"{x[idx]:.0f} €/MWh$_e$",
+                        f"{x[idx]:.0f} €2020/MWh$_e$",
                         (x[idx], y[idx]),
                         xytext=(0, -8),
                         textcoords="offset points",

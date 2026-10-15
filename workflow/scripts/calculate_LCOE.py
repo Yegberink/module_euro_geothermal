@@ -356,7 +356,7 @@ def main():
     )
     lcoe, *component_arrays = [
         output.transpose("depth_m", "y", "x").assign_attrs(
-            units="€/MWh_e", tech=str(cycle_key), crs=crs_str
+            units="EUR2020/MWh_e", tech=str(cycle_key), crs=crs_str
         )
         for output in lcoe_outputs
     ]
@@ -405,6 +405,8 @@ def main():
             "crs": crs_str,
             "tech": str(cycle_key),
             "carrier_out": "power",
+            "currency": "EUR",
+            "price_year": 2020,
             "include_egs": int(include_egs),
             "SED_NAN_POLICY": str(SED_NAN_POLICY),
             "EGS_cutoff_rule": "cutoff(x,y)=min(EGS_cutoff, sed_thickness_m(x,y)) with NaN policy applied",
@@ -415,13 +417,13 @@ def main():
         {"units": "degC", "long_name": "Reservoir temperature"}
     )
     ds_out["lcoe"].attrs.update(
-        {"units": "€/MWh_e", "long_name": f"LCOE ({cycle_key})"}
+        {"units": "EUR2020/MWh_e", "long_name": f"LCOE ({cycle_key})"}
     )
     for name in LCOE_COMPONENT_NAMES:
         label = name.replace("_", " ").title()
         ds_out[f"lcoe_{name}"].attrs.update(
             {
-                "units": "€/MWh_e",
+                "units": "EUR2020/MWh_e",
                 "long_name": f"{label} contribution to LCOE ({cycle_key})",
             }
         )
