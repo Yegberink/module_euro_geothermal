@@ -6,10 +6,16 @@ configfile: workflow.source_path("./test_config.yaml")
 rule create_external_shapes:
     output:
         "resources/user/test/shapes.parquet",
+    log:
+        "logs/create_external_shapes.log",
+    conda:
+        "../../workflow/envs/module.yaml"
     params:
-        url="https://zenodo.org/records/20765043/files/EUROPE_L_C34_ADM1.parquet?download=1",
+        url="https://zenodo.org/records/20765043/files/EUROPE_S_C1_ADM1.parquet?download=1",
+    message:
+        "Emulating shape inputs for integration testing."
     shell:
-        "curl --fail --silent --show-error --location --output {output:q} {params.url:q}"
+        "curl --fail --silent --show-error --location --output {output:q} {params.url:q} 2> {log:q}"
 
 
 # Import the module and configure it.

@@ -18,10 +18,10 @@ if ELIGIBILITY_ENABLED:
             area_potential="<area_potential>",
         output:
             fraction="<resources>/automatic/{shapes}/eligibility/eligibility_fraction.tif",
-        benchmark:
-            "<logs>/{shapes}/resample_eligibility.benchmark.tsv"
         log:
             "<logs>/{shapes}/resample_eligibility.log",
+        benchmark:
+            "<logs>/{shapes}/resample_eligibility.benchmark.tsv"
         conda:
             "../envs/module.yaml"
         script:

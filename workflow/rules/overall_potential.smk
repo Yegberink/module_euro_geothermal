@@ -41,9 +41,9 @@ rule overall_potential:
         ),
     log:
         "<logs>/{shapes}/overall_potential.log",
-    message:
-        "Summarize geothermal potential for {wildcards.shapes}."
     conda:
         "../envs/module.yaml"
+    message:
+        "Summarize geothermal potential for {wildcards.shapes}."
     script:
         "../scripts/overall_potential.py"

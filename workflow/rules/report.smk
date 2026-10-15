@@ -20,6 +20,8 @@ rule prepare_report:
         manifest="<report_inputs>",
     log:
         "<logs>/{shapes}/prepare_report.log",
+    conda:
+        "../envs/module.yaml"
     message:
         "Prepare figures and tables for the geothermal report for {wildcards.shapes}."
     shell:

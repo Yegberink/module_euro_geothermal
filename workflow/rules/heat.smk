@@ -9,12 +9,12 @@ if HEAT_ENABLED:
             networks="<district_heating>",
         output:
             extent="<resources>/automatic/{shapes}/generic/heat_extent.json",
-        params:
-            buffer_km=config["heat_network_buffer_km"],
         log:
             "<logs>/{shapes}/prepare_heat_extent.log",
         conda:
             "../envs/module.yaml"
+        params:
+            buffer_km=config["heat_network_buffer_km"],
         script:
             "../scripts/prepare_heat_extent.py"
 
@@ -34,6 +34,10 @@ if HEAT_ENABLED:
             lcoh="<resources>/automatic/{shapes}/documents/heat_lcoh.tif",
             potential="<resources>/automatic/{shapes}/documents/heat_potential.tif",
             depth="<resources>/automatic/{shapes}/documents/heat_depth.tif",
+        log:
+            "<logs>/{shapes}/calculate_LCOH.log",
+        conda:
+            "../envs/module.yaml"
         params:
             max_depth=config["max_depth"],
             include_egs=config["include_egs"],
@@ -52,12 +56,8 @@ if HEAT_ENABLED:
             heat_reinjection_temperature=config["heat_reinjection_temperature"],
             thermal_plant_cost_per_kw=config["thermal_plant_cost_per_kw"],
             heat_capacity_factor=config["heat_capacity_factor"],
-        log:
-            "<logs>/{shapes}/calculate_LCOH.log",
         message:
             "Calculate geothermal LCOH once per cell for {wildcards.shapes}."
-        conda:
-            "../envs/module.yaml"
         script:
             "../scripts/calculate_LCOH.py"
 
@@ -72,11 +72,11 @@ if HEAT_ENABLED:
             allocations="<geothermal_heat_allocations>",
             allocated="<resources>/automatic/{shapes}/documents/heat_allocated.tif",
             fraction="<resources>/automatic/{shapes}/documents/heat_used_fraction.tif",
-        params:
-            buffer_km=config["heat_network_buffer_km"],
         log:
             "<logs>/{shapes}/allocate_heat.log",
         conda:
             "../envs/module.yaml"
+        params:
+            buffer_km=config["heat_network_buffer_km"],
         script:
             "../scripts/allocate_heat.py"

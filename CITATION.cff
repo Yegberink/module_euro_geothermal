@@ -4,7 +4,7 @@
 cff-version: 1.2.0
 message: If you use this software or data produced by it, please cite it using the metadata from this file.
 title: "Modelblocks - module_geothermal: Data module for calculating geothermal potential and costs."
-repository: "https://github.com/modelblocks-org/module_geothermal"
+repository: "https://github.com/Yegberink/module_geothermal"
 license: Apache-2.0
 authors:
   - given-names: Yannick

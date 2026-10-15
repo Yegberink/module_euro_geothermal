@@ -50,10 +50,10 @@ for formulas, assumptions, and output units.
 
 ## Rule graph
 
-The graph below includes regional results, model diagnostics, and the
-study-wide potential summary for one configured run.
+The graph below shows the power integration example, including regional
+results, model diagnostics, and the study-wide potential summary.
 
-![Snakemake rule graph for the geothermal workflow](./figures/rulegraph.svg)
+![Snakemake rule graph for the geothermal workflow](./figures/rulegraph.png)
 
 ## Configuration
 
@@ -85,7 +85,7 @@ the parent workflow:
 
 ```python
 module module_geothermal:
-    snakefile: github("modelblocks-org/module_geothermal", path="workflow/Snakefile", branch="main")
+    snakefile: github("Yegberink/module_geothermal", path="workflow/Snakefile", branch="main")
     config: config["module_geothermal"]
     pathvars:
         logs="modules/geothermal/logs",
@@ -148,39 +148,56 @@ installed, run the following to clone this repository and install all
 dependencies:
 
 ```shell
-git clone git@github.com:modelblocks-org/module_geothermal.git
+git clone git@github.com:Yegberink/module_geothermal.git
 cd module_geothermal
 pixi install --all
 ```
 
-Pixi separates the development environment from the minimal `module`
-environment used by Snakemake rules. After changing runtime dependencies,
-regenerate the Conda environment and platform pins with:
+This is a multi-environment project (see [`pixi.toml`](./pixi.toml)):
+
+- `default`: development and integration testing, including Snakemake, Conda,
+  and pytest. Do not use this environment in Snakemake rules.
+- `module`: runtime dependencies used by Snakemake rules. After changing these
+  dependencies, export the environment YAML and platform pin files:
 
 ```shell
 pixi run export-snakemake-env module
 ```
 
-Run the quick checks used during development with:
+## Testing
+
+Run the standard integration suite, including interface validation, environment
+export checks, required-file checks, and a minimal imported workflow:
 
 ```shell
-pixi run test-quick
+pixi run test-integration
 ```
 
-Run isolated workflow checks (without downloads) and small numerical checks with:
-
-```shell
-pixi run pytest tests/test_workflow_config.py
-pixi run -e module python -m unittest discover -s tests -p test_model_outputs.py
-```
-
-The integration definition is retained for dedicated workflow testing, but is
-not part of the quick check. To run it explicitly:
+To run the integration workflow directly:
 
 ```shell
 pixi shell
 cd tests/integration/
 snakemake --use-conda --cores 2
+```
+
+For optional full workflow tests over three shape sets, including HTML reports
+and PNG rule graphs, run:
+
+```shell
+pixi run pytest tests/local_test.py
+```
+
+These longer tests use the power integration configuration, disable eligibility,
+and download their shape inputs. Heat networks and eligibility rasters are not
+bundled test inputs. Graph rendering requires Graphviz's `dot` executable.
+The CI integration task does not run these optional tests.
+
+Run both workflow lint checks with:
+
+```shell
+pixi run snakemake --lint --snakefile workflow/Snakefile
+pixi run snakemake --lint --snakefile tests/integration/Snakefile
 ```
 
 ## References

@@ -19,9 +19,9 @@ rule depth_cost_breakdown_four_panel:
         ),
     log:
         "<logs>/{shapes}/depth_cost_breakdown_four_panel.log",
-    message:
-        "Plot depth and cost diagnostics for {wildcards.shapes}."
     conda:
         "../envs/module.yaml"
+    message:
+        "Plot depth and cost diagnostics for {wildcards.shapes}."
     script:
         "../scripts/depth_cost_breakdown_four_panel.py"

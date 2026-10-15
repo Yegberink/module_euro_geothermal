@@ -1,4 +1,6 @@
-# Module Input-Output structure for automated doc. generation
+# Module Input-Output structure for automated docs generation
+convention_version: v1.0.0
+
 pathvars:
   snakemake_defaults:
     logs:
@@ -16,25 +18,57 @@ pathvars:
       description: Area-potential module output in available square metres per pixel on a square WGS84 grid. Required when eligibility is enabled; resampled once for heat and power.
     shapes:
       default: "<resources>/user/{shapes}/shapes.parquet"
-      description: GeoParquet polygons used to crop and aggregate geothermal potential.
+      description: |
+        GeoParquet polygons used to crop and aggregate geothermal potential.
+        The file must declare a CRS and contain these columns:
+        - `shape_id`: unique, non-null identifier for each output region.
+        - `geometry`: valid Polygon or MultiPolygon geometry.
+        Optional `shape_class` values of `maritime` are excluded from aggregation.
     district_heating:
       default: "<resources>/user/{shapes}/areas.parquet"
-      description: Heat-mode GeoParquet with unique area_id, connected heat_potential_mwh_per_year, valid polygons, and a CRS.
+      description: |
+        Required in heat and combined modes. GeoParquet with a declared CRS:
+        - `area_id`: unique, non-null network identifier.
+        - `heat_potential_mwh_per_year`: finite, nonnegative connected annual demand.
+        - `geometry`: valid Polygon or MultiPolygon geometry.
   results:
     report_inputs:
       default: "<results>/{shapes}/report_inputs.txt"
       description: Optional report preparation target retained for compatibility. Normal regional results already build applicable power figures and the study-wide summary; render HTML by adding --report to the results command.
     geothermal_regions:
       default: "<results>/{shapes}/geothermal_regions.parquet"
-      description: Regional resource alternatives with category, carrier, potential_unit, mean_lcoe, and mean_lcoh.
+      description: |
+        Regional resource alternatives in the input shapes' CRS:
+        - `region_id`: string form of the input `shape_id`.
+        - `category`: power, heat, or contested resource alternative.
+        - `carrier`: power or heat.
+        - `technology`: conversion cycle or geothermal_heat.
+        - `depth_category`: depth interval, all_depths, or target_temperature.
+        - `price_bin`, `bin_id`: readable and path-safe cost-bin identifiers.
+        - `bin_left`, `bin_right`: cost-bin bounds in EUR2020/MWh.
+        - `potential`: capacity or annual heat, interpreted with `potential_unit`.
+        - `potential_unit`: MW_e for power or MWh_th/year for heat.
+        - `mean_lcoe`, `mean_lcoh`: weighted EUR2020/MWh costs; null when inapplicable.
+        - `n_cells`: contributing raster-cell count.
+        - `geometry`: aggregation-region polygon.
     geothermal_heat_networks:
       default: "<results>/{shapes}/geothermal_heat_networks.parquet"
-      description: Original network attributes plus region_id, supplied and unmet annual geothermal heat, and weighted geothermal LCOH.
+      description: |
+        Available in heat and combined modes. Original network attributes plus
+        `region_id`, `geothermal_supplied_mwh_per_year`, `geothermal_unmet_mwh_per_year`,
+        and `geothermal_lcoh_eur_per_mwh`.
     geothermal_heat_allocations:
       default: "<results>/{shapes}/geothermal_heat_allocations.parquet"
-      description: Cell-to-network allocations with source coordinates, annual heat, cell fraction, and LCOH; preserves cross-region resource links.
+      description: |
+        Available in heat and combined modes. Positive cell-to-network allocations:
+        `area_id`, consumer `region_id`, `cell_id`, `row`, `col`, source `x` and `y`,
+        `heat_mwh_per_year`, `cell_fraction`, and `lcoh_eur_per_mwh`.
+        Coordinates use the source grid CRS; allocations preserve cross-region links.
     overall_potential_summary:
       default: "<results>/{shapes}/overall_potential_summary.tsv"
-      description: Study-wide potential in TW by technology and for the lowest-LCOE portfolio.
+      description: |
+        Available in power and combined modes. Tab-separated `technology` and
+        `potential_tw` columns for each cycle and the lowest_lcoe_technology portfolio.
+        These raster-wide totals do not apply regional cutoffs or heat reservations.
 wildcards:
   shapes: Name of the provided shape set.

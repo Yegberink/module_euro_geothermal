@@ -1,3 +1,11 @@
+import yaml
+
+from snakemake.utils import min_version, validate
+
+min_version("9.19")
+
+
+# Define pathvars for all user resources and public results.
 pathvars:
     report_inputs="<results>/{shapes}/report_inputs.txt",
     area_potential="<resources>/user/{shapes}/area_potential_geothermal.tif",
@@ -18,8 +26,19 @@ wildcard_constraints:
 configfile: workflow.source_path("../config/config.yaml")
 
 
+# Validate user configuration and load internal resource metadata.
+validate(config, workflow.source_path("internal/config.schema.yaml"))
+with open(workflow.source_path("internal/settings.yaml"), "r") as f:
+    internal = yaml.safe_load(f) or {}
+
+
 # Add all your includes here.
 include: "rules/_utils.smk"
+
+
+additional_config_validation()
+
+
 include: "rules/automatic.smk"
 include: "rules/lcoe.smk"
 include: "rules/heat.smk"
@@ -44,8 +63,6 @@ workflow.source_path("scripts/_eligibility.py")
 
 
 rule all:
-    message:
-        "ERROR: Invalid `rule all:` call"
     default_target: True
     output:
         "INVALID",
@@ -53,5 +70,7 @@ rule all:
         stderr="<logs>/all.stderr",
     conda:
         "envs/module.yaml"
+    message:
+        "ERROR: Invalid `rule all:` call"
     shell:
         'echo "This workflow must be called as a snakemake module." > {log.stderr}'

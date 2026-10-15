@@ -111,9 +111,9 @@ def ensure_north_up(da: xr.DataArray) -> xr.DataArray:
 
     da2 = da2.rio.write_transform(t2, inplace=False)
     da2 = da2.rio.write_crs(da.rio.crs, inplace=False)
-    nd = da.rio.nodata
-    if nd is not None:
-        da2 = da2.rio.write_nodata(nd, inplace=False)
+    nodata = da.rio.nodata
+    if nodata is not None:
+        da2 = da2.rio.write_nodata(nodata, inplace=False)
 
     return da2
 
@@ -122,9 +122,9 @@ def inherit_rio_meta(dst: xr.DataArray, src: xr.DataArray) -> xr.DataArray:
     """Copy CRS, transform, and nodata from *src* to *dst*."""
     dst = dst.rio.write_crs(src.rio.crs, inplace=False)
     dst = dst.rio.write_transform(src.rio.transform(), inplace=False)
-    nd = src.rio.nodata
-    if nd is not None:
-        dst = dst.rio.write_nodata(nd, inplace=False)
+    nodata = src.rio.nodata
+    if nodata is not None:
+        dst = dst.rio.write_nodata(nodata, inplace=False)
     return dst
 
 
@@ -418,7 +418,9 @@ def main():
     cycles = [str(c).strip().lower() for c in (snakemake.params.get("cycles") or [])]
     method = str(snakemake.params["method_region_aggregation"]).lower()
     n_quantiles = (
-        int(snakemake.params["n_quantiles"]) if cycles and method == "quantiles" else None
+        int(snakemake.params["n_quantiles"])
+        if cycles and method == "quantiles"
+        else None
     )
     fixed_bins = parse_fixed_bins(snakemake.params.get("fixed_bins", []))
     lcoe_cutoff = snakemake.params.get("lcoe_cutoff", None)

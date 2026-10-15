@@ -2,4 +2,4 @@
 usage:
   software-stack-deployment:
     conda: true
-  report: false
+  report: true

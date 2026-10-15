@@ -246,6 +246,11 @@ Snakemake path variables. See [`INTERFACE.yaml`](../INTERFACE.yaml) for the
 required polygon input and public module outputs, and the
 [integration example](../tests/integration/Snakefile) for a complete import.
 
+The public interface uses the `shapes` wildcard. Internal rules additionally use
+`cycle` (`orc`, `flash`, or `kalina`) and `dataset` (a download filename from
+`workflow/internal/settings.yaml`). These internal wildcards do not occur in
+public input/output defaults and are therefore not listed in `INTERFACE.yaml`.
+
 The `shapes` input is GeoParquet and must have a declared CRS, unique
 `shape_id` values, and valid Polygon or MultiPolygon geometry. `shape_class` is
 optional; rows with `shape_class: maritime` are excluded from aggregation.
@@ -293,7 +298,7 @@ Technology comparisons within one run remain available.
 Request `<results>/{shapes}/report_inputs.txt` to build every figure applicable to
 the selected configuration plus the study-wide potential table. After this target
 completes, render the same target with `--report <results>/{shapes}/report.html`.
-Figures and the table are annotated for native Snakemake reports with captions
+Figures and the table are annotated for native Snakemake reports with labels
 and categories. The `report_inputs` path variable can redirect this preparation
 target in a parent workflow. See the [report commands](../README.md#figures-and-html-report).
 
@@ -314,28 +319,8 @@ The repository separates its Pixi development environment from the minimal
 `module` environment used by Snakemake rules. After changing runtime
 dependencies, run `pixi run export-snakemake-env module` to regenerate
 `workflow/envs/module.yaml` and its platform pin files. Run
-`pixi run test-quick` for the fast validation suite.
+`pixi run test-integration` for the standard validation suite.
 
-
-### Heat allocation benchmark
-
-Run `python tests/benchmark_heat_allocation.py` in the module environment.
-The benchmark reads the supplied BENLDE polygons and creates controlled 10 km
-supply cells in EPSG:3035 with 100,000 MWh/year per cell and deterministic costs.
-It measures allocation performance, not geothermal resource availability.
-
-On this development machine (macOS arm64, SciPy 1.18.0), the 2026-09-25 run used
-6,208 networks, 7,654 cells, and 23,973 candidate edges. Candidate construction
-took **0.059 s**, and both optimization stages together took **1.181 s**.
-Peak process RSS was **478.6 MiB**, including Python and geospatial libraries;
-the candidate-edge array occupied **0.366 MiB**. The sparse representation
-avoided a dense table of 47,516,032 network–cell entries. Cell-capacity and
-network-demand conservation checks passed. Timings exclude input loading.
-
-For comparison, constructing full polygon buffers took 96.6 s and increased
-peak process RSS to 3,253.8 MiB in the preliminary implementation. The final
-indexed `dwithin` queries also include exact-distance candidates that polygonal
-approximations of circular buffers could miss.
 
 ## Land eligibility
 

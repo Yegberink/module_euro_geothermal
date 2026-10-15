@@ -42,16 +42,16 @@ if POWER_ENABLED:
             ),
         log:
             "<logs>/{shapes}/make_2d.log",
-        message:
-            "Reduce geothermal results for {wildcards.shapes} to 2-D rasters."
+        conda:
+            "../envs/module.yaml"
         params:
             method_2d_aggregation=config["method_2d_aggregation"],
             depth_categories=config.get("depth_categories"),
             depthcat_labels=DEPTH_CATEGORY_LABELS,
             cycles=CYCLES,
             max_depth=config["max_depth"],
-        conda:
-            "../envs/module.yaml"
+        message:
+            "Reduce geothermal results for {wildcards.shapes} to 2-D rasters."
         script:
             "../scripts/make_2d.py"
 
@@ -116,8 +116,8 @@ rule aggregate_to_regions:
         ),
     log:
         "<logs>/{shapes}/aggregate_to_regions.log",
-    message:
-        "Aggregate geothermal results to {wildcards.shapes}."
+    conda:
+        "../envs/module.yaml"
     params:
         carrier_out=config["carrier_out"],
         cycles=CYCLES,
@@ -126,7 +126,7 @@ rule aggregate_to_regions:
         fixed_bins=config.get("fixed_bins", []),
         lcoe_cutoff=config.get("lcoe_cutoff"),
         bin_id=f"cutoff_{CUTOFF_LABEL}",
-    conda:
-        "../envs/module.yaml"
+    message:
+        "Aggregate geothermal results to {wildcards.shapes}."
     script:
         "../scripts/aggregate_to_regions.py"

@@ -9,12 +9,12 @@ rule crop_to_speed_up:
         clipped_temp_voxel="<resources>/automatic/{shapes}/generic/clipped_temp_voxel.nc",
     log:
         "<logs>/{shapes}/crop_to_speed_up.log",
-    message:
-        "Crop the European temperature model to {wildcards.shapes}."
-    params:
-        pad_m=25_000,
     conda:
         "../envs/module.yaml"
+    params:
+        pad_m=25_000,
+    message:
+        "Crop the European temperature model to {wildcards.shapes}."
     script:
         "../scripts/crop_to_speed_up.py"
 
@@ -28,13 +28,13 @@ rule resample_gst1_sediment:
         sediment="<resources>/automatic/GST1_sediment_thickness.nc",
     log:
         "<logs>/automatic/resample_gst1_sediment.log",
-    message:
-        "Align GST-1 sediment thickness with the temperature grid."
+    conda:
+        "../envs/module.yaml"
     params:
         member=internal["resources"]["automatic"]["gst1"]["member"],
         doi=internal["resources"]["automatic"]["gst1"]["doi"],
-    conda:
-        "../envs/module.yaml"
+    message:
+        "Align GST-1 sediment thickness with the temperature grid."
     script:
         "../scripts/resample_gst1.py"
 
@@ -57,8 +57,8 @@ if POWER_ENABLED:
             cube="<resources>/automatic/{shapes}/documents/{cycle}_lcoe_cube.nc",
         log:
             "<logs>/{shapes}/{cycle}/calculate_LCOE.log",
-        message:
-            "Calculate {wildcards.cycle} geothermal potential and LCOE for {wildcards.shapes}."
+        conda:
+            "../envs/module.yaml"
         params:
             cycle=lambda wc: wc.cycle,
             max_depth=config["max_depth"],
@@ -81,7 +81,7 @@ if POWER_ENABLED:
             flowrate_conventional=config["flowrate_conventional"],
             min_dt=config["min_dt"],
             temp_turbine_out=config["temp_turbine_out"],
-        conda:
-            "../envs/module.yaml"
+        message:
+            "Calculate {wildcards.cycle} geothermal potential and LCOE for {wildcards.shapes}."
         script:
             "../scripts/calculate_LCOE.py"

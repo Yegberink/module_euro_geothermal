@@ -1,14 +1,8 @@
-"""Snakemake helper functions, configuration setup, and shared constants."""
+"""Snakemake helper functions and shared constants."""
 
 import re
 
-import yaml
-
 from snakemake.io import report as report_output
-from snakemake.utils import min_version, validate
-
-
-min_version("9.19")
 
 
 def _get_depth_category_labels():
@@ -19,44 +13,43 @@ def _get_depth_category_labels():
     ]
 
 
-# Load internal resource metadata separately from model configuration.
-with open(workflow.source_path("../internal/settings.yaml"), "r") as f:
-    internal = yaml.safe_load(f) or {}
-
-
-# Require explicit model settings for the selected calculation modes.
-validate(config, workflow.source_path("../internal/config.schema.yaml"))
-# Check relationships between settings after validating their types and ranges.
-if config["carrier_out"] != "power":
-    if config["heat_reinjection_temperature"] >= config["heat_production_temperature"]:
-        raise ValueError(
-            "Heat reinjection temperature must be below production temperature."
-        )
-
-curve = config["drilling_cost_curve"]
-if curve not in config["drilling_cost_curve_definitions"]:
-    raise ValueError(f"drilling_cost_curve {curve!r} has no matching definition.")
-
-if config["carrier_out"] != "heat":
-    previous_stop = 0.0
-    for category in config.get("depth_categories", []):
-        start, stop = map(float, category)
-        if start >= stop:
+def additional_config_validation() -> None:
+    """Check configuration relationships beyond the JSON schema."""
+    if config["carrier_out"] != "power":
+        if (
+            config["heat_reinjection_temperature"]
+            >= config["heat_production_temperature"]
+        ):
             raise ValueError(
-                f"Invalid depth category {category!r}; expected start < stop."
+                "Heat reinjection temperature must be below production temperature."
             )
-        if start < previous_stop:
-            raise ValueError("depth_categories must be ordered and non-overlapping.")
-        previous_stop = stop
 
-    previous_stop = 0.0
-    for value in config.get("fixed_bins", []):
-        start, stop = map(float, value.split("-", maxsplit=1))
-        if start >= stop:
-            raise ValueError(f"Invalid fixed LCOE bin {value!r}.")
-        if start < previous_stop:
-            raise ValueError("fixed_bins must be ordered and non-overlapping.")
-        previous_stop = stop
+    curve = config["drilling_cost_curve"]
+    if curve not in config["drilling_cost_curve_definitions"]:
+        raise ValueError(f"drilling_cost_curve {curve!r} has no matching definition.")
+
+    if config["carrier_out"] != "heat":
+        previous_stop = 0.0
+        for category in config.get("depth_categories", []):
+            start, stop = map(float, category)
+            if start >= stop:
+                raise ValueError(
+                    f"Invalid depth category {category!r}; expected start < stop."
+                )
+            if start < previous_stop:
+                raise ValueError(
+                    "depth_categories must be ordered and non-overlapping."
+                )
+            previous_stop = stop
+
+        previous_stop = 0.0
+        for value in config.get("fixed_bins", []):
+            start, stop = map(float, value.split("-", maxsplit=1))
+            if start >= stop:
+                raise ValueError(f"Invalid fixed LCOE bin {value!r}.")
+            if start < previous_stop:
+                raise ValueError("fixed_bins must be ordered and non-overlapping.")
+            previous_stop = stop
 
 
 # Shared rule constants.

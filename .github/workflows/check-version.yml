@@ -1,4 +1,4 @@
-# Check for changes in the upstream Modelblocks template. If changes are found, an issue is created.
+# Check for changes in the upstream template. If changes are found, an issue is created.
 name: Template check
 
 on:
@@ -11,31 +11,32 @@ defaults:
     shell: bash --noprofile --norc -euo pipefail {0}
 
 jobs:
-  template-check-update:
+  copier-check-update:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       issues: write
     env:
       ISSUE_TITLE: Template update available
-      TEMPLATE_REPOSITORY: modelblocks-org/data-module-template
-      CURRENT_TEMPLATE_VERSION: v1.0.3
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
       - name: Check for template updates
-        id: template_check_update
+        id: copier_check_update
         run: |
-          latest_version="$(gh api "repos/$TEMPLATE_REPOSITORY/releases/latest" --jq '.tag_name')"
-          echo "latest_version=$latest_version" >> "$GITHUB_OUTPUT"
-          if [[ "$latest_version" == "$CURRENT_TEMPLATE_VERSION" ]]; then
-            echo "update_available=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "update_available=true" >> "$GITHUB_OUTPUT"
-          fi
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          update_json="$(uvx --from 'copier>=9.15.2' copier check-update --output-format json)"
+          echo "$update_json"
+          {
+            echo "update_available=$(jq -r '.update_available // false' <<< "$update_json")"
+            echo "current_version=$(jq -r '.current_version // "unknown"' <<< "$update_json")"
+            echo "latest_version=$(jq -r '.latest_version // "unknown"' <<< "$update_json")"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Check for existing update issue
-        if: steps.template_check_update.outputs.update_available == 'true'
+        if: steps.copier_check_update.outputs.update_available == 'true'
         id: existing_issue
         run: |
           issue_count="$(gh issue list \
@@ -53,17 +54,22 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Open update issue
-        if: steps.template_check_update.outputs.update_available == 'true' && steps.existing_issue.outputs.exists != 'true'
+        if: steps.copier_check_update.outputs.update_available == 'true' && steps.existing_issue.outputs.exists != 'true'
         run: |
           gh issue create \
             --repo "${{ github.repository }}" \
             --title "$ISSUE_TITLE" \
             --body "A new version of the Modelblocks data module template is available.
 
-          Current synchronized Modelblocks template version: $CURRENT_TEMPLATE_VERSION
-          Latest version: $LATEST_TEMPLATE_VERSION
+          Current template version: ${{ steps.copier_check_update.outputs.current_version }}
+          Latest template version: ${{ steps.copier_check_update.outputs.latest_version }}
+
+          Please update this project using:
+
+          \`\`\`shell
+          copier update --skip-answered --defaults
+          \`\`\`
 
           Review the resulting changes before merging them."
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          LATEST_TEMPLATE_VERSION: ${{ steps.template_check_update.outputs.latest_version }}
