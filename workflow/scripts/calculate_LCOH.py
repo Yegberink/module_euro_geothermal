@@ -104,10 +104,13 @@ def calculate_heat(temperature, depths, sediment, model, eligibility_fraction=1.
     )
     fixed_OM_costs = capex_total * model["fixed_OM_rate"]
 
-    discount_rate = 0.075
+    discount_rate = float(model["discount_rate"])
     TT = float(model["lifetime"])
-    annuity_factor = (discount_rate * (1 + discount_rate) ** TT) / (
-        (1 + discount_rate) ** TT - 1
+    annuity_factor = (
+        1 / TT
+        if discount_rate == 0
+        else (discount_rate * (1 + discount_rate) ** TT)
+        / ((1 + discount_rate) ** TT - 1)
     )
     meur_to_eur_per_mwh = np.divide(
         1e6, annual_heat, out=np.full_like(annual_heat, np.nan), where=annual_heat > 0

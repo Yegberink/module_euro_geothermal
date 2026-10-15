@@ -102,6 +102,12 @@ properties:
     exclusiveMinimum: 0
     description: "Project lifetime (years)."
 
+  discount_rate:
+    type: number
+    minimum: 0
+    maximum: 1
+    description: "Annual discount rate as a fraction, shared by heat and power; zero means undiscounted costs."
+
   capacity_factor:
     type: number
     minimum: 0
@@ -211,6 +217,7 @@ required:
   - stimulation_cost_per_doublet
   - pump_cost
   - lifetime
+  - discount_rate
   - fixed_OM_rate
   - well_spacing
   - flowrate_egs

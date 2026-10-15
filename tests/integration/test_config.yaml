@@ -24,6 +24,7 @@ module_geothermal:
   kalina_money_per_kw: 2175.0
   pump_cost: 0.6
   lifetime: 30.0
+  discount_rate: 0.075
   capacity_factor: 0.88
   fixed_OM_rate: 0.015
   parasitic_fraction: 0.21

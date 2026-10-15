@@ -104,6 +104,7 @@ kalina_money_per_kw: 2175.0   # Kalina plant (€2020/kW)
 
 pump_cost: 0.6                # pump cost per doublet pair (M€2020)
 lifetime: 30.0                # plant lifetime (years)
+discount_rate: 0.075          # annual discount rate as a fraction (0.075 = 7.5%); shared by heat and power
 capacity_factor: 0.88         # annual availability factor for electricity generation (-)
 fixed_OM_rate: 0.015           # fixed O&M as fraction of capital cost per year
 parasitic_fraction: 0.21      # parasitic power consumption as fraction of gross output

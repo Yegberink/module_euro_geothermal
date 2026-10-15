@@ -72,12 +72,12 @@ LCOH = (CAPEX × annuity_factor + CAPEX × fixed_OM_rate) / annual_heat_MWh
 annuity_factor = discount_rate / (1 − (1 + discount_rate) ** (−lifetime))
 ```
 
-The water heat capacity and fixed discount rate are defined in
+The water heat capacity is defined in
 [`calculate_LCOH.py`](../workflow/scripts/calculate_LCOH.py).
 
 CAPEX includes drilling, EGS stimulation when applicable, pumps, and the
 thermal plant. Costs use €2020; the annotated configuration defines plant costs.
-Flow rates, drilling curves, sediment NaN policy, and lifetime
+Flow rates, drilling curves, sediment NaN policy, lifetime, and discount rate
 are shared with the electrical model; reinjection must be cooler than
 production. Disabling EGS rejects depths below the sediment/EGS cutoff.
 Heat does not use turbine efficiency or the electricity parasitic fraction.
@@ -199,6 +199,7 @@ all configured depth intervals must stay within that range.
 | `kalina_money_per_kw` | €2020/kW | Kalina plant CAPEX. |
 | `pump_cost` | million €2020 | Pump cost per doublet pair. |
 | `lifetime` | years | Economic lifetime. |
+| `discount_rate` | fraction/year | Annual discount rate shared by heat and power, from 0 to 1; the example uses 0.075 (7.5%). Zero gives undiscounted costs. |
 | `capacity_factor` | fraction | Annual availability for generation, from 0 to 1. |
 | `fixed_OM_rate` | fraction/year | Fixed O&M as a fraction of CAPEX. |
 | `parasitic_fraction` | fraction | Share of gross output consumed by auxiliary equipment. |

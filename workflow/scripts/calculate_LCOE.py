@@ -83,6 +83,7 @@ def calculate_LCOE_components_vec(
     sed_thickness,
     area_available,
     lifetime,
+    discount_rate,
     cycle_type,
     stimulation_cost_per_doublet,
     pump_cost,
@@ -168,10 +169,12 @@ def calculate_LCOE_components_vec(
     fixed_OM_costs = capex_total * fixed_OM_rate
     opex_total = fixed_OM_costs
 
-    discount_rate = 0.075
     TT = float(lifetime)
-    annuity_factor = (discount_rate * (1 + discount_rate) ** TT) / (
-        (1 + discount_rate) ** TT - 1
+    annuity_factor = (
+        1 / TT
+        if discount_rate == 0
+        else (discount_rate * (1 + discount_rate) ** TT)
+        / ((1 + discount_rate) ** TT - 1)
     )
 
     meur_to_eur_per_mwh = 1e6 / net_elec
@@ -337,6 +340,7 @@ def main():
             flash_money_per_kw=snakemake.params.flash_money_per_kw,
             kalina_money_per_kw=snakemake.params.kalina_money_per_kw,
             lifetime=snakemake.params.lifetime,
+            discount_rate=snakemake.params.discount_rate,
             min_dt=snakemake.params.min_dt,
             well_spacing=snakemake.params.well_spacing,
             flowrate_egs=snakemake.params.flowrate_egs,

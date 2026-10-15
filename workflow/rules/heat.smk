@@ -43,6 +43,7 @@ if HEAT_ENABLED:
             stimulation_cost_per_doublet=config["stimulation_cost_per_doublet"],
             pump_cost=config["pump_cost"],
             lifetime=config["lifetime"],
+            discount_rate=config["discount_rate"],
             fixed_OM_rate=config["fixed_OM_rate"],
             well_spacing=config["well_spacing"],
             flowrate_egs=config["flowrate_egs"],

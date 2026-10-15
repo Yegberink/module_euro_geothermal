@@ -65,6 +65,7 @@ if POWER_ENABLED:
             stimulation_cost_per_doublet=config["stimulation_cost_per_doublet"],
             pump_cost=config["pump_cost"],
             lifetime=config["lifetime"],
+            discount_rate=config["discount_rate"],
             capacity_factor=config["capacity_factor"],
             fixed_OM_rate=config["fixed_OM_rate"],
             parasitic_fraction=config["parasitic_fraction"],
