@@ -71,6 +71,12 @@ MAKE_2D_FIGURE_OUTPUTS = (
             subcategory="{shapes}",
             labels={"Figure": "LCOE and conversion technology"},
         ),
+        "potential_overview_fig": report_output(
+            "<results>/{shapes}/potential_overview.png",
+            category="Electricity potential",
+            subcategory="{shapes}",
+            labels={"Figure": "Potential at minimum LCOE"},
+        ),
         "technology_cumulative_four_panel_fig": report_output(
             "<resources>/automatic/{shapes}/figures/lcoe_potential_cumulative_four_panel.png",
             category="Electricity potential",

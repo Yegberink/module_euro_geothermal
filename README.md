@@ -111,6 +111,12 @@ resource and result directories.
 
 ## Figures and HTML report
 
+`potential_overview.png` uses the LCOE overview layout to show each technology's
+potential at its minimum-LCOE depth (GW per grid cell), with a shared color scale
+and a fourth panel showing the potential of the cheapest technology in each cell. It is included
+in the report alongside the LCOE overview when using `LCOE_minimization`.
+
+
 Request regional results, the study-wide summary, and depth/cost diagnostics
 explicitly, then repeat those targets with `--report results/<shapes>/report.html`.
 Snakemake reports contain annotated outputs in the requested dependency graph;

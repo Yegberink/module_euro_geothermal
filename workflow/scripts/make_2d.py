@@ -153,7 +153,7 @@ def _outputs_by_key(paths) -> dict[tuple[str, str | None], str]:
 
 
 def main():
-    """Reduce all requested cubes and render the two model figures."""
+    """Reduce all requested cubes and render the model figures."""
     cycles = [str(c).strip().lower() for c in snakemake.params.cycles]
     method = snakemake.params.method_2d_aggregation
     depth_categories = _parse_depth_categories(snakemake.params.depth_categories)
@@ -206,6 +206,14 @@ def main():
             lcoe_maps=lcoe_maps,
             cycles=cycles,
             out_path=snakemake.output.overview_fig,
+            shapes_path=snakemake.input.shapes,
+            max_depth=max_depth,
+        )
+        _plots.make_potential_overview(
+            lcoe_maps=lcoe_maps,
+            potential_maps=potential_maps,
+            cycles=cycles,
+            out_path=snakemake.output.potential_overview_fig,
             shapes_path=snakemake.input.shapes,
             max_depth=max_depth,
         )

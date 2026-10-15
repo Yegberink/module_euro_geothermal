@@ -165,6 +165,14 @@ def _winner_map(lcoe_arrays: dict[str, np.ndarray], cycles: list[str]) -> np.nda
     return np.where(np.any(finite, axis=0), winner, -1)
 
 
+def _potential_at_cheapest(costs, potentials, cycles):
+    """Select capacity by minimum finite cost; ties follow configured cycle order."""
+    winner = _winner_map(costs, cycles)
+    stack = np.stack([potentials[cycle] for cycle in cycles], axis=0)
+    selected = np.take_along_axis(stack, np.maximum(winner, 0)[None, ...], axis=0)[0]
+    return np.where(winner >= 0, selected, np.nan)
+
+
 def make_lcoe_overview(
     lcoe_maps: dict[str, xr.DataArray],
     cycles: list[str],
@@ -173,11 +181,45 @@ def make_lcoe_overview(
     max_depth: float,
 ):
     """Plot cycle-specific LCOE maps and the least-cost technology."""
+    _make_resource_overview(lcoe_maps, cycles, out_path, shapes_path, max_depth)
+
+
+def make_potential_overview(
+    lcoe_maps: dict[str, xr.DataArray],
+    potential_maps: dict[str, xr.DataArray],
+    cycles: list[str],
+    out_path,
+    shapes_path,
+    max_depth: float,
+):
+    """Plot cycle potentials and the potential of the cheapest technology per cell."""
+    _make_resource_overview(
+        potential_maps,
+        cycles,
+        out_path,
+        shapes_path,
+        max_depth,
+        potential=True,
+        selection_costs=lcoe_maps,
+    )
+
+
+def _make_resource_overview(
+    maps,
+    cycles,
+    out_path,
+    shapes_path,
+    max_depth,
+    *,
+    potential=False,
+    selection_costs=None,
+):
+    """Render cost and potential overviews with the same map layout."""
     if not cycles:
         write_blank_png(out_path)
         return
 
-    reference = lcoe_maps[cycles[0]]
+    reference = maps[cycles[0]]
     countries = _country_layer(shapes_path, reference)
     if countries.empty:
         write_blank_png(out_path)
@@ -212,7 +254,10 @@ def make_lcoe_overview(
         winner_cmap.set_bad((0, 0, 0, 0))
 
         plot_arrays = {
-            cycle: _plot_values(lcoe_maps[cycle], countries) for cycle in cycles
+            cycle: _plot_values(
+                maps[cycle], countries, value_scale=1000.0 if potential else 1.0
+            )
+            for cycle in cycles
         }
         lcoe_vmin, data_vmax = _finite_limits(plot_arrays.values())
         if not np.isfinite(lcoe_vmin) or not np.isfinite(data_vmax):
@@ -222,14 +267,26 @@ def make_lcoe_overview(
         lcoe_vmax = min(data_vmax, LCOE_COLORBAR_CUTOFF)
         lcoe_norm = PowerNorm(gamma=LCOE_NORM_GAMMA, vmin=70, vmax=LCOE_COLORBAR_CUTOFF)
         colorbar_extend = "max" if data_vmax > lcoe_vmax else "neither"
-        winner = _winner_map(plot_arrays, cycles)
+        if potential:
+            lcoe_norm = PowerNorm(
+                gamma=LCOE_NORM_GAMMA, vmin=0, vmax=max(data_vmax, 1e-6)
+            )
+            colorbar_extend = "neither"
+        if potential:
+            costs = {
+                cycle: _plot_values(selection_costs[cycle], countries)
+                for cycle in cycles
+            }
+            plot_arrays["winner"] = _potential_at_cheapest(costs, plot_arrays, cycles)
+        else:
+            winner = _winner_map(plot_arrays, cycles)
 
         for idx, panel in enumerate(panels):
             ax = axes[idx]
             _decorate_map(
                 ax, countries, extent, unavailable_color=LCOE_UNAVAILABLE_COLOR
             )
-            if panel == "winner":
+            if panel == "winner" and not potential:
                 ax.imshow(
                     np.where(winner >= 0, winner, np.nan),
                     origin="lower",
@@ -253,7 +310,11 @@ def make_lcoe_overview(
                     aspect="auto",
                     zorder=2,
                 )
-                title = TECH_LABELS.get(panel, panel.upper())
+                title = (
+                    "Cheapest technology potential"
+                    if panel == "winner"
+                    else TECH_LABELS.get(panel, panel.upper())
+                )
             ax.text(
                 0.02,
                 0.98,
@@ -274,7 +335,13 @@ def make_lcoe_overview(
         cbar = fig.colorbar(
             sm, cax=cax, orientation="horizontal", extend=colorbar_extend
         )
-        cbar.set_label("Levelized Cost of Electricity (€/MWh$_e$)")
+        cbar.set_label(
+            "Potential at minimum-LCOE depth (GW$_e$ per grid cell)"
+            if potential
+            else "Levelized Cost of Electricity (€/MWh$_e$)"
+        )
+        if potential:
+            cbar.set_ticks(np.linspace(0, data_vmax, 5))
         cbar.ax.tick_params(length=0, labelsize=11)
 
         handles = [
@@ -285,6 +352,8 @@ def make_lcoe_overview(
             )
             for c in cycles
         ]
+        if potential:
+            handles = []
         depth_label = (
             f"{max_depth / 1000:g} km" if max_depth >= 1000 else f"{max_depth:g} m"
         )
@@ -297,7 +366,7 @@ def make_lcoe_overview(
         )
         axes[-1].legend(
             handles=handles,
-            loc="upper right",
+            loc="lower left" if potential else "upper right",
             frameon=True,
             facecolor="white",
             framealpha=0.9,
