@@ -1,5 +1,7 @@
 # Minimal power configuration: only the selected curve and aggregation settings.
 module_geothermal:
+  eligibility:
+    enabled: false
   which_cycles:
     - orc
   carrier_out: power

@@ -10,8 +10,6 @@ import xarray as xr
 if "snakemake" in dir():
     sys.stdout = sys.stderr = open(snakemake.log[0], "w", buffering=1)
 
-CRS_TARGET = "EPSG:3857"
-
 
 def load_shapes(path: Path) -> gpd.GeoDataFrame:
     """Load and validate study-area polygons."""
@@ -20,13 +18,6 @@ def load_shapes(path: Path) -> gpd.GeoDataFrame:
     else:
         gdf = gpd.read_file(path)
     return _schemas.ShapeSchema.validate(gdf)
-
-
-def bbox_3857_from_shapes(gdf: gpd.GeoDataFrame):
-    """Return the polygon bounds in the temperature model's CRS."""
-    gdf_3857 = gdf.to_crs(CRS_TARGET)
-    minx, miny, maxx, maxy = gdf_3857.total_bounds
-    return (minx, miny, maxx, maxy)
 
 
 def crop_ds_bbox_projected(ds, x_name="x", y_name="y", bbox=None, pad_m=20_000):
@@ -53,12 +44,13 @@ def main():
     shapes_path = Path(snakemake.input.shapes)
     out_nc = Path(snakemake.output.clipped_temp_voxel)
 
-    pad_m = float(snakemake.params.get("pad_m", 25_000))
+    pad_m = float(snakemake.params.pad_m)
 
     ds = xr.open_dataset(voxel_nc, chunks="auto")
 
     gdf = load_shapes(shapes_path)
-    bbox = bbox_3857_from_shapes(gdf)
+    _schemas.SourceGridSchema.validate(ds)
+    bbox = gdf.to_crs(ds.attrs["crs"]).total_bounds
 
     ds_small = crop_ds_bbox_projected(
         ds, x_name="x", y_name="y", bbox=bbox, pad_m=pad_m

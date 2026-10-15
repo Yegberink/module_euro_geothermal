@@ -15,7 +15,7 @@ def source_grid(nc, power=(), heat=()):
     with xr.open_dataset(nc) as source:
         _schemas.SourceGridSchema.validate(source)
         x, y = source.x.values, source.y.values
-        crs = source.attrs.get("crs", "EPSG:3857")
+        crs = source.attrs["crs"]
     dx, dy = float(x[1] - x[0]), float(y[1] - y[0])
     windows = []
     if power:

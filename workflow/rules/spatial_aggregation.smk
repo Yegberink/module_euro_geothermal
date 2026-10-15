@@ -46,7 +46,11 @@ if POWER_ENABLED:
             "../envs/module.yaml"
         params:
             method_2d_aggregation=config["method_2d_aggregation"],
-            depth_categories=config.get("depth_categories"),
+            depth_categories=(
+                config["depth_categories"]
+                if config["method_2d_aggregation"] == "depth_categories"
+                else []
+            ),
             depthcat_labels=DEPTH_CATEGORY_LABELS,
             cycles=CYCLES,
             max_depth=config["max_depth"],
@@ -92,14 +96,6 @@ rule aggregate_to_regions:
             [rules.allocate_heat.output.allocations] if HEAT_ENABLED else []
         ),
         shapes="<shapes>",
-        # Include standalone diagnostics in the normal results DAG so --report
-        # collects the complete figure bundle without a separate report target.
-        diagnostics=lambda wc: (
-            expand(rules.depth_cost_breakdown_four_panel.output.fig, shapes=wc.shapes)
-            if POWER_ENABLED
-            else []
-        ),
-        summary=(["<overall_potential_summary>"] if POWER_ENABLED else []),
     output:
         geoparquet="<geothermal_regions>",
         manifest="<results>/{shapes}/geothermal_region_outputs.tsv",
@@ -121,10 +117,24 @@ rule aggregate_to_regions:
     params:
         carrier_out=config["carrier_out"],
         cycles=CYCLES,
-        method_region_aggregation=config.get("method_region_aggregation"),
-        n_quantiles=config.get("n_quantiles"),
-        fixed_bins=config.get("fixed_bins", []),
-        lcoe_cutoff=config.get("lcoe_cutoff"),
+        method_region_aggregation=(
+            config["method_region_aggregation"] if POWER_ENABLED else None
+        ),
+        n_quantiles=(
+            config["n_quantiles"]
+            if POWER_ENABLED and config["method_region_aggregation"] == "quantiles"
+            else None
+        ),
+        fixed_bins=(
+            config["fixed_bins"]
+            if POWER_ENABLED and config["method_region_aggregation"] == "fixed_bins"
+            else []
+        ),
+        lcoe_cutoff=(
+            config["lcoe_cutoff"]
+            if POWER_ENABLED and config["method_region_aggregation"] == "cutoff"
+            else None
+        ),
         bin_id=f"cutoff_{CUTOFF_LABEL}",
     message:
         "Aggregate geothermal results to {wildcards.shapes}."

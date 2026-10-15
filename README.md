@@ -111,35 +111,22 @@ resource and result directories.
 
 ## Figures and HTML report
 
-Reports use the same command pattern as `module_euro_building_heat`: run the
-normal result targets, then repeat that command with `--report`. From this
-repository's root, for example:
+Request regional results, the study-wide summary, and depth/cost diagnostics
+explicitly, then repeat those targets with `--report results/<shapes>/report.html`.
+Snakemake reports contain annotated outputs in the requested dependency graph;
+`--report` renders existing results and does not execute missing jobs.
 
-```shell
-pixi run snakemake --use-conda --cores 4 \
-  results/euro_all/geothermal_regions.parquet
-pixi run snakemake --use-conda --cores 4 \
-  results/euro_all/geothermal_regions.parquet --report results/euro_all/report.html
-```
+Regional results include the LCOE overview and cumulative-potential figures when
+`method_2d_aggregation` selects `LCOE_minimization`. The regional map additionally
+requires `cutoff`. The independent depth/cost figure is at
+`<resources>/automatic/{shapes}/figures/depth_cost_breakdown_four_panel.png` and the
+summary is available through `<overall_potential_summary>`. These electrical
+outputs are available in power and combined modes.
 
-The regional-results target also builds all applicable figures and the study-wide
-potential summary. The second command embeds those outputs,
-with workflow metadata, into `results/euro_all/report.html`.
-Snakemake's `--report` renders existing results; it does not run missing jobs.
-Append `--dry-run` to the first command to preview the required work.
-
-The workflow selects figures from the current configuration: LCOE and
-cumulative-potential plots require `LCOE_minimization`; the regional map also
-requires `cutoff` aggregation. Depth/cost diagnostics and the summary are always
-included in power and combined modes. This electricity figure bundle is not
-available in heat-only mode.
-
-For a parent workflow importing this module, request `<geothermal_regions>` in
-its target inputs as usual. After running it, use `snakemake --report report.html`
-from that workflow's directory. No additional report target is needed.
-The optional `<report_inputs>` target is retained for compatibility with existing
-commands. Reports for other targets include the annotated outputs in their
-dependency graph.
+See [`tests/local_test.py`](tests/local_test.py) for complete build and report
+commands requesting real outputs. Generated HTML reports and rule graphs are
+written under `results/`. Parent workflows can request the same output paths in
+their target inputs and render their report under their results directory.
 
 ## Development
 

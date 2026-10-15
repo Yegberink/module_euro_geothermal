@@ -31,31 +31,16 @@ trigger recalculation.
 `carrier_out` must be supplied as `power`, `heat`, or `heat_and_power`.
 Heat-only targets do not calculate electricity or require cycle parameters.
 A turbine outlet temperature must be supplied for every
-selected electricity cycle:
-
-```yaml
-which_cycles: [orc, flash, kalina]
-carrier_out: power
-temp_turbine_out:
-  ORC: 70.0
-  Flash: 150.0
-  Kalina: 80.0
-min_dt: 10.0
-```
+selected electricity cycle.
+See the annotated [configuration](config.yaml) for cycle temperatures and units.
 
 `min_dt` is the minimum difference in °C between production and turbine outlet
 temperature for electricity generation to be feasible.
 
 ## District heating
 
-```yaml
-carrier_out: heat_and_power  # use heat to skip electricity calculations
-heat_production_temperature: 80.0
-heat_reinjection_temperature: 40.0
-thermal_plant_cost_per_kw: 234.0
-heat_capacity_factor: 0.88
-heat_network_buffer_km: 10.0
-```
+Set `carrier_out` to `heat` or `heat_and_power` and supply the district-heating
+settings in the annotated [configuration](config.yaml).
 
 The `district_heating` path variable defaults to
 `<resources>/user/{shapes}/areas.parquet`. Its GeoParquet must declare a CRS and
@@ -80,16 +65,19 @@ power model's nominal **100 km² per source cell** and doublet density
 projection distortion. The heat equations are:
 
 ```text
-thermal_MW = total_flow_kg_per_s × 4250 × (production_C − reinjection_C) / 1e6
+thermal_MW = total_flow_kg_per_s × Cp_water × (production_C − reinjection_C) / 1e6
 annual_heat_MWh = thermal_MW × 8760 × heat_capacity_factor
 thermal_plant_EUR = thermal_MW × 1000 × thermal_plant_cost_per_kw
 LCOH = (CAPEX × annuity_factor + CAPEX × fixed_OM_rate) / annual_heat_MWh
-annuity_factor = 0.075 / (1 − 1.075 ** (−lifetime))
+annuity_factor = discount_rate / (1 − (1 + discount_rate) ** (−lifetime))
 ```
 
+The water heat capacity and fixed discount rate are defined in
+[`calculate_LCOH.py`](../workflow/scripts/calculate_LCOH.py).
+
 CAPEX includes drilling, EGS stimulation when applicable, pumps, and the
-thermal plant. Costs use €2020, including the thermal-plant default of
-€2020 234/kWth. Flow rates, drilling curves, sediment NaN policy, and lifetime
+thermal plant. Costs use €2020; the annotated configuration defines plant costs.
+Flow rates, drilling curves, sediment NaN policy, and lifetime
 are shared with the electrical model; reinjection must be cooler than
 production. Disabling EGS rejects depths below the sediment/EGS cutoff.
 Heat does not use turbine efficiency or the electricity parasitic fraction.
@@ -215,6 +203,14 @@ all configured depth intervals must stay within that range.
 | `fixed_OM_rate` | fraction/year | Fixed O&M as a fraction of CAPEX. |
 | `parasitic_fraction` | fraction | Share of gross output consumed by auxiliary equipment. |
 
+### Currency conversion assumptions
+
+Heat and power share the currency conversion in
+[`_economics.py`](../workflow/scripts/_economics.py). The CPI proxy used for
+2025 costs has unverified provenance and reference period; it is retained for
+reproducibility and requires scientific assessment before it can be described
+as a sourced annual index.
+
 ## Spatial aggregation
 
 The workflow first converts each depth-resolved LCOE cube to two-dimensional
@@ -223,15 +219,15 @@ rasters with `method_2d_aggregation`:
 - `LCOE_minimization` selects the least-cost feasible depth in each grid cell
   and calculates potential at that depth.
 - `depth_categories` retains a separate LCOE and potential raster for every
-  interval in `depth_categories`, such as `[0, 3000]` and `[3000, 6000]`.
+  interval in `depth_categories`, as defined in the annotated configuration.
 
 It then aggregates the rasters to the polygons supplied through the `shapes`
 path variable. Select the regional method with `method_region_aggregation`:
 
-- `quantiles` divides each regional LCOE distribution into `n_quantiles`
-  classes.
+- `quantiles` divides each input raster's finite LCOE distribution into `n_quantiles`
+  classes, using the same boundaries for all regions.
 - `fixed_bins` applies the intervals in `fixed_bins` uniformly, using strings
-  such as `"0-50"` and `"50-100"` in €2020/MWh.
+  in €2020/MWh.
 - `cutoff` reports the potential at or below `lcoe_cutoff` and the mean LCOE of
   that potential. The cutoff is expressed in €2020/MWh.
 
@@ -240,6 +236,9 @@ distribution. Configuration validation requires valid model values, a defined
 selected drilling-cost curve, and ordered, non-overlapping depth and LCOE bins.
 
 ## Inputs and outputs
+
+The supplied temperature grid must declare its CRS; missing metadata is an
+ingestion error.
 
 Configuration controls model behaviour; file placement is controlled through
 Snakemake path variables. See [`INTERFACE.yaml`](../INTERFACE.yaml) for the
@@ -276,7 +275,7 @@ optional; rows with `shape_class: maritime` are excluded from aggregation.
 The regional output and its `geothermal_region_outputs.tsv` manifest live
 under `<results>/{shapes}/`. Model cubes and rasters live under
 `<resources>/automatic/{shapes}/documents/`, and diagnostic figures under
-`<resources>/automatic/{shapes}/figures/`. The LCOE overview remains in
+`<resources>/automatic/{shapes}/figures/`. The LCOE overview is in
 `<results>/{shapes}/lcoe_overview.png`; regional-potential figures live under
 `<results>/{shapes}/figures/`.
 
@@ -295,23 +294,9 @@ The LCOE overview and cumulative-potential figures are produced for
 `cutoff` aggregation. Depth/cost diagnostics are available for both 2-D methods.
 Technology comparisons within one run remain available.
 
-Request `<results>/{shapes}/report_inputs.txt` to build every figure applicable to
-the selected configuration plus the study-wide potential table. After this target
-completes, render the same target with `--report <results>/{shapes}/report.html`.
-Figures and the table are annotated for native Snakemake reports with labels
-and categories. The `report_inputs` path variable can redirect this preparation
-target in a parent workflow. See the [report commands](../README.md#figures-and-html-report).
-
-
-### Migrating existing imports
-
-Remove `baseline_scenario`, `perform_sensitivity`, `scenarios`, `sens_tech`,
-`active_sensitivity_parameters`, and `sensitivity_parameters` from old configs;
-these keys are no longer accepted. Remove the scenario directory (including
-`base`) from result targets and path overrides. Replace the former study-wide
-comparison tables with `overall_potential_summary.tsv`; its columns are now
-`technology` and `potential_tw`. Existing generated files are not migrated or
-deleted automatically.
+Request the independent depth/cost figure and study-wide summary alongside regional
+results to include them in a report. See the [report instructions](../README.md#figures-and-html-report)
+and [`tests/local_test.py`](../tests/local_test.py). Render reports under `results/`.
 
 ## Development environments
 
@@ -328,13 +313,12 @@ Set `eligibility.enabled: true` (enabled in the example configuration) and suppl
 `<resources>/user/{shapes}/area_potential_geothermal.tif`, or override the
 `area_potential` path variable. For `euro_all`, the default input is
 `resources/user/euro_all/area_potential_geothermal.tif`.
-Omitting eligibility or setting `eligibility.enabled: false` uses the full model
+Supply `eligibility.enabled` explicitly. Setting it to `false` uses the full model
 cell area and requires no area-potential input.
 
 The input is the area-potential module output: one band of **available square
 metres per pixel**, on a square, north-up WGS84 (EPSG:4326) grid. Exclusions and
-buffers must already be applied by that module. This workflow no longer downloads
-exclusion datasets or generates an eligibility grid from individual criteria.
+buffers must already be applied by that module.
 
 `resample_eligibility` divides available area by each source pixel's WGS84
 ellipsoidal area, then uses average resampling directly onto the exact subsurface
@@ -351,4 +335,4 @@ calculating doublets, flow, thermal output, energy and investment. Positive frac
 leave LCOE/LCOH unchanged. Zero fractions follow existing infeasible-cell conventions
 and supply no energy. Heat allocation and combined-mode resource reservation use
 the reduced resource consistently. All exclusion choices and source-data limitations
-now belong to the supplied area-potential dataset.
+belong to the supplied area-potential dataset.

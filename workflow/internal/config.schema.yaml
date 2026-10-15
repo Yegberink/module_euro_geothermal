@@ -85,8 +85,7 @@ properties:
     type: object
     description: "Definitions for named drilling cost curves."
     additionalProperties:
-      type: object
-      additionalProperties: true
+      $ref: "#/$defs/drilling_curve"
 
   stimulation_cost_per_doublet:
     type: number
@@ -201,6 +200,7 @@ properties:
     description: "LCOE cutoff (EUR2020/MWh) used when method_region_aggregation=cutoff."
 
 required:
+  - eligibility
   - include_egs
   - carrier_out
   - max_depth
@@ -294,6 +294,32 @@ allOf:
       required: [heat_production_temperature, heat_reinjection_temperature, thermal_plant_cost_per_kw, heat_capacity_factor, heat_network_buffer_km]
 
 $defs:
+  drilling_curve:
+    oneOf:
+      - type: object
+        additionalProperties: false
+        required: [curve_type, constant, linear, quadratic]
+        properties:
+          curve_type: {const: quadratic_eur2020}
+          constant: {type: number}
+          linear: {type: number}
+          quadratic: {type: number}
+      - type: object
+        additionalProperties: false
+        required: [curve_type, a, b, c, currency_year]
+        properties:
+          curve_type: {const: log_quadratic_usd}
+          a: {type: number}
+          b: {type: number}
+          c: {type: number}
+          currency_year: {enum: [2017, 2020, 2021, 2025]}
+      - type: object
+        additionalProperties: false
+        required: [curve_type, csv_path, currency_year]
+        properties:
+          curve_type: {const: csv_fit_usd}
+          csv_path: {type: string, minLength: 1}
+          currency_year: {enum: [2017, 2020, 2021, 2025]}
   eligibility:
     type: object
     additionalProperties: false

@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import pandera.pandas as pa
 import xarray as xr
+from pyproj import CRS
 
 DEMAND_COLUMN = "heat_potential_mwh_per_year"
 
@@ -68,6 +69,9 @@ class SourceGridSchema:
     @staticmethod
     def validate(source):
         """Require at least two finite, regularly spaced centres per axis."""
+        if not source.attrs.get("crs"):
+            raise ValueError("Temperature grid must declare its CRS.")
+        CRS.from_user_input(source.attrs["crs"])
         for axis in (source.x.values, source.y.values):
             if len(axis) < 2:
                 raise ValueError(

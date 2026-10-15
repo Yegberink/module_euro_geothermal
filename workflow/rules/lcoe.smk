@@ -22,7 +22,7 @@ rule crop_to_speed_up:
 rule resample_gst1_sediment:
     """Align GST-1 sediment thickness to the full temperature grid."""
     input:
-        archive=rules.download_gst1.output.archive,
+        archive="<resources>/automatic/GST1_WGS84.zip",
         temperature="<resources>/automatic/temperature_voxel.nc",
     output:
         sediment="<resources>/automatic/GST1_sediment_thickness.nc",
@@ -31,8 +31,8 @@ rule resample_gst1_sediment:
     conda:
         "../envs/module.yaml"
     params:
-        member=internal["resources"]["automatic"]["gst1"]["member"],
-        doi=internal["resources"]["automatic"]["gst1"]["doi"],
+        member=AUTOMATIC_DATASETS["GST1_WGS84.zip"]["member"],
+        doi=AUTOMATIC_DATASETS["GST1_WGS84.zip"]["doi"],
     message:
         "Align GST-1 sediment thickness with the temperature grid."
     script:
@@ -47,12 +47,7 @@ if POWER_ENABLED:
             nc=rules.crop_to_speed_up.output.clipped_temp_voxel,
             sed=rules.resample_gst1_sediment.output.sediment,
             eff=workflow.source_path("../internal/efficiency_curves.csv"),
-            drilling_costs_2017=workflow.source_path(
-                "../internal/baseline_drilling_2017.csv"
-            ),
-            drilling_costs_2025=workflow.source_path(
-                "../internal/baseline_drilling_2025.csv"
-            ),
+            drilling_csv=drilling_curve_inputs,
         output:
             cube="<resources>/automatic/{shapes}/documents/{cycle}_lcoe_cube.nc",
         log:

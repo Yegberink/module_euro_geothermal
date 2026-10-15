@@ -24,12 +24,7 @@ if HEAT_ENABLED:
             nc="<resources>/automatic/temperature_voxel.nc",
             extent=rules.prepare_heat_extent.output.extent,
             sed=rules.resample_gst1_sediment.output.sediment,
-            drilling_costs_2017=workflow.source_path(
-                "../internal/baseline_drilling_2017.csv"
-            ),
-            drilling_costs_2025=workflow.source_path(
-                "../internal/baseline_drilling_2025.csv"
-            ),
+            drilling_csv=drilling_curve_inputs,
         output:
             lcoh="<resources>/automatic/{shapes}/documents/heat_lcoh.tif",
             potential="<resources>/automatic/{shapes}/documents/heat_potential.tif",

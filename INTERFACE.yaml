@@ -32,9 +32,6 @@ pathvars:
         - `heat_potential_mwh_per_year`: finite, nonnegative connected annual demand.
         - `geometry`: valid Polygon or MultiPolygon geometry.
   results:
-    report_inputs:
-      default: "<results>/{shapes}/report_inputs.txt"
-      description: Optional report preparation target retained for compatibility. Normal regional results already build applicable power figures and the study-wide summary; render HTML by adding --report to the results command.
     geothermal_regions:
       default: "<results>/{shapes}/geothermal_regions.parquet"
       description: |

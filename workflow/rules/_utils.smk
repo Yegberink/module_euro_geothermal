@@ -9,7 +9,11 @@ def _get_depth_category_labels():
     """Return compact labels for the configured depth categories."""
     return [
         f"{int(start/1000)}-{int(stop/1000)}km"
-        for start, stop in config.get("depth_categories") or []
+        for start, stop in (
+            config["depth_categories"]
+            if POWER_ENABLED and config["method_2d_aggregation"] == "depth_categories"
+            else []
+        )
     ]
 
 
@@ -57,7 +61,7 @@ CURL_ARGS = "--fail --silent --show-error --location --retry 5 --retry-delay 5 -
 AUTOMATIC_DATASETS = internal["resources"]["automatic"]["datasets"]
 POWER_ENABLED = config["carrier_out"] != "heat"
 HEAT_ENABLED = config["carrier_out"] != "power"
-CYCLES = config.get("which_cycles", []) if POWER_ENABLED else []
+CYCLES = config["which_cycles"] if POWER_ENABLED else []
 DEPTH_CATEGORY_LABELS = _get_depth_category_labels()
 MAKE_2D_FIGURE_OUTPUTS = (
     {
@@ -86,9 +90,23 @@ CUTOFF_LABEL = (
 )
 
 
-ELIGIBILITY_ENABLED = config.get("eligibility", {}).get("enabled", False)
+ELIGIBILITY_ENABLED = config["eligibility"]["enabled"]
 ELIGIBILITY_INPUT = (
     ["<resources>/automatic/{shapes}/eligibility/eligibility_fraction.tif"]
     if ELIGIBILITY_ENABLED
     else []
 )
+
+
+def drilling_curve_inputs(wildcards):
+    """Track the selected CSV and resolve bundled paths relative to the module."""
+    spec = config["drilling_cost_curve_definitions"][config["drilling_cost_curve"]]
+    if spec["curve_type"] != "csv_fit_usd":
+        return []
+    path = spec["csv_path"]
+    if path in {
+        "workflow/internal/baseline_drilling_2017.csv",
+        "workflow/internal/baseline_drilling_2025.csv",
+    }:
+        path = workflow.source_path("../internal/" + path.rsplit("/", 1)[1])
+    return [path]

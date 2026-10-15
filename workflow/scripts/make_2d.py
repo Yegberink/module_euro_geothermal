@@ -154,16 +154,10 @@ def _outputs_by_key(paths) -> dict[tuple[str, str | None], str]:
 
 def main():
     """Reduce all requested cubes and render the two model figures."""
-    cycles = [str(c).strip().lower() for c in snakemake.params.get("cycles")]
-    method = (
-        snakemake.params.get("method_2d_aggregation")
-        or snakemake.config["method_2d_aggregation"]
-    )
-    depth_categories = _parse_depth_categories(
-        snakemake.params.get("depth_categories", [])
-    )
-    crs = snakemake.config.get("crs") or snakemake.params.get("crs")
-    max_depth = float(snakemake.params.get("max_depth", snakemake.config["max_depth"]))
+    cycles = [str(c).strip().lower() for c in snakemake.params.cycles]
+    method = snakemake.params.method_2d_aggregation
+    depth_categories = _parse_depth_categories(snakemake.params.depth_categories)
+    max_depth = float(snakemake.params.max_depth)
 
     cubes_by_cycle = {
         _cycle_from_cube_path(path): path for path in snakemake.input.cubes
@@ -177,6 +171,7 @@ def main():
 
     for cycle in cycles:
         with xr.open_dataset(cubes_by_cycle[cycle]) as cube:
+            crs = cube.attrs["crs"]
             if method == "LCOE_minimization":
                 reduced = aggregate_3d_to_2d_lcoe_min(cube, "depth_m").load()
                 lcoe_maps[cycle] = _ensure_raster_metadata(reduced["lcoe_2d"], crs=crs)

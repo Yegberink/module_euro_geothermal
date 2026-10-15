@@ -12,7 +12,7 @@
 # -----------------------------------------------------------------------------
 method_region_aggregation: cutoff
 # options:
-#   quantiles    → divide LCOE distribution into n_quantiles cost classes per region
+#   quantiles    → divide each raster LCOE distribution into n_quantiles classes shared by regions
 #   fixed_bins   → user-defined LCOE bins (€2020/MWh) applied uniformly
 #   cutoff       → single capacity figure below lcoe_cutoff and average LCOE of that capacity
 
@@ -52,9 +52,9 @@ drilling_cost_curve_definitions:
     quadratic: 0.2
   shamoushaki_2021:
     curve_type: log_quadratic_usd
-    a: 5.548e5
+    a: 554800.0
     b: 0.2171
-    c: 8.135e5
+    c: 813500.0
     currency_year: 2021
   getem_2017:
     curve_type: csv_fit_usd

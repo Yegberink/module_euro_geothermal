@@ -6,23 +6,15 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import xarray as xr
+from _economics import (
+    apply_sed_nan_policy,
+    drilling_cost_meur_per_well,
+    resolve_drilling_curve_definition,
+)
 from _eligibility import load_fraction
-from scipy.optimize import curve_fit
 
 if "snakemake" in dir():
     sys.stdout = sys.stderr = open(snakemake.log[0], "w", buffering=1)
-
-
-def drilling_cost_curve_definitions():
-    """Resolve configured drilling-curve files to Snakemake input paths."""
-    definitions = dict(snakemake.params.drilling_cost_curve_definitions)
-    if "getem_2017" in definitions:
-        definitions["getem_2017"] = dict(definitions["getem_2017"])
-        definitions["getem_2017"]["csv_path"] = snakemake.input.drilling_costs_2017
-    if "getem_2025" in definitions:
-        definitions["getem_2025"] = dict(definitions["getem_2025"])
-        definitions["getem_2025"]["csv_path"] = snakemake.input.drilling_costs_2025
-    return definitions
 
 
 VOXEL_NC = snakemake.input.nc
@@ -43,100 +35,18 @@ SED_NAN_POLICY = snakemake.params.SED_NAN_POLICY
 # other configs
 include_egs = bool(snakemake.params.include_egs)
 DRILLING_COST_CURVE = str(snakemake.params.drilling_cost_curve)
-DRILLING_COST_CURVE_DEFINITIONS = drilling_cost_curve_definitions()
+DRILLING_COST_CURVE_DEFINITIONS = {
+    name: dict(spec)
+    for name, spec in snakemake.params.drilling_cost_curve_definitions.items()
+}
+if snakemake.input.drilling_csv:
+    DRILLING_COST_CURVE_DEFINITIONS[DRILLING_COST_CURVE]["csv_path"] = (
+        snakemake.input.drilling_csv[0]
+    )
 
-CPI_US = {2017: 245.120, 2020: 258.811, 2021: 270.970}
-CPI_2025_PROXY = 324.368
-EUR_PER_USD_2020 = 1 / 1.1422
-
-
-def _usd_to_eur2020_factor(currency_year):
-    if int(currency_year) == 2025:
-        return (CPI_US[2020] / CPI_2025_PROXY) * EUR_PER_USD_2020
-    return (CPI_US[2020] / CPI_US[int(currency_year)]) * EUR_PER_USD_2020
-
-
-def _log_quadratic_cost_meur(depth_m, a, b, c):
-    depth_m = np.asarray(depth_m, dtype=float)
-    return (a * np.log(depth_m) + b * depth_m**2 + c) / 1e6
-
-
-def _init_log_quadratic_guesses(depth_m, costs):
-    p2 = np.polyfit(depth_m, costs, 2)
-    b0 = max(p2[0], 1e-12)
-    return 1e5, b0, 5e5
-
-
-def _load_curve_from_csv(csv_path, currency_year):
-    csv_file = Path(csv_path)
-    df = pd.read_csv(csv_file, header=None)
-
-    depth_m = df.iloc[:, 0].to_numpy(dtype=float)
-    costs = df.iloc[:, 1].to_numpy(dtype=float)
-
-    p0 = _init_log_quadratic_guesses(depth_m, costs)
-    coeffs, _ = curve_fit(_log_quadratic_cost_meur, depth_m, costs, p0=p0, maxfev=10000)
-    return {
-        "curve_type": "log_quadratic_usd",
-        "a": float(coeffs[0]),
-        "b": float(coeffs[1]),
-        "c": float(coeffs[2]),
-        "currency_year": int(currency_year),
-    }
-
-
-def _resolve_drilling_curve_definition(curve_name, definitions):
-    builtins = {
-        "thermogis": {
-            "curve_type": "quadratic_eur2020",
-            "constant": 250000.0,
-            "linear": 700.0,
-            "quadratic": 0.2,
-        },
-        "shamoushaki_2021": {
-            "curve_type": "log_quadratic_usd",
-            "a": 5.548e5,
-            "b": 0.2171,
-            "c": 8.135e5,
-            "currency_year": 2021,
-        },
-    }
-
-    spec = builtins.get(curve_name)
-    if curve_name in definitions:
-        custom_spec = dict(definitions[curve_name])
-        if custom_spec.get("curve_type") == "csv_fit_usd":
-            spec = _load_curve_from_csv(
-                csv_path=custom_spec["csv_path"],
-                currency_year=custom_spec["currency_year"],
-            )
-        else:
-            spec = custom_spec
-
-    return spec
-
-
-DRILLING_COST_CURVE_SPEC = _resolve_drilling_curve_definition(
+DRILLING_COST_CURVE_SPEC = resolve_drilling_curve_definition(
     DRILLING_COST_CURVE, DRILLING_COST_CURVE_DEFINITIONS
 )
-
-
-def _drilling_cost_meur_per_well(depth_m):
-    spec = DRILLING_COST_CURVE_SPEC
-    curve_type = spec["curve_type"]
-
-    if curve_type == "quadratic_eur2020":
-        return (
-            float(spec["constant"])
-            + float(spec["linear"]) * depth_m
-            + float(spec["quadratic"]) * depth_m**2
-        ) / 1e6
-
-    if curve_type == "log_quadratic_usd":
-        cost_meur = _log_quadratic_cost_meur(
-            depth_m, float(spec["a"]), float(spec["b"]), float(spec["c"])
-        )
-        return cost_meur * _usd_to_eur2020_factor(spec["currency_year"])
 
 
 def load_efficiency_curve_csv(csv_path, cycle_key):
@@ -166,19 +76,6 @@ def interp_eff(temps_grid, temps_curve, effs_curve):
     """Interpolate cycle efficiency and return single-precision values."""
     eff = np.interp(temps_grid, temps_curve, effs_curve, left=np.nan, right=np.nan)
     return eff.astype(np.float32, copy=False)
-
-
-def _apply_sed_nan_policy(sed_thickness, z_thr=Z_THR_M, policy=SED_NAN_POLICY):
-    """Replace NaNs in sediment thickness according to policy.
-
-    - depth_only: NaN -> z_thr (EGS only deeper than z_thr)
-    - always_egs: NaN -> 0 (EGS at all depths).
-    """
-    if policy == "depth_only":
-        fill = float(z_thr)
-    elif policy == "always_egs":
-        fill = 0.0
-    return np.where(np.isfinite(sed_thickness), sed_thickness, fill).astype(np.float32)
 
 
 LCOE_COMPONENT_NAMES = ("drilling", "stimulation", "pump", "power_plant", "fixed_om")
@@ -211,7 +108,7 @@ def calculate_LCOE_components_vec(
     Cp_water = 4250.0
     MIN_DT = min_dt
 
-    sed_ok = _apply_sed_nan_policy(sed_thickness, z_thr=Z_THR_M, policy=SED_NAN_POLICY)
+    sed_ok = apply_sed_nan_policy(sed_thickness, z_thr=Z_THR_M, policy=SED_NAN_POLICY)
     cutoff = np.minimum(Z_THR_M, sed_ok)
 
     if include_egs:
@@ -255,7 +152,9 @@ def calculate_LCOE_components_vec(
     powerplant_investment = (W * 1000.0 * eur_per_kw) / 1e6
     stimulation_cost = stimulation_cost_per_doublet * n_pairs
 
-    well_cost_no_stim = _drilling_cost_meur_per_well(depth) * nr_wells
+    well_cost_no_stim = (
+        drilling_cost_meur_per_well(depth, DRILLING_COST_CURVE_SPEC) * nr_wells
+    )
     stimulation_investment = stimulation_cost if is_egs else 0.0
     pump_investment = pump_cost * n_pairs
     capex_total = (
@@ -314,7 +213,7 @@ def calculate_capacity_vec(
     Cp_water = 4250.0
     MIN_DT = min_dt
 
-    sed_ok = _apply_sed_nan_policy(sed_thickness, z_thr=Z_THR_M, policy=SED_NAN_POLICY)
+    sed_ok = apply_sed_nan_policy(sed_thickness, z_thr=Z_THR_M, policy=SED_NAN_POLICY)
     cutoff = np.minimum(Z_THR_M, sed_ok)
 
     if include_egs:
@@ -360,19 +259,17 @@ def _normalize_cycle_param(x: str) -> str:
 
 def main():
     """Calculate and write the LCOE cube requested by Snakemake."""
-    cycle = _normalize_cycle_param(snakemake.params.get("cycle"))
+    cycle = _normalize_cycle_param(snakemake.params.cycle)
     cycle_key = {"orc": "ORC", "flash": "Flash", "kalina": "Kalina"}[cycle]
 
     # Explicit outputs from Snakemake rule (one tech per job)
     cube_nc = Path(snakemake.output.cube)
 
     ds = xr.open_dataset(VOXEL_NC)
-    crs_str = str(ds.attrs.get("crs", "")).strip() or "EPSG:3857"
+    crs_str = ds.attrs["crs"]
 
     T = ds[VAR]  # (depth_m, y, x)
-    fraction = load_fraction(
-        getattr(snakemake.input, "eligibility", []), T.x, T.y, crs_str
-    )
+    fraction = load_fraction(snakemake.input.eligibility, T.x, T.y, crs_str)
     area = 100 * fraction
 
     max_depth = float(snakemake.params.max_depth)
@@ -392,8 +289,8 @@ def main():
 
     # Select the exact subset of the full, pre-aligned GST-1 grid.
     sediment_ds = xr.open_dataset(SEDIMENT_NC)
-    sediment_crs = str(sediment_ds.attrs.get("crs", "")).strip()
-    if sediment_crs and sediment_crs != crs_str:
+    sediment_crs = sediment_ds.attrs["crs"]
+    if sediment_crs != crs_str:
         raise ValueError(
             f"Sediment-grid CRS {sediment_crs!r} does not match temperature-grid CRS {crs_str!r}"
         )
@@ -401,7 +298,9 @@ def main():
     sed3d = sed2d.broadcast_like(T)
 
     # --- cutoff depth map (2D) consistent with NaN policy ---
-    sed2d_ok = xr.apply_ufunc(_apply_sed_nan_policy, sed2d)
+    sed2d_ok = xr.apply_ufunc(
+        apply_sed_nan_policy, sed2d, kwargs={"z_thr": Z_THR_M, "policy": SED_NAN_POLICY}
+    )
     cutoff2d = xr.apply_ufunc(np.minimum, Z_THR_M, sed2d_ok).astype(np.float32)
     cutoff2d.name = "egs_cutoff_depth_m"
     cutoff2d.attrs.update({"crs": crs_str, "units": "m"})

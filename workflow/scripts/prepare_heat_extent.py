@@ -17,7 +17,8 @@ def main():
     networks = load_networks(snakemake.input.networks).to_crs(METRIC_CRS)
     shapes = _schemas.ShapeSchema.validate(gpd.read_parquet(snakemake.input.shapes))
     with xr.open_dataset(snakemake.input.nc) as ds:
-        crs = ds.attrs.get("crs", "EPSG:3857")
+        _schemas.SourceGridSchema.validate(ds)
+        crs = ds.attrs["crs"]
         bounds = [shapes.to_crs(crs).total_bounds]
         if len(networks):
             # Only the extent is needed: avoid constructing thousands of

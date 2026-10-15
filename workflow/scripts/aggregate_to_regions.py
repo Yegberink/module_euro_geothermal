@@ -408,22 +408,22 @@ def main():
     out_path = snakemake.output["geoparquet"]
     manifest_path = snakemake.output["manifest"]
     resultdir = os.path.dirname(out_path)
-    heat_enabled = snakemake.params.get("carrier_out", "power") != "power"
+    heat_enabled = snakemake.params.carrier_out != "power"
     used_fraction = (
         read_raster(snakemake.input.heat_fraction[0]) if heat_enabled else None
     )
     heat_eligible = xr.zeros_like(used_fraction, dtype=bool) if heat_enabled else None
 
     # --- Parameters -------------------------------------------------------
-    cycles = [str(c).strip().lower() for c in (snakemake.params.get("cycles") or [])]
+    cycles = [str(c).strip().lower() for c in snakemake.params.cycles]
     method = str(snakemake.params["method_region_aggregation"]).lower()
     n_quantiles = (
         int(snakemake.params["n_quantiles"])
         if cycles and method == "quantiles"
         else None
     )
-    fixed_bins = parse_fixed_bins(snakemake.params.get("fixed_bins", []))
-    lcoe_cutoff = snakemake.params.get("lcoe_cutoff", None)
+    fixed_bins = parse_fixed_bins(snakemake.params.fixed_bins)
+    lcoe_cutoff = snakemake.params.lcoe_cutoff
     if lcoe_cutoff is not None:
         lcoe_cutoff = float(lcoe_cutoff)
 
@@ -535,7 +535,6 @@ def main():
             resultdir,
             f"geothermal_regions_{_safe_name(depth_category)}_{_safe_name(bin_id)}.parquet",
         )
-        group = _schemas.GeothermalRegionsSchema.validate(group)
         group.to_parquet(split_path, index=False)
         output_rows.append(
             {

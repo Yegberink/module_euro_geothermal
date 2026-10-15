@@ -13,7 +13,7 @@ import yaml
 
 URL = "https://zenodo.org/records/20765043/files/{shapes}.parquet?download=1"
 SHAPES = ("EUROPE_S_C1_ADM1", "EUROPE_V_C4_NUTS1", "EUROPE_L_C34_ADM1")
-POWER_RESULTS = ("geothermal_regions", "overall_potential_summary", "report_inputs")
+POWER_RESULTS = ("geothermal_regions", "overall_potential_summary")
 
 
 def fetch_file(directory: Path, shapes: str) -> Path:
@@ -38,8 +38,6 @@ def test_full_run(module_path: Path, interface: dict, shapes: str, tmp_path):
     config = yaml.safe_load(
         (module_path / "tests/integration/test_config.yaml").read_text()
     )["module_geothermal"]
-    # The root workflow loads the example configuration before these overrides.
-    config["eligibility"] = {"enabled": False}
     config_path = tmp_path / "config.yaml"
     config_path.write_text(yaml.safe_dump(config))
     result_paths = [
@@ -48,6 +46,9 @@ def test_full_run(module_path: Path, interface: dict, shapes: str, tmp_path):
         .format(shapes=shapes)
         for name in POWER_RESULTS
     ]
+    result_paths.append(
+        f"resources/automatic/{shapes}/figures/depth_cost_breakdown_four_panel.png"
+    )
     command = ["snakemake", "--use-conda", "--cores", "4", *result_paths]
     command += ["--configfile", str(config_path)]
     subprocess.run(

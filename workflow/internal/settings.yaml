@@ -9,11 +9,11 @@ resources:
         doi: "10.5281/zenodo.22149195"
         version: v1
         license: CC-BY-4.0
-    gst1:
-      filename: GST1_WGS84.zip
-      url: "https://zenodo.org/api/records/15320474/files/GST1_WGS84.zip/content"
-      member: GST14_WGS84.XYZ
-      md5: b2d1a3778f172506812036f330944186
-      doi: "10.5281/zenodo.15320474"
-      version: "Version 1"
-      license: CC-BY-4.0
+      GST1_WGS84.zip:
+        filename: GST1_WGS84.zip
+        url: "https://zenodo.org/api/records/15320474/files/GST1_WGS84.zip/content"
+        member: GST14_WGS84.XYZ
+        md5: b2d1a3778f172506812036f330944186
+        doi: "10.5281/zenodo.15320474"
+        version: "Version 1"
+        license: CC-BY-4.0
