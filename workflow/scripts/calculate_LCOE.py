@@ -72,12 +72,6 @@ def load_efficiency_curve_csv(csv_path, cycle_key):
     return temps, effs
 
 
-def interp_eff(temps_grid, temps_curve, effs_curve):
-    """Interpolate cycle efficiency and return single-precision values."""
-    eff = np.interp(temps_grid, temps_curve, effs_curve, left=np.nan, right=np.nan)
-    return eff.astype(np.float32, copy=False)
-
-
 LCOE_COMPONENT_NAMES = ("drilling", "stimulation", "pump", "power_plant", "fixed_om")
 
 
@@ -252,14 +246,9 @@ def calculate_capacity_vec(
     return np.float32(potential)
 
 
-def _normalize_cycle_param(x: str) -> str:
-    x = str(x).strip().lower()
-    return x
-
-
 def main():
     """Calculate and write the LCOE cube requested by Snakemake."""
-    cycle = _normalize_cycle_param(snakemake.params.cycle)
+    cycle = str(snakemake.params.cycle).strip().lower()
     cycle_key = {"orc": "ORC", "flash": "Flash", "kalina": "Kalina"}[cycle]
 
     # Explicit outputs from Snakemake rule (one tech per job)
@@ -311,14 +300,14 @@ def main():
     use_dask = "parallelized" if hasattr(T.data, "chunks") else False
 
     eff = xr.apply_ufunc(
-        interp_eff,
+        np.interp,
         T,
         input_core_dims=[[]],
-        kwargs={"temps_curve": temps_curve, "effs_curve": effs_curve},
+        kwargs={"xp": temps_curve, "fp": effs_curve, "left": np.nan, "right": np.nan},
         vectorize=True,
         dask=use_dask,
         output_dtypes=[np.float32],
-    )
+    ).astype(np.float32)
 
     t_out = float(snakemake.params.temp_turbine_out[cycle_key])
 

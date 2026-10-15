@@ -5,19 +5,11 @@ from pathlib import Path
 
 import _schemas
 import geopandas as gpd
+import numpy as np
 import xarray as xr
 
 if "snakemake" in dir():
     sys.stdout = sys.stderr = open(snakemake.log[0], "w", buffering=1)
-
-
-def load_shapes(path: Path) -> gpd.GeoDataFrame:
-    """Load and validate study-area polygons."""
-    if path.suffix.lower() == ".parquet":
-        gdf = gpd.read_parquet(path)
-    else:
-        gdf = gpd.read_file(path)
-    return _schemas.ShapeSchema.validate(gdf)
 
 
 def crop_ds_bbox_projected(ds, x_name="x", y_name="y", bbox=None, pad_m=20_000):
@@ -48,7 +40,11 @@ def main():
 
     ds = xr.open_dataset(voxel_nc, chunks="auto")
 
-    gdf = load_shapes(shapes_path)
+    gdf = _schemas.ShapeSchema.validate(
+        gpd.read_parquet(shapes_path)
+        if shapes_path.suffix.lower() == ".parquet"
+        else gpd.read_file(shapes_path)
+    )
     _schemas.SourceGridSchema.validate(ds)
     bbox = gdf.to_crs(ds.attrs["crs"]).total_bounds
 
@@ -56,7 +52,17 @@ def main():
         ds, x_name="x", y_name="y", bbox=bbox, pad_m=pad_m
     )
     if ds_small.sizes.get("x", 1) == 0 or ds_small.sizes.get("y", 1) == 0:
-        ds_small = _schemas.empty_dataset_like(ds.isel(x=slice(0, 1), y=slice(0, 1)))
+        template = ds.isel(x=slice(0, 1), y=slice(0, 1))
+        ds_small = xr.Dataset(
+            {
+                name: xr.full_like(var.astype("float32"), np.nan).assign_attrs(
+                    var.attrs
+                )
+                for name, var in template.data_vars.items()
+            },
+            coords=template.coords,
+            attrs=dict(template.attrs),
+        )
 
     ds_small.to_netcdf(out_nc)
 

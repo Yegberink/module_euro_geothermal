@@ -7,19 +7,13 @@ that supply level. This avoids network-order bias and double counting cells.
 
 import sys
 import time
+from pathlib import Path
 
 import _schemas
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-from _heat import (
-    DEMAND_COLUMN,
-    METRIC_CRS,
-    check_grid,
-    load_networks,
-    read_raster,
-    write_raster,
-)
+from _heat import DEMAND_COLUMN, METRIC_CRS, check_grid, read_raster, write_raster
 from scipy.optimize import linprog
 from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components
@@ -164,7 +158,11 @@ def solve_allocation(edges, demand, capacity, cost):
 def main():
     """Write network summaries, an auditable allocation ledger, and used rasters."""
     start = time.perf_counter()
-    networks = load_networks(snakemake.input.networks)
+    networks = (
+        _schemas.HeatNetworksSchema.validate(gpd.read_parquet(snakemake.input.networks))
+        .sort_values("area_id", kind="stable")
+        .reset_index(drop=True)
+    )
     regions = _schemas.ShapeSchema.validate(gpd.read_parquet(snakemake.input.shapes))
     if "shape_class" in regions:
         regions = regions[regions.shape_class != "maritime"]
@@ -230,7 +228,7 @@ def main():
     write_raster(allocated, snakemake.output.allocated, "MWh_th/year")
     write_raster(fraction, snakemake.output.fraction, "1")
     for name in ["networks", "allocations"]:
-        _schemas.ensure_parent(snakemake.output[name])
+        Path(snakemake.output[name]).parent.mkdir(parents=True, exist_ok=True)
     networks.to_parquet(snakemake.output.networks, index=False)
     ledger.to_parquet(snakemake.output.allocations, index=False)
     print(

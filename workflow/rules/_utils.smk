@@ -5,18 +5,6 @@ import re
 from snakemake.io import report as report_output
 
 
-def _get_depth_category_labels():
-    """Return compact labels for the configured depth categories."""
-    return [
-        f"{int(start/1000)}-{int(stop/1000)}km"
-        for start, stop in (
-            config["depth_categories"]
-            if POWER_ENABLED and config["method_2d_aggregation"] == "depth_categories"
-            else []
-        )
-    ]
-
-
 def additional_config_validation() -> None:
     """Check configuration relationships beyond the JSON schema."""
     if config["carrier_out"] != "power":
@@ -62,7 +50,14 @@ AUTOMATIC_DATASETS = internal["resources"]["automatic"]["datasets"]
 POWER_ENABLED = config["carrier_out"] != "heat"
 HEAT_ENABLED = config["carrier_out"] != "power"
 CYCLES = config["which_cycles"] if POWER_ENABLED else []
-DEPTH_CATEGORY_LABELS = _get_depth_category_labels()
+DEPTH_CATEGORY_LABELS = [
+    f"{int(start/1000)}-{int(stop/1000)}km"
+    for start, stop in (
+        config["depth_categories"]
+        if POWER_ENABLED and config["method_2d_aggregation"] == "depth_categories"
+        else []
+    )
+]
 MAKE_2D_FIGURE_OUTPUTS = (
     {
         "overview_fig": report_output(

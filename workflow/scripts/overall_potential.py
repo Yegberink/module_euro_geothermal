@@ -42,11 +42,6 @@ def _read_raster(path):
     return values, grid
 
 
-def total_potential_tw(values):
-    """Return the finite potential sum, converting MW to TW."""
-    return float(np.nansum(np.asarray(values, dtype=np.float64)) / MW_PER_TW)
-
-
 def lowest_lcoe_potential_tw(lcoe_by_technology, potential_by_technology):
     """Sum potential from the lowest-LCOE available technology in every cell."""
     technologies = list(lcoe_by_technology)
@@ -61,7 +56,7 @@ def lowest_lcoe_potential_tw(lcoe_by_technology, potential_by_technology):
     winner = np.argmin(np.where(valid, lcoe, np.inf), axis=0)
     selected = np.take_along_axis(potential, winner[None, ...], axis=0)[0]
     selected[~valid.any(axis=0)] = np.nan
-    return total_potential_tw(selected)
+    return float(np.nansum(np.asarray(selected, dtype=np.float64)) / MW_PER_TW)
 
 
 def potential_summary_table(lcoe_paths, potential_paths):
@@ -106,7 +101,7 @@ def potential_summary_table(lcoe_paths, potential_paths):
             potential_by_technology[technology] = potential
             totals_by_technology[technology] = totals_by_technology.get(
                 technology, 0.0
-            ) + total_potential_tw(potential)
+            ) + float(np.nansum(np.asarray(potential, dtype=np.float64)) / MW_PER_TW)
 
         portfolio_total += lowest_lcoe_potential_tw(
             lcoe_by_technology, potential_by_technology

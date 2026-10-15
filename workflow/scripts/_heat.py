@@ -1,19 +1,14 @@
 """Shared heat input validation and raster I/O, independent of model economics."""
 
+from pathlib import Path
+
 import _schemas
-import geopandas as gpd
 import numpy as np
 import rioxarray as rxr
 from affine import Affine
 
 METRIC_CRS = "EPSG:3035"
 DEMAND_COLUMN = _schemas.DEMAND_COLUMN
-
-
-def load_networks(path):
-    """Validate networks without interpreting the existing network-cost columns."""
-    networks = _schemas.HeatNetworksSchema.validate(gpd.read_parquet(path))
-    return networks.sort_values("area_id", kind="stable").reset_index(drop=True)
 
 
 def read_raster(path):
@@ -42,7 +37,7 @@ def check_grid(left, right):
 
 def write_raster(data, path, units):
     """Write a north-up compressed raster with explicit units and NaN nodata."""
-    _schemas.ensure_parent(path)
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
     data = data.sortby("y", ascending=False).transpose("y", "x")
     data.attrs["units"] = units
     data.rio.write_nodata(np.nan).rio.to_raster(path, compress="deflate")

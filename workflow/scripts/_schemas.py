@@ -1,12 +1,9 @@
 """Schemas and empty output helpers."""
 
-from pathlib import Path
-
 import geopandas as gpd
 import numpy as np
 import pandas as pd
 import pandera.pandas as pa
-import xarray as xr
 from pyproj import CRS
 
 DEMAND_COLUMN = "heat_potential_mwh_per_year"
@@ -141,10 +138,6 @@ class GeothermalRegionsSchema:
         coerce=True,
     )
 
-    @classmethod
-    def validate(cls, df):
-        return cls.schema.validate(df)
-
 
 class GeothermalRegionManifestSchema:
     schema = pa.DataFrameSchema(
@@ -155,29 +148,6 @@ class GeothermalRegionManifestSchema:
         strict=True,
         coerce=True,
     )
-
-    @classmethod
-    def validate(cls, df):
-        return cls.schema.validate(df)
-
-
-GEOTHERMAL_REGION_COLUMNS = [
-    "category",
-    "carrier",
-    "potential_unit",
-    "mean_lcoh",
-    "technology",
-    "depth_category",
-    "region_id",
-    "price_bin",
-    "bin_id",
-    "bin_left",
-    "bin_right",
-    "potential",
-    "mean_lcoe",
-    "n_cells",
-]
-MANIFEST_COLUMNS = ["kind", "depth_category", "bin_id", "price_bin", "path"]
 
 
 def empty_geothermal_regions(crs=None) -> gpd.GeoDataFrame:
@@ -200,60 +170,3 @@ def empty_geothermal_regions(crs=None) -> gpd.GeoDataFrame:
         }
     )
     return gpd.GeoDataFrame(df, geometry=gpd.GeoSeries([], crs=crs), crs=crs)
-
-
-def empty_manifest() -> pd.DataFrame:
-    return pd.DataFrame({col: pd.Series(dtype="object") for col in MANIFEST_COLUMNS})
-
-
-def ensure_parent(path) -> None:
-    parent = Path(path).parent
-    if str(parent):
-        parent.mkdir(parents=True, exist_ok=True)
-
-
-def empty_dataarray_like(da: xr.DataArray) -> xr.DataArray:
-    out = xr.full_like(da.astype("float32"), np.nan)
-    out.attrs.update(da.attrs)
-    return out
-
-
-def empty_dataset_like(ds: xr.Dataset) -> xr.Dataset:
-    out = xr.Dataset(
-        {name: empty_dataarray_like(var) for name, var in ds.data_vars.items()},
-        coords=ds.coords,
-        attrs=dict(ds.attrs),
-    )
-    for name in out.data_vars:
-        out[name].attrs.update(ds[name].attrs)
-    return out
-
-
-def write_empty_netcdf_like(ds: xr.Dataset, path) -> None:
-    ensure_parent(path)
-    empty_dataset_like(ds).to_netcdf(path)
-
-
-def empty_raster_like(da: xr.DataArray) -> xr.DataArray:
-    out = empty_dataarray_like(da)
-    if hasattr(da, "rio"):
-        out = out.rio.write_crs(da.rio.crs, inplace=False)
-        out = out.rio.write_transform(da.rio.transform(), inplace=False)
-        out = out.rio.write_nodata(np.nan, inplace=False)
-    return out
-
-
-def empty_raster_dataarray(
-    da: xr.DataArray, *, x_name: str = "x", y_name: str = "y"
-) -> xr.DataArray:
-    return xr.DataArray(
-        np.full((1, 1), np.nan, dtype=np.float32),
-        coords={y_name: [0.0], x_name: [0.0]},
-        dims=(y_name, x_name),
-        attrs=dict(da.attrs),
-    )
-
-
-def write_manifest(df: pd.DataFrame, path) -> None:
-    ensure_parent(path)
-    GeothermalRegionManifestSchema.validate(df).to_csv(path, sep="\t", index=False)

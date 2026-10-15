@@ -17,10 +17,6 @@ if "snakemake" in dir():
 COMPONENTS = ("drilling", "stimulation", "pump", "power_plant", "fixed_om")
 
 
-def _cycle_from_cube(path):
-    return Path(path).name.replace("_lcoe_cube.nc", "").lower()
-
-
 def _ensure_raster_metadata(da, crs=None):
     da = da.transpose("y", "x").rio.set_spatial_dims(
         x_dim="x", y_dim="y", inplace=False
@@ -84,14 +80,16 @@ def _component_shares_for_cube(cube_path, shapes_path):
                 .load()
             )
             shares[component] = (100 * contribution / total).where(valid_total)
-    technology = _cycle_from_cube(cube_path)
+    technology = Path(cube_path).name.replace("_lcoe_cube.nc", "").lower()
     return xr.Dataset(shares).expand_dims(technology=[technology])
 
 
 def main():
     """Prepare the inputs and render the requested four-panel figure."""
     cubes = list(snakemake.input["cubes"])
-    cubes_by_technology = {_cycle_from_cube(path): path for path in cubes}
+    cubes_by_technology = {
+        Path(path).name.replace("_lcoe_cube.nc", "").lower(): path for path in cubes
+    }
     technologies = [t for t in _plots.TECH_LABELS if t in cubes_by_technology]
     depth_maps = {
         technology: _depth_at_minimum_lcoe(cubes_by_technology[technology])

@@ -14,6 +14,7 @@ Supported aggregation methods (method_region_aggregation):
 import os
 import re
 import sys
+from pathlib import Path
 
 import _schemas
 import affine
@@ -31,11 +32,12 @@ if "snakemake" in dir():
 def write_empty_outputs(out_path: str, manifest_path: str, crs=None):
     """Write schema-valid empty regional outputs."""
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    out_gdf = _schemas.GeothermalRegionsSchema.validate(
+    out_gdf = _schemas.GeothermalRegionsSchema.schema.validate(
         _schemas.empty_geothermal_regions(crs)
     )
     out_gdf.to_parquet(out_path, index=False)
-    _schemas.write_manifest(
+    Path(manifest_path).parent.mkdir(parents=True, exist_ok=True)
+    _schemas.GeothermalRegionManifestSchema.schema.validate(
         pd.DataFrame(
             [
                 {
@@ -46,9 +48,8 @@ def write_empty_outputs(out_path: str, manifest_path: str, crs=None):
                     "path": out_path,
                 }
             ]
-        ),
-        manifest_path,
-    )
+        )
+    ).to_csv(manifest_path, sep="\t", index=False)
 
 
 # ---------------------------------------------------------------------------
@@ -80,12 +81,6 @@ def _parse_2d_tif_name(path: str):
         return m.group("tech").lower(), "all_depths", m.group("kind")
 
     raise ValueError(f"Unrecognized 2-D raster filename: {path}")
-
-
-def _safe_name(s: str) -> str:
-    """Sanitise a string for use in a file name."""
-    s = re.sub(r"[^A-Za-z0-9._-]+", "_", str(s))
-    return s[:200]
 
 
 # ---------------------------------------------------------------------------
@@ -126,14 +121,6 @@ def inherit_rio_meta(dst: xr.DataArray, src: xr.DataArray) -> xr.DataArray:
     if nodata is not None:
         dst = dst.rio.write_nodata(nodata, inplace=False)
     return dst
-
-
-def load_aligned_rasters(lcoe_path: str, pot_path: str):
-    """Open LCOE and potential rasters, verify alignment, and return as float64 DataArrays."""
-    lcoe, pot = read_raster(lcoe_path), read_raster(pot_path)
-    check_grid(lcoe, pot)
-
-    return lcoe, pot
 
 
 # ---------------------------------------------------------------------------
@@ -192,16 +179,6 @@ def _bins_for_method(method, lcoe_da, n_quantiles, fixed_bins, lcoe_cutoff):
 # ---------------------------------------------------------------------------
 
 
-def dissolve_regions(gdf: gpd.GeoDataFrame, region_id_col: str) -> gpd.GeoDataFrame:
-    """Dissolve all geometries to unique region IDs (removes sub-polygon detail)."""
-    dissolved = (
-        gdf[[region_id_col, gdf.geometry.name]]
-        .dissolve(by=region_id_col, as_index=False)
-        .set_index(region_id_col)
-    )
-    return dissolved
-
-
 # ---------------------------------------------------------------------------
 # Core aggregation for one (tech, depth_category) pair
 # ---------------------------------------------------------------------------
@@ -228,7 +205,8 @@ def aggregate_one_tech(
     crs : CRS
         CRS of the input rasters (for writing the output GeoDataFrame).
     """
-    lcoe, pot = load_aligned_rasters(lcoe_path, pot_path)
+    lcoe, pot = read_raster(lcoe_path), read_raster(pot_path)
+    check_grid(lcoe, pot)
     lcoe = ensure_north_up(lcoe)
     pot = ensure_north_up(pot)
 
@@ -454,7 +432,11 @@ def main():
         write_empty_outputs(out_path, manifest_path, gdf.crs)
         return
 
-    regions = dissolve_regions(gdf, region_id_col="shape_id")
+    regions = (
+        gdf[["shape_id", gdf.geometry.name]]
+        .dissolve(by="shape_id", as_index=False)
+        .set_index("shape_id")
+    )
     if regions.empty:
         write_empty_outputs(out_path, manifest_path, gdf.crs)
         return
@@ -463,9 +445,9 @@ def main():
     frames = []
     for tech, depth_cat in pairs:
         if heat_enabled:
-            costs, capacities = load_aligned_rasters(
-                lcoe_map[(tech, depth_cat)], pot_map[(tech, depth_cat)]
-            )
+            costs = read_raster(lcoe_map[(tech, depth_cat)])
+            capacities = read_raster(pot_map[(tech, depth_cat)])
+            check_grid(costs, capacities)
             eligible = power_eligibility(
                 costs, capacities, method, n_quantiles, fixed_bins, lcoe_cutoff
             )
@@ -515,7 +497,7 @@ def main():
         return
 
     os.makedirs(resultdir, exist_ok=True)
-    out_gdf = _schemas.GeothermalRegionsSchema.validate(out_gdf)
+    out_gdf = _schemas.GeothermalRegionsSchema.schema.validate(out_gdf)
     out_gdf.to_parquet(out_path, index=False)
     output_rows = [
         {
@@ -531,9 +513,12 @@ def main():
         ["depth_category", "bin_id"], dropna=False
     ):
         price_bin = ", ".join(sorted(group["price_bin"].astype(str).unique()))
+        safe_category, safe_bin = (
+            re.sub(r"[^A-Za-z0-9._-]+", "_", str(value))[:200]
+            for value in (depth_category, bin_id)
+        )
         split_path = os.path.join(
-            resultdir,
-            f"geothermal_regions_{_safe_name(depth_category)}_{_safe_name(bin_id)}.parquet",
+            resultdir, f"geothermal_regions_{safe_category}_{safe_bin}.parquet"
         )
         group.to_parquet(split_path, index=False)
         output_rows.append(
@@ -546,7 +531,10 @@ def main():
             }
         )
 
-    _schemas.write_manifest(pd.DataFrame(output_rows), manifest_path)
+    Path(manifest_path).parent.mkdir(parents=True, exist_ok=True)
+    _schemas.GeothermalRegionManifestSchema.schema.validate(
+        pd.DataFrame(output_rows)
+    ).to_csv(manifest_path, sep="\t", index=False)
 
 
 if "snakemake" in dir():

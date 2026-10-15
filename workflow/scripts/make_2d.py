@@ -4,34 +4,15 @@ import os
 import re
 import sys
 from collections.abc import Sequence
-from dataclasses import dataclass
 from pathlib import Path
 
 import _plots
-import _schemas
 import numpy as np
 import rioxarray  # noqa: F401  Register the xarray ``rio`` accessor.
 import xarray as xr
 
 if "snakemake" in dir():
     sys.stdout = sys.stderr = open(snakemake.log[0], "w", buffering=1)
-
-
-@dataclass(frozen=True)
-class DepthCategory:
-    """One half-open interval used to aggregate depth-resolved results."""
-
-    zmin: float
-    zmax: float
-
-    @property
-    def label(self) -> str:
-        """Return the category label used in raster filenames."""
-        return f"{self.zmin / 1000:g}-{self.zmax / 1000:g}km"
-
-
-def _parse_depth_categories(raw) -> list[DepthCategory]:
-    return [DepthCategory(float(pair[0]), float(pair[1])) for pair in (raw or [])]
 
 
 def _ensure_raster_metadata(
@@ -60,7 +41,12 @@ def write_geotiff(
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     if da.sizes.get("y", 1) == 0 or da.sizes.get("x", 1) == 0:
-        da = _schemas.empty_raster_dataarray(da, x_name="x", y_name="y")
+        da = xr.DataArray(
+            np.full((1, 1), np.nan, dtype=np.float32),
+            coords={"y": [0.0], "x": [0.0]},
+            dims=("y", "x"),
+            attrs=dict(da.attrs),
+        )
     raster = _ensure_raster_metadata(da, crs=crs)
     raster = raster.rio.write_nodata(nodata, inplace=False)
     raster.rio.to_raster(str(out_path), compress="deflate")
@@ -99,17 +85,18 @@ def aggregate_3d_to_2d_lcoe_min(ds: xr.Dataset, depth_dim: str) -> xr.Dataset:
 
 
 def aggregate_3d_to_2d_depth_categories(
-    ds: xr.Dataset, depth_categories: Sequence[DepthCategory], depth_dim: str
+    ds: xr.Dataset, depth_categories: Sequence[tuple[float, float]], depth_dim: str
 ) -> dict[str, xr.Dataset]:
     """Select the minimum-LCOE depth within each configured interval."""
     depth = ds[depth_dim]
     outputs = {}
-    for category in depth_categories:
-        selected = (depth >= category.zmin) & (depth < category.zmax)
+    for zmin, zmax in depth_categories:
+        label = f"{zmin / 1000:g}-{zmax / 1000:g}km"
+        selected = (depth >= zmin) & (depth < zmax)
         if int(selected.sum()) == 0:
             shape = (ds.sizes["y"], ds.sizes["x"])
             empty = np.full(shape, np.nan, dtype=np.float32)
-            outputs[category.label] = xr.Dataset(
+            outputs[label] = xr.Dataset(
                 data_vars={
                     name: (("y", "x"), empty.copy())
                     for name in (
@@ -124,12 +111,8 @@ def aggregate_3d_to_2d_depth_categories(
             )
             continue
         subset = ds.sel({depth_dim: depth.where(selected, drop=True)})
-        outputs[category.label] = aggregate_3d_to_2d_lcoe_min(subset, depth_dim)
+        outputs[label] = aggregate_3d_to_2d_lcoe_min(subset, depth_dim)
     return outputs
-
-
-def _cycle_from_cube_path(path: str) -> str:
-    return Path(path).name.replace("_lcoe_cube.nc", "").lower()
 
 
 def _parse_tif_output(path: str) -> tuple[str, str | None, str]:
@@ -144,26 +127,28 @@ def _parse_tif_output(path: str) -> tuple[str, str | None, str]:
     return (match.group("cycle").lower(), match.group("category"), match.group("kind"))
 
 
-def _outputs_by_key(paths) -> dict[tuple[str, str | None], str]:
-    return {
-        (cycle, category): str(path)
-        for path in paths
-        for cycle, category, _ in [_parse_tif_output(str(path))]
-    }
-
-
 def main():
     """Reduce all requested cubes and render the model figures."""
     cycles = [str(c).strip().lower() for c in snakemake.params.cycles]
     method = snakemake.params.method_2d_aggregation
-    depth_categories = _parse_depth_categories(snakemake.params.depth_categories)
+    depth_categories = [
+        (float(pair[0]), float(pair[1]))
+        for pair in (snakemake.params.depth_categories or [])
+    ]
     max_depth = float(snakemake.params.max_depth)
 
     cubes_by_cycle = {
-        _cycle_from_cube_path(path): path for path in snakemake.input.cubes
+        Path(path).name.replace("_lcoe_cube.nc", "").lower(): path
+        for path in snakemake.input.cubes
     }
-    lcoe_outputs = _outputs_by_key(snakemake.output.lcoe_tifs)
-    potential_outputs = _outputs_by_key(snakemake.output.pot_tifs)
+    lcoe_outputs, potential_outputs = {}, {}
+    for paths, outputs in (
+        (snakemake.output.lcoe_tifs, lcoe_outputs),
+        (snakemake.output.pot_tifs, potential_outputs),
+    ):
+        for path in paths:
+            cycle, category, _ = _parse_tif_output(str(path))
+            outputs[(cycle, category)] = str(path)
 
     lcoe_maps = {}
     potential_maps = {}
@@ -202,20 +187,21 @@ def main():
                 raise ValueError(f"Unsupported 2-D aggregation method: {method}")
 
     if method == "LCOE_minimization" and hasattr(snakemake.output, "overview_fig"):
-        _plots.make_lcoe_overview(
-            lcoe_maps=lcoe_maps,
+        _plots.make_resource_overview(
+            maps=lcoe_maps,
             cycles=cycles,
             out_path=snakemake.output.overview_fig,
             shapes_path=snakemake.input.shapes,
             max_depth=max_depth,
         )
-        _plots.make_potential_overview(
-            lcoe_maps=lcoe_maps,
-            potential_maps=potential_maps,
+        _plots.make_resource_overview(
+            maps=potential_maps,
             cycles=cycles,
             out_path=snakemake.output.potential_overview_fig,
             shapes_path=snakemake.input.shapes,
             max_depth=max_depth,
+            potential=True,
+            selection_costs=lcoe_maps,
         )
         _plots.make_lcoe_potential_cumulative_four_panel(
             lcoe_maps=lcoe_maps,

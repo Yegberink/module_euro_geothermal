@@ -57,34 +57,14 @@ BASE_STYLE = {
 }
 
 
-def _ensure_parent(path) -> Path:
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    return path
-
-
 def write_blank_png(path, figsize=(6, 4)) -> None:
     """Write a valid empty placeholder when no plottable data are available."""
-    path = _ensure_parent(path)
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
     with plt.rc_context(BASE_STYLE):
         fig, ax = plt.subplots(figsize=figsize)
         ax.axis("off")
         fig.savefig(path, dpi=200, bbox_inches="tight")
         plt.close(fig)
-
-
-def _map_extent(da: xr.DataArray) -> list[float]:
-    raster = da.transpose("y", "x")
-    x = raster["x"].values
-    y = raster["y"].values
-    return [float(x.min()), float(x.max()), float(y.min()), float(y.max())]
-
-
-def _map_crs(da: xr.DataArray):
-    try:
-        return da.rio.crs
-    except (AttributeError, ValueError):
-        return None
 
 
 def _country_layer(shapes_path, reference_da: xr.DataArray) -> gpd.GeoDataFrame:
@@ -94,7 +74,10 @@ def _country_layer(shapes_path, reference_da: xr.DataArray) -> gpd.GeoDataFrame:
     countries = countries.loc[
         countries.geometry.notna() & ~countries.geometry.is_empty
     ].copy()
-    target_crs = _map_crs(reference_da)
+    try:
+        target_crs = reference_da.rio.crs
+    except (AttributeError, ValueError):
+        target_crs = None
     if target_crs is not None and countries.crs != target_crs:
         countries = countries.to_crs(target_crs)
     return countries
@@ -165,46 +148,7 @@ def _winner_map(lcoe_arrays: dict[str, np.ndarray], cycles: list[str]) -> np.nda
     return np.where(np.any(finite, axis=0), winner, -1)
 
 
-def _potential_at_cheapest(costs, potentials, cycles):
-    """Select capacity by minimum finite cost; ties follow configured cycle order."""
-    winner = _winner_map(costs, cycles)
-    stack = np.stack([potentials[cycle] for cycle in cycles], axis=0)
-    selected = np.take_along_axis(stack, np.maximum(winner, 0)[None, ...], axis=0)[0]
-    return np.where(winner >= 0, selected, np.nan)
-
-
-def make_lcoe_overview(
-    lcoe_maps: dict[str, xr.DataArray],
-    cycles: list[str],
-    out_path,
-    shapes_path,
-    max_depth: float,
-):
-    """Plot cycle-specific LCOE maps and the least-cost technology."""
-    _make_resource_overview(lcoe_maps, cycles, out_path, shapes_path, max_depth)
-
-
-def make_potential_overview(
-    lcoe_maps: dict[str, xr.DataArray],
-    potential_maps: dict[str, xr.DataArray],
-    cycles: list[str],
-    out_path,
-    shapes_path,
-    max_depth: float,
-):
-    """Plot cycle potentials and the potential of the cheapest technology per cell."""
-    _make_resource_overview(
-        potential_maps,
-        cycles,
-        out_path,
-        shapes_path,
-        max_depth,
-        potential=True,
-        selection_costs=lcoe_maps,
-    )
-
-
-def _make_resource_overview(
+def make_resource_overview(
     maps,
     cycles,
     out_path,
@@ -228,7 +172,9 @@ def _make_resource_overview(
     panels = cycles + ["winner"]
     ncols = 2 if len(panels) > 1 else 1
     nrows = int(np.ceil(len(panels) / ncols))
-    extent = _map_extent(reference)
+    raster = reference.transpose("y", "x")
+    x, y = raster.x.values, raster.y.values
+    extent = [float(x.min()), float(x.max()), float(y.min()), float(y.max())]
     data_aspect = (extent[3] - extent[2]) / (extent[1] - extent[0])
 
     panel_w = 4.5
@@ -242,12 +188,12 @@ def _make_resource_overview(
     with plt.rc_context(BASE_STYLE):
         fig = plt.figure(figsize=(fig_w, fig_h))
 
-        def make_ax(row, col):
+        axes = []
+        for i in range(len(panels)):
+            row, col = divmod(i, ncols)
             x0 = (margin_l + col * (panel_w + gap)) / fig_w
             y0 = (margin_b + (nrows - 1 - row) * (panel_h + gap)) / fig_h
-            return fig.add_axes([x0, y0, panel_w / fig_w, panel_h / fig_h])
-
-        axes = [make_ax(*divmod(i, ncols)) for i in range(len(panels))]
+            axes.append(fig.add_axes([x0, y0, panel_w / fig_w, panel_h / fig_h]))
         lcoe_cmap = plt.get_cmap(LCOE_CMAP).copy()
         lcoe_cmap.set_bad((0, 0, 0, 0))
         winner_cmap = ListedColormap([TECH_COLORS[c] for c in cycles])
@@ -277,7 +223,13 @@ def _make_resource_overview(
                 cycle: _plot_values(selection_costs[cycle], countries)
                 for cycle in cycles
             }
-            plot_arrays["winner"] = _potential_at_cheapest(costs, plot_arrays, cycles)
+            # Ties follow the configured cycle order.
+            winner = _winner_map(costs, cycles)
+            stack = np.stack([plot_arrays[cycle] for cycle in cycles], axis=0)
+            selected = np.take_along_axis(
+                stack, np.maximum(winner, 0)[None, ...], axis=0
+            )[0]
+            plot_arrays["winner"] = np.where(winner >= 0, selected, np.nan)
         else:
             winner = _winner_map(plot_arrays, cycles)
 
@@ -373,7 +325,8 @@ def _make_resource_overview(
             edgecolor="#AAAAAA",
             fontsize=10,
         )
-        fig.savefig(_ensure_parent(out_path), dpi=200, bbox_inches="tight")
+        Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(out_path, dpi=200, bbox_inches="tight")
         plt.close(fig)
 
 
@@ -580,7 +533,8 @@ def make_lcoe_potential_cumulative_four_panel(
             for spine in ax.spines.values():
                 spine.set_visible(True)
         fig.tight_layout(pad=0.25, w_pad=0.45, h_pad=0.45)
-        fig.savefig(_ensure_parent(out_path), dpi=250, bbox_inches="tight")
+        Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(out_path, dpi=250, bbox_inches="tight")
         plt.close(fig)
 
 
@@ -722,7 +676,9 @@ def make_depth_cost_breakdown_four_panel(
     if not np.isfinite(vmin) or not np.isfinite(vmax):
         write_blank_png(out_path, figsize=(8.27, 8.27))
         return
-    extent = _map_extent(reference)
+    raster = reference.transpose("y", "x")
+    x, y = raster.x.values, raster.y.values
+    extent = [float(x.min()), float(x.max()), float(y.min()), float(y.max())]
 
     with plt.rc_context(BASE_STYLE):
         cmap = plt.get_cmap(LCOE_CMAP).copy()
@@ -787,7 +743,8 @@ def make_depth_cost_breakdown_four_panel(
             )
             colorbar.set_label("Depth at minimum LCOE (km)", fontsize=12)
             colorbar.ax.tick_params(length=0, labelsize=11)
-        fig.savefig(_ensure_parent(out_path), dpi=200)
+        Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(out_path, dpi=200)
         plt.close(fig)
 
 
@@ -893,5 +850,6 @@ def make_regional_potential_overview(
         fig.suptitle(
             f"Potential per region — {depth_category}, {bin_id}", y=0.96, fontsize=12
         )
-        fig.savefig(_ensure_parent(out_path), dpi=200, bbox_inches="tight")
+        Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(out_path, dpi=200, bbox_inches="tight")
         plt.close(fig)

@@ -8,13 +8,18 @@ import _schemas
 import geopandas as gpd
 import numpy as np
 import xarray as xr
-from _heat import METRIC_CRS, load_networks
+from _heat import METRIC_CRS
 from shapely.geometry import box
 
 
 def main():
     """Write only when the required grid window changes, not for demand edits."""
-    networks = load_networks(snakemake.input.networks).to_crs(METRIC_CRS)
+    networks = (
+        _schemas.HeatNetworksSchema.validate(gpd.read_parquet(snakemake.input.networks))
+        .sort_values("area_id", kind="stable")
+        .reset_index(drop=True)
+        .to_crs(METRIC_CRS)
+    )
     shapes = _schemas.ShapeSchema.validate(gpd.read_parquet(snakemake.input.shapes))
     with xr.open_dataset(snakemake.input.nc) as ds:
         _schemas.SourceGridSchema.validate(ds)
@@ -51,7 +56,7 @@ def main():
                 )
                 window["empty"] |= not len(indices)
     path = Path(snakemake.output.extent)
-    _schemas.ensure_parent(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(window, sort_keys=True) + "\n"
     # Demand or small buffer changes must not force a new cost pass when the
     # source-grid window is unchanged. Snakemake also checks small-file checksums.
