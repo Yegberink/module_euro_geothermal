@@ -121,3 +121,4 @@ heat_reinjection_temperature: 40.0 # °C; must be below production temperature
 thermal_plant_cost_per_kw: 234.0   # €2020/kWth installed thermal capacity
 heat_capacity_factor: 0.88        # annual heat availability; no electric parasitic factor
 heat_network_buffer_km: 10.0      # cell centres within this distance of a network polygon
+heat_allow_cross_region_supply: true # false restricts source-cell centres to the network's assigned region

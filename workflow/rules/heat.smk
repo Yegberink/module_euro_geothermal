@@ -72,5 +72,6 @@ if HEAT_ENABLED:
             "../envs/module.yaml"
         params:
             buffer_km=config["heat_network_buffer_km"],
+            allow_cross_region_supply=config["heat_allow_cross_region_supply"],
         script:
             "../scripts/allocate_heat.py"

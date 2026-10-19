@@ -13,6 +13,7 @@ import _schemas
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+import shapely
 from _heat import DEMAND_COLUMN, METRIC_CRS, check_grid, read_raster, write_raster
 from scipy.optimize import linprog
 from scipy.sparse import coo_matrix
@@ -51,8 +52,10 @@ def assign_network_regions(networks, regions):
     return assigned.astype(str).to_numpy()
 
 
-def candidate_edges(networks, lcoh, potential, buffer_km):
-    """Query buffered polygons against an index of feasible source-cell centres."""
+def candidate_edges(
+    networks, regions, lcoh, potential, buffer_km, allow_cross_region_supply
+):
+    """Find nearby feasible cells, optionally restricted to each consumer's region."""
     check_grid(lcoh, potential)
     valid = (
         np.isfinite(lcoh.values)
@@ -73,6 +76,18 @@ def candidate_edges(networks, lcoh, potential, buffer_km):
     network_index, cell_index = cells.sindex.query(
         polygons, predicate="dwithin", distance=buffer_km * 1000
     )
+    if not allow_cross_region_supply:
+        network_regions = (
+            regions.to_crs(METRIC_CRS)
+            .set_index("shape_id")
+            .geometry.loc[networks.region_id]
+            .to_numpy()
+        )
+        # Cell centres define source location; boundary centres are included.
+        local = shapely.covers(
+            network_regions[network_index], cells.geometry.to_numpy()[cell_index]
+        )
+        network_index, cell_index = network_index[local], cell_index[local]
     edges = np.column_stack([network_index, cells.cell_id.to_numpy()[cell_index]])
     return edges[np.lexsort((edges[:, 1], edges[:, 0]))]
 
@@ -170,7 +185,14 @@ def main():
     lcoh, potential = map(
         read_raster, [snakemake.input.lcoh, snakemake.input.potential]
     )
-    edges = candidate_edges(networks, lcoh, potential, snakemake.params.buffer_km)
+    edges = candidate_edges(
+        networks,
+        regions,
+        lcoh,
+        potential,
+        snakemake.params.buffer_km,
+        snakemake.params.allow_cross_region_supply,
+    )
     print(
         f"Candidate edges: {len(edges)}; construction and attribution: {time.perf_counter() - start:.2f} s"
     )

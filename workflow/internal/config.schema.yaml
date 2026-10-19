@@ -23,6 +23,9 @@ properties:
   heat_network_buffer_km:
     type: number
     minimum: 0
+  heat_allow_cross_region_supply:
+    type: boolean
+    description: "Allow heat sources outside the network's assigned region, within the network buffer."
 
   include_egs:
     type: boolean
@@ -286,7 +289,7 @@ allOf:
         carrier_out:
           enum: [heat, heat_and_power]
     then:
-      required: [heat_production_temperature, heat_reinjection_temperature, thermal_plant_cost_per_kw, heat_capacity_factor, heat_network_buffer_km]
+      required: [heat_production_temperature, heat_reinjection_temperature, thermal_plant_cost_per_kw, heat_capacity_factor, heat_network_buffer_km, heat_allow_cross_region_supply]
 
 $defs:
   eligibility:

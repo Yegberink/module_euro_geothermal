@@ -98,6 +98,15 @@ predicate. This avoids constructing expensive buffers of detailed polygons
 and avoids scanning all cells for each network. Cost and supply rasters remain
 on the source grid.
 
+`heat_allow_cross_region_supply` controls whether candidates may lie outside
+the network's assigned region. Set it to `false` to require each source-cell
+centre to lie inside or on the boundary of that region, or `true` to permit
+sources across region boundaries. Both settings retain `heat_network_buffer_km`
+as the distance limit. Region boundaries come from the supplied `shapes` input;
+the network attribution described below also applies to networks spanning
+multiple regions. A network with insufficient local supply retains unmet demand
+when cross-region supply is disabled.
+
 For each connected component of the network–cell graph, sparse linear
 programming first maximizes total annual heat supplied and then minimizes its
 annual geothermal cost at that maximum supply. Networks may share cells;
