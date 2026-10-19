@@ -77,7 +77,7 @@ The water heat capacity is defined in
 
 CAPEX includes drilling, EGS stimulation when applicable, pumps, and the
 thermal plant. Costs use €2020; the annotated configuration defines plant costs.
-Flow rates, drilling curves, sediment NaN policy, lifetime, and discount rate
+Flow rates, drilling curves, lifetime, and discount rate
 are shared with the electrical model; reinjection must be cooler than
 production. Disabling EGS rejects depths below the sediment/EGS cutoff.
 Heat does not use turbine efficiency or the electricity parasitic fraction.
@@ -177,16 +177,18 @@ electrical rows retain the existing convention of omitting empty bins.
 | `max_depth` | m | Deepest evaluated layer; must be a multiple of 250 m. |
 | `include_egs` | boolean | Whether Enhanced Geothermal Systems may be used. |
 | `EGS_cutoff` | m | Depth below which only EGS is assumed. |
-| `SED_NAN_POLICY` | — | `always_egs` treats missing sediment thickness as 0 m; `depth_only` permits EGS only below `EGS_cutoff`. |
-| `drilling_cost_curve` | — | Name of the active entry in `drilling_cost_curve_definitions`. |
+| `drilling_cost_curve` | — | Drilling cost relation shared by heat and power; choices are listed in the [configuration](config.yaml). |
 | `stimulation_cost_per_doublet` | million €2020 | EGS stimulation cost per doublet. |
 | `well_spacing` | km | Distance between production and injection wells. |
 | `flowrate_egs` | kg/s | Mass flow rate per EGS doublet. |
 | `flowrate_conventional` | kg/s | Mass flow rate per conventional doublet. |
 
-The supplied example defines `thermogis`, `shamoushaki_2021`, `getem_2017`, and
-`getem_2025` drilling-cost curves. Custom named definitions may be added under
-`drilling_cost_curve_definitions` and selected with `drilling_cost_curve`.
+Missing sediment thickness after resampling is treated as 0 m, so those cells
+require EGS at every positive depth.
+
+Curve formulas, coefficients, and source price years are defined in
+[`_economics.py`](../workflow/scripts/_economics.py). The GETEM curves are fitted
+to bundled per-well depth/cost data.
 The source temperature model covers 0–10 km, so `max_depth`, `EGS_cutoff`, and
 all configured depth intervals must stay within that range.
 
@@ -248,7 +250,7 @@ path variable. Select the regional method with `method_region_aggregation`:
   that potential. The cutoff is expressed in €2020/MWh.
 
 Use `quantiles` or `fixed_bins` when downstream models need a cost-supply
-distribution. Configuration validation requires valid model values, a defined
+distribution. Configuration validation requires valid model values, a supported
 selected drilling-cost curve, and ordered, non-overlapping depth and LCOE bins.
 
 ## Inputs and outputs

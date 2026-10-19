@@ -6,11 +6,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import xarray as xr
-from _economics import (
-    apply_sed_nan_policy,
-    drilling_cost_meur_per_well,
-    resolve_drilling_curve_definition,
-)
+from _economics import drilling_cost_meur_per_well, resolve_drilling_curve_definition
 from _eligibility import load_fraction
 
 if "snakemake" in dir():
@@ -29,23 +25,11 @@ CSV_PATH = snakemake.input.eff
 # EGS cutoff rule:
 Z_THR_M = float(snakemake.params.EGS_cutoff)
 
-# How to handle NaNs in sed thickness after resampling:
-SED_NAN_POLICY = snakemake.params.SED_NAN_POLICY
-
 # other configs
 include_egs = bool(snakemake.params.include_egs)
-DRILLING_COST_CURVE = str(snakemake.params.drilling_cost_curve)
-DRILLING_COST_CURVE_DEFINITIONS = {
-    name: dict(spec)
-    for name, spec in snakemake.params.drilling_cost_curve_definitions.items()
-}
-if snakemake.input.drilling_csv:
-    DRILLING_COST_CURVE_DEFINITIONS[DRILLING_COST_CURVE]["csv_path"] = (
-        snakemake.input.drilling_csv[0]
-    )
-
 DRILLING_COST_CURVE_SPEC = resolve_drilling_curve_definition(
-    DRILLING_COST_CURVE, DRILLING_COST_CURVE_DEFINITIONS
+    snakemake.params.drilling_cost_curve,
+    snakemake.input.drilling_csv[0] if snakemake.input.drilling_csv else None,
 )
 
 
@@ -103,7 +87,8 @@ def calculate_LCOE_components_vec(
     Cp_water = 4250.0
     MIN_DT = min_dt
 
-    sed_ok = apply_sed_nan_policy(sed_thickness, z_thr=Z_THR_M, policy=SED_NAN_POLICY)
+    # Missing sediment implies EGS at every positive depth.
+    sed_ok = np.where(np.isfinite(sed_thickness), sed_thickness, 0.0).astype(np.float32)
     cutoff = np.minimum(Z_THR_M, sed_ok)
 
     if include_egs:
@@ -210,7 +195,8 @@ def calculate_capacity_vec(
     Cp_water = 4250.0
     MIN_DT = min_dt
 
-    sed_ok = apply_sed_nan_policy(sed_thickness, z_thr=Z_THR_M, policy=SED_NAN_POLICY)
+    # Missing sediment implies EGS at every positive depth.
+    sed_ok = np.where(np.isfinite(sed_thickness), sed_thickness, 0.0).astype(np.float32)
     cutoff = np.minimum(Z_THR_M, sed_ok)
 
     if include_egs:
@@ -289,10 +275,8 @@ def main():
     sed2d = sediment_ds["sediment_thickness_m"].sel(x=T["x"], y=T["y"])
     sed3d = sed2d.broadcast_like(T)
 
-    # --- cutoff depth map (2D) consistent with NaN policy ---
-    sed2d_ok = xr.apply_ufunc(
-        apply_sed_nan_policy, sed2d, kwargs={"z_thr": Z_THR_M, "policy": SED_NAN_POLICY}
-    )
+    # Missing sediment implies EGS at every positive depth.
+    sed2d_ok = xr.where(np.isfinite(sed2d), sed2d, 0.0).astype(np.float32)
     cutoff2d = xr.apply_ufunc(np.minimum, Z_THR_M, sed2d_ok).astype(np.float32)
     cutoff2d.name = "egs_cutoff_depth_m"
     cutoff2d.attrs.update({"crs": crs_str, "units": "m"})
@@ -401,8 +385,7 @@ def main():
             "currency": "EUR",
             "price_year": 2020,
             "include_egs": int(include_egs),
-            "SED_NAN_POLICY": str(SED_NAN_POLICY),
-            "EGS_cutoff_rule": "cutoff(x,y)=min(EGS_cutoff, sed_thickness_m(x,y)) with NaN policy applied",
+            "EGS_cutoff_rule": "cutoff(x,y)=min(EGS_cutoff, sed_thickness_m(x,y)); missing sediment thickness is 0 m",
         },
     )
 

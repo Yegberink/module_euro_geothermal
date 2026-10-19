@@ -24,7 +24,7 @@ if HEAT_ENABLED:
             nc="<resources>/automatic/temperature_voxel.nc",
             extent=rules.prepare_heat_extent.output.extent,
             sed=rules.resample_gst1_sediment.output.sediment,
-            drilling_csv=drilling_curve_inputs,
+            drilling_csv=DRILLING_CSV,
         output:
             lcoh="<resources>/automatic/{shapes}/documents/heat_lcoh.tif",
             potential="<resources>/automatic/{shapes}/documents/heat_potential.tif",
@@ -37,9 +37,7 @@ if HEAT_ENABLED:
             max_depth=config["max_depth"],
             include_egs=config["include_egs"],
             EGS_cutoff=config["EGS_cutoff"],
-            SED_NAN_POLICY=config["SED_NAN_POLICY"],
             drilling_cost_curve=config["drilling_cost_curve"],
-            drilling_cost_curve_definitions=config["drilling_cost_curve_definitions"],
             stimulation_cost_per_doublet=config["stimulation_cost_per_doublet"],
             pump_cost=config["pump_cost"],
             lifetime=config["lifetime"],

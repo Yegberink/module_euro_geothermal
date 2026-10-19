@@ -30,3 +30,6 @@ gurobi.log
 **/temp/*
 **/tmp/*
 resources.zip
+
+# Ignore agents.md
+agents.md

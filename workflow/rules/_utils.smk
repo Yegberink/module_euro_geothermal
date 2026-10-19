@@ -16,10 +16,6 @@ def additional_config_validation() -> None:
                 "Heat reinjection temperature must be below production temperature."
             )
 
-    curve = config["drilling_cost_curve"]
-    if curve not in config["drilling_cost_curve_definitions"]:
-        raise ValueError(f"drilling_cost_curve {curve!r} has no matching definition.")
-
     if config["carrier_out"] != "heat":
         previous_stop = 0.0
         for category in config.get("depth_categories", []):
@@ -99,15 +95,15 @@ ELIGIBILITY_INPUT = (
 )
 
 
-def drilling_curve_inputs(wildcards):
-    """Track the selected CSV and resolve bundled paths relative to the module."""
-    spec = config["drilling_cost_curve_definitions"][config["drilling_cost_curve"]]
-    if spec["curve_type"] != "csv_fit_usd":
-        return []
-    path = spec["csv_path"]
-    if path in {
-        "workflow/internal/baseline_drilling_2017.csv",
-        "workflow/internal/baseline_drilling_2025.csv",
-    }:
-        path = workflow.source_path("../internal/" + path.rsplit("/", 1)[1])
-    return [path]
+DRILLING_CSV = (
+    [
+        workflow.source_path(
+            {
+                "getem_2017": "../internal/baseline_drilling_2017.csv",
+                "getem_2025": "../internal/baseline_drilling_2025.csv",
+            }[config["drilling_cost_curve"]]
+        )
+    ]
+    if config["drilling_cost_curve"] in {"getem_2017", "getem_2025"}
+    else []
+)

@@ -7,11 +7,7 @@ from pathlib import Path
 import _schemas
 import numpy as np
 import xarray as xr
-from _economics import (
-    apply_sed_nan_policy,
-    drilling_cost_meur_per_well,
-    resolve_drilling_curve_definition,
-)
+from _economics import drilling_cost_meur_per_well, resolve_drilling_curve_definition
 from _heat import write_raster
 
 
@@ -50,7 +46,9 @@ def shallowest_depth(temperature, depths, target, max_depth):
     return result
 
 
-def calculate_heat(temperature, depths, sediment, model, eligibility_fraction=1.0):
+def calculate_heat(
+    temperature, depths, sediment, model, eligibility_fraction=1.0, drilling_csv=None
+):
     """Return depth, thermal capacity, annual heat and additive LCOH components.
 
     Like the electricity model, one source cell represents 100 km² and permits
@@ -59,14 +57,13 @@ def calculate_heat(temperature, depths, sediment, model, eligibility_fraction=1.
     is applied to useful thermal output.
     """
     curve_spec = resolve_drilling_curve_definition(
-        model["drilling_cost_curve"], model["drilling_cost_curve_definitions"]
+        model["drilling_cost_curve"], drilling_csv
     )
     depth = shallowest_depth(
         temperature, depths, model["heat_production_temperature"], model["max_depth"]
     )
-    sed_ok = apply_sed_nan_policy(
-        sediment, z_thr=model["EGS_cutoff"], policy=model["SED_NAN_POLICY"]
-    )
+    # Missing sediment implies EGS at every positive depth.
+    sed_ok = np.where(np.isfinite(sediment), sediment, 0.0).astype(np.float32)
     cutoff = np.minimum(model["EGS_cutoff"], sed_ok)
     is_egs = depth > cutoff
     valid = np.isfinite(depth) & (model["include_egs"] | ~is_egs)
@@ -159,22 +156,20 @@ def main():
             x=temperature.x, y=temperature.y
         ).values
     model = dict(snakemake.params.items())
-    definitions = {
-        name: dict(spec)
-        for name, spec in model["drilling_cost_curve_definitions"].items()
-    }
-    if snakemake.input.drilling_csv:
-        definitions[model["drilling_cost_curve"]]["csv_path"] = (
-            snakemake.input.drilling_csv[0]
-        )
-    model["drilling_cost_curve_definitions"] = definitions
     from _eligibility import load_fraction
 
     fraction = load_fraction(
         snakemake.input.eligibility, temperature.x, temperature.y, crs
     )
     values = calculate_heat(
-        temperature.values, temperature.depth_m.values, sediment, model, fraction.values
+        temperature.values,
+        temperature.depth_m.values,
+        sediment,
+        model,
+        fraction.values,
+        drilling_csv=snakemake.input.drilling_csv[0]
+        if snakemake.input.drilling_csv
+        else None,
     )
     from affine import Affine
 

@@ -12,6 +12,14 @@
 # -----------------------------------------------------------------------------
 # Workflow control
 # -----------------------------------------------------------------------------
+
+# Select the output carrier for which to calculate the potential and costs. 
+carrier_out: power            # power | heat | heat_and_power
+
+# Toggle for whether to use a supplied area-potential file. 
+eligibility:
+  enabled: true
+
 method_region_aggregation: cutoff
 # options:
 #   quantiles    → divide each raster LCOE distribution into n_quantiles classes shared by regions
@@ -45,8 +53,6 @@ which_cycles:
   - flash
   - kalina
 
-carrier_out: power            # power | heat | heat_and_power
-
 
 # -----------------------------------------------------------------------------
 # Reservoir parameters
@@ -56,39 +62,9 @@ max_depth: 6000               # drilling depth (m); multiple of 250 within sourc
 include_egs: true             # true → include Enhanced Geothermal Systems (EGS) locations
 EGS_cutoff: 3000.0            # depth below which only EGS is possible (m)
 
-SED_NAN_POLICY: always_egs    # how to treat missing sediment thickness after resampling:
-                              #   always_egs  → treat NaN as 0 m sediment → EGS at all depths
-                              #   depth_only  → treat NaN as EGS_cutoff   → EGS only below EGS_cutoff
-
-drilling_cost_curve: thermogis  # options configured below; used as the drilling cost relation
 stimulation_cost_per_doublet: 3.0   # EGS stimulation cost per doublet (M€2020)
 
-drilling_cost_curve_definitions:
-  # ThermoGIS coefficients adopted as EUR2020 in the manuscript.
-  # Source: https://www.thermogis.nl/economisch-model
-  thermogis:
-    curve_type: quadratic_eur2020
-    constant: 250000.0
-    linear: 700.0
-    quadratic: 0.2
-  shamoushaki_2021:
-    curve_type: log_quadratic_usd
-    a: 554800.0
-    b: 0.2171
-    c: 813500.0
-    currency_year: 2021
-  getem_2017:
-    curve_type: csv_fit_usd
-    csv_path: workflow/internal/baseline_drilling_2017.csv
-    currency_year: 2017
-  getem_2025:
-    # Alternative curve from Akindipe & Witter (2025), manuscript Fig. 2 / ref. 49.
-    # https://pangea.stanford.edu/ERE/pdf/IGAstandard/SGW/2025/Akindipe.pdf
-    # CSV costs are million USD per well. 2025 is an assumed source price year;
-    # the paper does not explicitly establish it. Results remain EUR2020.
-    curve_type: csv_fit_usd
-    csv_path: workflow/internal/baseline_drilling_2025.csv
-    currency_year: 2025
+drilling_cost_curve: thermogis  # thermogis | shamoushaki_2021 | getem_2017 | getem_2025
 
 
 # -----------------------------------------------------------------------------
@@ -106,7 +82,7 @@ pump_cost: 0.6                # pump cost per doublet pair (M€2020)
 lifetime: 30.0                # plant lifetime (years)
 discount_rate: 0.075          # annual discount rate as a fraction (0.075 = 7.5%); shared by heat and power
 capacity_factor: 0.88         # annual availability factor for electricity generation (-)
-fixed_OM_rate: 0.015           # fixed O&M as fraction of capital cost per year
+fixed_OM_rate: 0.015          # fixed O&M as fraction of capital cost per year
 parasitic_fraction: 0.21      # parasitic power consumption as fraction of gross output
 well_spacing: 1.5             # distance between production and injection well (km)
 flowrate_egs: 60.0            # mass flow rate per EGS doublet (kg/s)
@@ -145,7 +121,3 @@ heat_reinjection_temperature: 40.0 # °C; must be below production temperature
 thermal_plant_cost_per_kw: 234.0   # €2020/kWth installed thermal capacity
 heat_capacity_factor: 0.88        # annual heat availability; no electric parasitic factor
 heat_network_buffer_km: 10.0      # cell centres within this distance of a network polygon
-
-# Use the supplied area-potential raster for heat and power.
-eligibility:
-  enabled: true

@@ -47,7 +47,7 @@ if POWER_ENABLED:
             nc=rules.crop_to_speed_up.output.clipped_temp_voxel,
             sed=rules.resample_gst1_sediment.output.sediment,
             eff=workflow.source_path("../internal/efficiency_curves.csv"),
-            drilling_csv=drilling_curve_inputs,
+            drilling_csv=DRILLING_CSV,
         output:
             cube="<resources>/automatic/{shapes}/documents/{cycle}_lcoe_cube.nc",
         log:
@@ -59,9 +59,7 @@ if POWER_ENABLED:
             max_depth=config["max_depth"],
             include_egs=config["include_egs"],
             EGS_cutoff=config["EGS_cutoff"],
-            SED_NAN_POLICY=config["SED_NAN_POLICY"],
             drilling_cost_curve=config["drilling_cost_curve"],
-            drilling_cost_curve_definitions=config["drilling_cost_curve_definitions"],
             stimulation_cost_per_doublet=config["stimulation_cost_per_doublet"],
             pump_cost=config["pump_cost"],
             lifetime=config["lifetime"],

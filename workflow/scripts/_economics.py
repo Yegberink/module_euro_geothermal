@@ -1,6 +1,4 @@
-"""Shared drilling economics and sediment assumptions for heat and power."""
-
-from pathlib import Path
+"""Shared drilling economics for heat and power."""
 
 import numpy as np
 import pandas as pd
@@ -15,20 +13,39 @@ CPI_US = {2017: 245.120, 2020: 258.811, 2021: 270.970, 2025: 321.943}
 # https://www.bundesbank.de/resource/blob/895836/a5c692d5571fbc2729ebd2a735ebbce7/mL/2022-08-15-11-28-07-wechselkursstatistik-data.pdf
 EUR_PER_USD_2020 = 1 / 1.1422
 
+DRILLING_CURVES = {
+    # ThermoGIS coefficients adopted as EUR2020 in the manuscript.
+    # https://www.thermogis.nl/economisch-model
+    "thermogis": {
+        "curve_type": "quadratic_eur2020",
+        "constant": 250000.0,
+        "linear": 700.0,
+        "quadratic": 0.2,
+    },
+    "shamoushaki_2021": {
+        "curve_type": "log_quadratic_usd",
+        "a": 554800.0,
+        "b": 0.2171,
+        "c": 813500.0,
+        "currency_year": 2021,
+    },
+    "getem_2017": {"curve_type": "csv_fit_usd", "currency_year": 2017},
+    "getem_2025": {"curve_type": "csv_fit_usd", "currency_year": 2025},
+}
+
 
 def _log_quadratic_cost_musd(depth_m, a, b, c):
     depth_m = np.asarray(depth_m, dtype=float)
     return (a * np.log(depth_m) + b * depth_m**2 + c) / 1e6
 
 
-def resolve_drilling_curve_definition(curve_name, definitions):
+def resolve_drilling_curve_definition(curve_name, csv_path=None):
     """Resolve coefficients, fitting depth/cost data for CSV-based USD curves."""
-    spec = dict(definitions[curve_name])
+    spec = dict(DRILLING_CURVES[curve_name])
     if spec["curve_type"] != "csv_fit_usd":
         return spec
     # Headerless depth (m), cost (million source-year USD per well) data.
-    csv_file = Path(spec["csv_path"])
-    df = pd.read_csv(csv_file, header=None)
+    df = pd.read_csv(csv_path, header=None)
 
     depth_m = df.iloc[:, 0].to_numpy(dtype=float)
     costs = df.iloc[:, 1].to_numpy(dtype=float)
@@ -62,16 +79,3 @@ def drilling_cost_meur_per_well(depth_m, spec):
         return cost_musd * (
             (CPI_US[2020] / CPI_US[int(spec["currency_year"])]) * EUR_PER_USD_2020
         )
-
-
-def apply_sed_nan_policy(sed_thickness, z_thr, policy):
-    """Replace NaNs in sediment thickness according to policy.
-
-    - depth_only: NaN -> z_thr (EGS only deeper than z_thr)
-    - always_egs: NaN -> 0 (EGS at all depths).
-    """
-    if policy == "depth_only":
-        fill = float(z_thr)
-    elif policy == "always_egs":
-        fill = 0.0
-    return np.where(np.isfinite(sed_thickness), sed_thickness, fill).astype(np.float32)

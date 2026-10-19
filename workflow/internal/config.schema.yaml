@@ -54,11 +54,6 @@ properties:
     maximum: 10000
     description: "Depth (m) below which only EGS is assumed."
 
-  SED_NAN_POLICY:
-    type: string
-    enum: ["depth_only", "always_egs"]
-    description: "How to treat NaNs in sediment thickness after resampling."
-
   temp_turbine_out:
     type: object
     description: "Minimum turbine outlet temperature (°C) per cycle."
@@ -79,13 +74,8 @@ properties:
 
   drilling_cost_curve:
     type: string
-    description: "Named drilling cost curve used in the LCOE calculation."
-
-  drilling_cost_curve_definitions:
-    type: object
-    description: "Definitions for named drilling cost curves."
-    additionalProperties:
-      $ref: "#/$defs/drilling_curve"
+    enum: [thermogis, shamoushaki_2021, getem_2017, getem_2025]
+    description: "Drilling cost curve shared by heat and power."
 
   stimulation_cost_per_doublet:
     type: number
@@ -211,9 +201,7 @@ required:
   - carrier_out
   - max_depth
   - EGS_cutoff
-  - SED_NAN_POLICY
   - drilling_cost_curve
-  - drilling_cost_curve_definitions
   - stimulation_cost_per_doublet
   - pump_cost
   - lifetime
@@ -301,32 +289,6 @@ allOf:
       required: [heat_production_temperature, heat_reinjection_temperature, thermal_plant_cost_per_kw, heat_capacity_factor, heat_network_buffer_km]
 
 $defs:
-  drilling_curve:
-    oneOf:
-      - type: object
-        additionalProperties: false
-        required: [curve_type, constant, linear, quadratic]
-        properties:
-          curve_type: {const: quadratic_eur2020}
-          constant: {type: number}
-          linear: {type: number}
-          quadratic: {type: number}
-      - type: object
-        additionalProperties: false
-        required: [curve_type, a, b, c, currency_year]
-        properties:
-          curve_type: {const: log_quadratic_usd}
-          a: {type: number}
-          b: {type: number}
-          c: {type: number}
-          currency_year: {enum: [2017, 2020, 2021, 2025]}
-      - type: object
-        additionalProperties: false
-        required: [curve_type, csv_path, currency_year]
-        properties:
-          curve_type: {const: csv_fit_usd}
-          csv_path: {type: string, minLength: 1}
-          currency_year: {enum: [2017, 2020, 2021, 2025]}
   eligibility:
     type: object
     additionalProperties: false
