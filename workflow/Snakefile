@@ -10,10 +10,7 @@ pathvars:
     area_potential="<resources>/user/{shapes}/area_potential_geothermal.tif",
     shapes="<resources>/user/{shapes}/shapes.parquet",
     district_heating="<resources>/user/{shapes}/areas.parquet",
-    geothermal_heat_networks="<results>/{shapes}/geothermal_heat_networks.parquet",
-    geothermal_heat_allocations="<results>/{shapes}/geothermal_heat_allocations.parquet",
     geothermal_regions="<results>/{shapes}/geothermal_regions.parquet",
-    overall_potential_summary="<results>/{shapes}/overall_potential_summary.tsv",
 
 
 wildcard_constraints:
@@ -43,12 +40,6 @@ include: "rules/lcoe.smk"
 include: "rules/heat.smk"
 include: "rules/eligibility.smk"
 include: "rules/spatial_aggregation.smk"
-
-
-if POWER_ENABLED:
-
-    include: "rules/figures.smk"
-    include: "rules/overall_potential.smk"
 
 
 # Add additional files to be delivered alongside the workflow here.

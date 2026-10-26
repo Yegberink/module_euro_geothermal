@@ -14,11 +14,11 @@
 # -----------------------------------------------------------------------------
 
 # Select the output carrier for which to calculate the potential and costs. 
-carrier_out: power            # power | heat | heat_and_power
+carrier_out: heat_and_power            # power | heat | heat_and_power
 
 # Toggle for whether to use a supplied area-potential file. 
 eligibility:
-  enabled: true
+  enabled: false
 
 method_region_aggregation: cutoff
 # options:
@@ -44,6 +44,12 @@ fixed_bins:
 
 # cutoff (€2020/MWh)
 lcoe_cutoff: 75.0
+
+# Settings for heat supply to district heating networks. These are modelling choices that depend on the regions
+# you are studying, and how you are using the results. 
+heat_allow_cross_region_supply: true # false restricts source-cell centres to the network's assigned region
+heat_network_buffer_km: 10.0      # cell centres within this distance of a network polygon
+
 
 # -----------------------------------------------------------------------------
 # Conversion cycles
@@ -99,26 +105,9 @@ min_dt: 10.0                  # °C
 
 
 # -----------------------------------------------------------------------------
-# 2-D aggregation
-# -----------------------------------------------------------------------------
-method_2d_aggregation: LCOE_minimization
-# options:
-#   LCOE_minimization  → one optimal depth per cell; potential calculated at that depth
-#   depth_categories   → separate LCOE/potential rasters per depth band (see below)
-
-# Used only when method_2d_aggregation: depth_categories
-depth_categories:
-  - [0,    3000]              # 0–3 km
-  - [3000, 6000]              # 3–6 km
-  - [6000, 10000]             # 6–10 km
-
-
-# -----------------------------------------------------------------------------
 # District heating (heat and heat_and_power modes)
 # -----------------------------------------------------------------------------
 heat_production_temperature: 80.0  # °C; interpolate the shallowest reachable depth
 heat_reinjection_temperature: 40.0 # °C; must be below production temperature
 thermal_plant_cost_per_kw: 234.0   # €2020/kWth installed thermal capacity
 heat_capacity_factor: 0.88        # annual heat availability; no electric parasitic factor
-heat_network_buffer_km: 10.0      # cell centres within this distance of a network polygon
-heat_allow_cross_region_supply: true # false restricts source-cell centres to the network's assigned region

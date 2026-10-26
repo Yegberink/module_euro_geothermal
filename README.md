@@ -32,14 +32,12 @@ The module works through the following stages:
    selected power cycle to calculate depth-resolved energy potential and LCOE cubes. The model
    distinguishes conventional hydrothermal resources from Enhanced Geothermal
    Systems (EGS).
-3. **Reduce the 3-D results to maps.** Either select the least-cost depth in each
-   grid cell or retain separate configured depth bands. This stage produces the
-   LCOE, potential, optimal-depth, and technology-comparison figures and rasters.
+3. **Reduce the 3-D results to maps.** Select the least-cost depth in each
+   grid cell for each technology. This stage produces the
+   LCOE, LCOH, and potential figures and rasters.
 4. **Aggregate to regions.** Combine the gridded LCOE and potential results with
    the user-provided polygons using quantiles, fixed LCOE bins, or a single LCOE
    cutoff.
-5. **Summarize potential.** Report study-wide potential by technology and for
-   the portfolio selecting the lowest-LCOE technology in each cell.
 
 With `carrier_out: heat`, the workflow instead interpolates the shallowest depth
 reaching the configured district-heating temperature, calculates heat costs once
@@ -51,7 +49,7 @@ for formulas, assumptions, and output units.
 ## Rule graph
 
 The graph below shows the power integration example, including regional
-results, model diagnostics, and the study-wide potential summary.
+results and model diagnostics.
 
 ![Snakemake rule graph for the geothermal workflow](./figures/rulegraph.png)
 
@@ -74,12 +72,14 @@ column may be included; rows whose value is `maritime` are excluded from
 regional aggregation.
 
 The regional `geothermal_regions.parquet` output distinguishes `category` and
-`carrier` as well as region, technology, depth category, and price bin.
+`carrier` as well as region, technology, and price bin.
 Power `potential` is net electric capacity in MW; heat `potential` is allocated
 annual heat in MWh/year. Always interpret it together with `potential_unit`.
 `mean_lcoe` and `mean_lcoh` are weighted costs in €2020/MWh of the respective carrier.
+`mean_network_distance_m` is the supplied-energy-weighted distance from cell centres
+to their supplied network polygons in metres, with zero inside a network.
 See the [configuration guide](./config/README.md#inputs-and-outputs)
-for the complete column contract and the study-wide TSV outputs.
+for the complete column contract.
 
 ## Using this module
 
@@ -99,13 +99,12 @@ module module_geothermal:
 use rule * from module_geothermal as module_geothermal_*
 ```
 
-Request `<results>/{shapes}/geothermal_regions.parquet` for regional results
-and `<results>/{shapes}/overall_potential_summary.tsv` for study-wide totals.
+Request `<results>/{shapes}/geothermal_regions.parquet` for regional results.
 For heat modes, provide `<resources>/user/{shapes}/areas.parquet` (or override
 the `district_heating` path variable), set `carrier_out: heat` or
 `heat_and_power`, and request the same regional target. Network results and
 the allocation ledger are also produced and have public path variables.
-The study-wide TSV and electrical diagnostic figures describe unconstrained
+The electrical diagnostic figures describe unconstrained
 electricity resources; they are available in modes evaluating power. The
 regional power overview shows capacity remaining after heat reservation.
 Each invocation uses one parameter set from config for all selected cycles.
@@ -114,23 +113,30 @@ resource and result directories.
 
 ## Figures and HTML report
 
-`potential_overview.png` uses the LCOE overview layout to show each technology's
+`potential_overview.pdf` uses the LCOE overview layout to show each technology's
 potential at its minimum-LCOE depth (GW per grid cell), with a shared color scale
 and a fourth panel showing the potential of the cheapest technology in each cell. It is included
-in the report alongside the LCOE overview when using `LCOE_minimization`.
+in the report alongside the LCOE overview.
 
 
-Request regional results, the study-wide summary, and depth/cost diagnostics
-explicitly, then repeat those targets with `--report results/<shapes>/report.html`.
+Request regional results explicitly,
+then repeat that target with `--report results/<shapes>/report.html`.
 Snakemake reports contain annotated outputs in the requested dependency graph;
 `--report` renders existing results and does not execute missing jobs.
 
-Regional results include the LCOE overview and cumulative-potential figures when
-`method_2d_aggregation` selects `LCOE_minimization`. The regional map additionally
-requires `cutoff`. The independent depth/cost figure is at
-`<resources>/automatic/{shapes}/figures/depth_cost_breakdown_four_panel.png` and the
-summary is available through `<overall_potential_summary>`. These electrical
-outputs are available in power and combined modes.
+The `power` report folder contains LCOE, raster potential, and
+regional potential overviews. All retain three technology panels and a cheapest
+technology panel, including unavailable technologies. Regional potential sums
+capacity retained by the configured price bins after heat reservation; the
+cheapest panel chooses a technology per cell before regional summation.
+
+The `heat` folder contains single-panel allocated heat supply and full LCOH raster maps
+and allocated heating supply per consuming region. Regional heat includes both
+heat and contested heat in combined mode, counted once. Heat figures are available
+in heat-only and combined modes and use the electricity maps' styling and colormap.
+The heat supply map shows only source cells supplying district-heating networks,
+with their allocated annual supply. All figure PDFs are saved under
+`<results>/{shapes}/figures/`.
 
 See [`tests/local_test.py`](tests/local_test.py) for complete build and report
 commands requesting real outputs. Generated HTML reports and rule graphs are

@@ -58,8 +58,8 @@ layers are not bridged and temperatures are not extrapolated. The interpolated
 depth must meet `max_depth` and sediment/EGS restrictions. Infeasible cells have
 NaN costs, potential, and depth.
 
-One heat cost pass evaluates that depth, independently of electricity cycles,
-electricity depth bands, and electricity price settings. Heat retains the
+One heat cost pass evaluates that depth, independently of electricity cycles
+and electricity price settings. Heat retains the
 power model's nominal **100 km² per source cell** and doublet density
 `100 / (2 × well_spacing²)`. These nominal areas are not recomputed from map
 projection distortion. The heat equations are:
@@ -100,8 +100,10 @@ on the source grid.
 
 `heat_allow_cross_region_supply` controls whether candidates may lie outside
 the network's assigned region. Set it to `false` to require each source-cell
-centre to lie inside or on the boundary of that region, or `true` to permit
-sources across region boundaries. Both settings retain `heat_network_buffer_km`
+centre to belong to that region, or `true` to permit sources across region
+boundaries. Centres on shared boundaries or in overlapping polygons are assigned
+to the first region in sorted string-ID order, consistently for local allocation
+and aggregation. Both settings retain `heat_network_buffer_km`
 as the distance limit. Region boundaries come from the supplied `shapes` input;
 the network attribution described below also applies to networks spanning
 multiple regions. A network with insufficient local supply retains unmet demand
@@ -139,45 +141,61 @@ if needed. Power remains attributed to the source-cell region.
 | `contested` | `heat` | Allocated heat with at least one retained power alternative. |
 | `contested` | `power` | Reserved fraction of each retained power alternative. |
 
-Power eligibility applies the selected cycles, depth bands, and price settings.
+Power eligibility applies the selected cycles and price settings.
 Bin boundaries are calculated before reserving heat capacity. If 20% of a cell
 is used for heat, 20% of every eligible electrical alternative is contested and
 80% remains available under `power`. Heat at that cell is reported once,
-regardless of the number of cycles or depth bands. If no electrical alternative
+regardless of the number of cycles. If no electrical alternative
 survives the price settings, its allocated heat is `heat`.
 
 Contested alternatives cannot be added together, nor can competing electrical
 cycles be treated as independent resources. Their regional totals can lie in
-different regions because heat follows the consuming network. Preserve the
-cell-to-network allocation ledger when constructing cross-carrier constraints.
-The ledger records source coordinates and consumer region; pair it with power
-rasters to reconstruct cell-level alternatives. Heat-only mode has only `heat`
-rows and applies no electricity price or depth aggregation settings.
+different regions because heat follows the consuming network. The cell-to-network
+allocation ledger preserves the links needed to construct cross-carrier constraints. Heat-only mode applies no
+electricity price settings.
 
-### Heat outputs
+### Allocation outputs
+
+Allocation files live under `<resources>/automatic/{shapes}/documents/` and
+have no public path variables. The four raster categories are:
 
 | Output | Contents |
 | --- | --- |
-| `geothermal_heat_networks.parquet` | Original polygons/attributes plus `region_id`, `geothermal_supplied_mwh_per_year`, `geothermal_unmet_mwh_per_year`, `geothermal_lcoh_eur_per_mwh`. |
-| `geothermal_heat_allocations.parquet` | Positive allocations: `area_id`, consumer `region_id`, `cell_id`, `row`, `col`, source `x`/`y`, `heat_mwh_per_year`, `cell_fraction`, `lcoh_eur_per_mwh`. |
-| `heat_lcoh.tif` | Full-cell geothermal LCOH, €2020/MWh thermal. |
-| `heat_potential.tif` | Full-cell annual geothermal heat, MWh/year. |
-| `heat_depth.tif` | Interpolated drilling depth, metres. |
-| `heat_allocated.tif` | Total heat allocated from each cell, MWh/year. |
-| `heat_used_fraction.tif` | Allocated heat divided by full-cell heat potential. |
+| `{cycle}_power_potential.tif` | Eligible electrical capacity remaining after heat reservation, MW_e. |
+| `{cycle}_contested_power_potential.tif` | Eligible electrical capacity reserved by heat allocation, MW_e; combined mode. |
+| `heat_allocated_potential.tif` | Allocated heat without an eligible electrical alternative, MWh_th/year. |
+| `contested_heat_potential.tif` | Allocated heat with an eligible electrical alternative, MWh_th/year. |
 
-The first two outputs have public path variables and live in the result
-directory. Heat rasters live in the automatic `documents` directory alongside
-power rasters. All heat rasters use the same north-up grid and NaN nodata;
-feasible unused cells have zero allocation and fraction. Ledger `row`, `col`,
-and row-major `cell_id` refer to that grid; coordinates use its CRS. Technical
-LCOH, potential, and depth maps describe supply before demand allocation.
+Power files are separate for each selected technology. Their sum within a
+technology recovers eligible capacity before heat reservation; technologies
+remain competing alternatives. Heat files describe source locations, and their
+sum recovers total allocated heat. In heat-only mode the contested heat raster
+is zero at feasible cells.
 
-In the regional Parquet, heat uses `depth_category: target_temperature`,
-`bin_id: all`, and `price_bin: all`, with null bin bounds. Regions without
-supplied heat have zero heat potential, zero contributing cells, and null LCOH.
-In combined mode both heat categories are emitted for every non-maritime region;
-electrical rows retain the existing convention of omitting empty bins.
+`heat_allocations.parquet` records positive cell-to-network links in both local
+and cross-region supply modes: `area_id`, consumer `region_id`, `cell_id`, `row`,
+`col`, source `x`/`y`, `heat_mwh_per_year`, `cell_fraction`, `lcoh_eur_per_mwh`,
+and `network_distance_m`. Coordinates use the source grid CRS; row, column,
+and row-major cell IDs refer to the heat grid. Distance is the shortest straight-line
+distance from the cell centre to the supplied network polygon in EPSG:3035 metres,
+with zero for centres inside or on its boundary. Regional heat statistics use
+these links, including when a cell supplies multiple networks.
+
+Technical heat rasters also include `heat_lcoh.tif`, `heat_potential.tif`, and
+`heat_depth.tif`, describing cost, full-cell annual heat, and drilling depth
+before demand allocation. `heat_allocated.tif` stores total allocated heat and
+`heat_used_fraction.tif` its fraction of full-cell potential. Heat rasters use
+the same north-up grid and NaN nodata; feasible unused cells have zero allocation.
+Allocation power rasters use zero for price-excluded feasible cells and NaN for
+physically infeasible cells.
+
+Regional heat potential is the annual heat that geothermal energy can supply
+to networks assigned to that region, including imports when enabled. Sum its
+`heat` and `contested` heat-carrier rows for total supplied heat. Heat uses
+`price_bin: all` and null bin bounds. Regions without supplied heat retain a
+zero `heat` row with zero contributing cells and null LCOH. Zero contested-heat
+rows are omitted; positive contested-power rows are retained even when heat is
+consumed in another region. Empty electrical price bins are omitted.
 
 ## Reservoir and drilling assumptions
 
@@ -240,13 +258,9 @@ annual averages (1982–84 = 100). The exchange rate is the 2020 annual average,
 
 ## Spatial aggregation
 
-The workflow first converts each depth-resolved LCOE cube to two-dimensional
-rasters with `method_2d_aggregation`:
-
-- `LCOE_minimization` selects the least-cost feasible depth in each grid cell
-  and calculates potential at that depth.
-- `depth_categories` retains a separate LCOE and potential raster for every
-  interval in `depth_categories`, as defined in the annotated configuration.
+The workflow converts each depth-resolved LCOE cube to two-dimensional rasters
+by selecting the least-cost feasible depth in each grid cell for each technology,
+with potential evaluated at that depth.
 
 It then aggregates the rasters to the polygons supplied through the `shapes`
 path variable. Select the regional method with `method_region_aggregation`:
@@ -260,7 +274,7 @@ path variable. Select the regional method with `method_region_aggregation`:
 
 Use `quantiles` or `fixed_bins` when downstream models need a cost-supply
 distribution. Configuration validation requires valid model values, a supported
-selected drilling-cost curve, and ordered, non-overlapping depth and LCOE bins.
+selected drilling-cost curve, and ordered, non-overlapping LCOE bins.
 
 ## Inputs and outputs
 
@@ -285,44 +299,38 @@ optional; rows with `shape_class: maritime` are excluded from aggregation.
 
 | Column | Meaning |
 | --- | --- |
+| `region_id` | String form of the input `shape_id`. |
 | `category` | `power`, `heat`, or `contested`; distinguishes resource alternatives. |
 | `carrier` | `power` or `heat`. |
-| `potential_unit` | `MW_e` for power or `MWh_th/year` for heat. |
 | `technology` | Conversion cycle (`orc`, `flash`, or `kalina`), or `geothermal_heat`. |
-| `depth_category` | Configured depth interval, or `all_depths` after LCOE minimization. |
-| `region_id` | String form of the input `shape_id`. |
-| `price_bin`, `bin_id` | Human-readable and path-safe identifiers for the LCOE interval. |
-| `bin_left`, `bin_right` | LCOE interval bounds in €2020/MWh; the lower bound is empty for cutoff aggregation. |
-| `potential` | Net electric MW or allocated annual thermal MWh, as specified by `potential_unit`. |
+| `price_bin` | Human-readable identifier for the LCOE interval, or `all` for heat. |
+| `bin_left` | Lower LCOE bound in €2020/MWh; null for cutoff aggregation and heat. |
+| `bin_right` | Upper LCOE bound in €2020/MWh; null for heat. |
+| `potential` | Net electric capacity or annual geothermal heat supplied to the consuming region. |
+| `potential_unit` | `MW_e` for power or `MWh_th/year` for heat. |
 | `mean_lcoe` | Capacity-weighted LCOE in €2020/MWh electric; null for heat. |
 | `mean_lcoh` | Supplied-energy-weighted LCOH in €2020/MWh thermal; null for power. |
+| `mean_network_distance_m` | Supplied-energy-weighted cell-to-network distance in metres per consumer region and heat category; null for power or zero heat supply. |
 | `n_cells` | Number of contributing raster cells. |
 | `geometry` | Aggregation-region polygon in the input CRS. |
 
-The regional output and its `geothermal_region_outputs.tsv` manifest live
-under `<results>/{shapes}/`. Model cubes and rasters live under
-`<resources>/automatic/{shapes}/documents/`, and diagnostic figures under
-`<resources>/automatic/{shapes}/figures/`. The LCOE overview is in
-`<results>/{shapes}/lcoe_overview.png`; regional-potential figures live under
+The columns occur in the order above. The regional table lives under
+`<results>/{shapes}/`. Model cubes, allocation links, and rasters live under
+`<resources>/automatic/{shapes}/documents/`. All figures live under
 `<results>/{shapes}/figures/`.
 
-`<results>/{shapes}/overall_potential_summary.tsv` contains `technology` and
-`potential_tw` columns. It reports study-wide potential in TW for each selected
-technology and a `lowest_lcoe_technology` portfolio choosing the lowest-cost
-available technology in each cell. For depth-category aggregation, totals are
-summed across configured depth bands. These are raster-wide totals; regional
-price bins, cutoffs, and heat reservations are not applied to this summary.
-It and the electrical diagnostics remain unconstrained power analyses in
-combined mode. The regional potential overview filters to the remaining
-`power` category. These power-only targets are unavailable in heat-only mode.
+Electrical diagnostics describe unconstrained power resources in combined mode.
+The regional potential overview filters to the remaining `power` category.
+Power figures are unavailable in heat-only mode.
 
-The LCOE overview and cumulative-potential figures are produced for
-`LCOE_minimization`. The regional-potential overview additionally requires
-`cutoff` aggregation. Depth/cost diagnostics are available for both 2-D methods.
-Technology comparisons within one run remain available.
+Electricity figures include LCOE, raster potential, and regional potential
+four-panel maps. Regional figures sum the configured price bins and retain panels
+for technologies with no potential. Heat figures include single-panel LCOH,
+allocated source-cell supply, and allocated regional supply maps. The heat supply
+raster map includes only cells supplying networks; LCOH uses the full raster. Heat quantities are shown
+as annual thermal energy; electricity potential is capacity.
 
-Request the independent depth/cost figure and study-wide summary alongside regional
-results to include them in a report. See the [report instructions](../README.md#figures-and-html-report)
+See the [report instructions](../README.md#figures-and-html-report)
 and [`tests/local_test.py`](../tests/local_test.py). Render reports under `results/`.
 
 ## Development environments

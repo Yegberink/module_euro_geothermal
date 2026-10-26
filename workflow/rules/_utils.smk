@@ -18,19 +18,6 @@ def additional_config_validation() -> None:
 
     if config["carrier_out"] != "heat":
         previous_stop = 0.0
-        for category in config.get("depth_categories", []):
-            start, stop = map(float, category)
-            if start >= stop:
-                raise ValueError(
-                    f"Invalid depth category {category!r}; expected start < stop."
-                )
-            if start < previous_stop:
-                raise ValueError(
-                    "depth_categories must be ordered and non-overlapping."
-                )
-            previous_stop = stop
-
-        previous_stop = 0.0
         for value in config.get("fixed_bins", []):
             start, stop = map(float, value.split("-", maxsplit=1))
             if start >= stop:
@@ -46,47 +33,24 @@ AUTOMATIC_DATASETS = internal["resources"]["automatic"]["datasets"]
 POWER_ENABLED = config["carrier_out"] != "heat"
 HEAT_ENABLED = config["carrier_out"] != "power"
 CYCLES = config["which_cycles"] if POWER_ENABLED else []
-DEPTH_CATEGORY_LABELS = [
-    f"{int(start/1000)}-{int(stop/1000)}km"
-    for start, stop in (
-        config["depth_categories"]
-        if POWER_ENABLED and config["method_2d_aggregation"] == "depth_categories"
-        else []
-    )
-]
 MAKE_2D_FIGURE_OUTPUTS = (
     {
         "overview_fig": report_output(
-            "<results>/{shapes}/lcoe_overview.png",
-            category="Electricity potential",
+            "<results>/{shapes}/figures/lcoe_overview.pdf",
+            category="power",
             subcategory="{shapes}",
             labels={"Figure": "LCOE and conversion technology"},
         ),
         "potential_overview_fig": report_output(
-            "<results>/{shapes}/potential_overview.png",
-            category="Electricity potential",
+            "<results>/{shapes}/figures/potential_overview.pdf",
+            category="power",
             subcategory="{shapes}",
             labels={"Figure": "Potential at minimum LCOE"},
         ),
-        "technology_cumulative_four_panel_fig": report_output(
-            "<resources>/automatic/{shapes}/figures/lcoe_potential_cumulative_four_panel.png",
-            category="Electricity potential",
-            subcategory="{shapes}",
-            labels={"Figure": "Cumulative potential"},
-        ),
     }
-    if POWER_ENABLED and config["method_2d_aggregation"] == "LCOE_minimization"
+    if POWER_ENABLED
     else {}
 )
-CUTOFF_LABEL = (
-    f"{float(config['lcoe_cutoff']):g}"
-    if POWER_ENABLED
-    and config["method_2d_aggregation"] == "LCOE_minimization"
-    and config["method_region_aggregation"] == "cutoff"
-    else None
-)
-
-
 ELIGIBILITY_ENABLED = config["eligibility"]["enabled"]
 ELIGIBILITY_INPUT = (
     ["<resources>/automatic/{shapes}/eligibility/eligibility_fraction.tif"]

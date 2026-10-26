@@ -12,46 +12,21 @@ if POWER_ENABLED:
             ),
         output:
             **MAKE_2D_FIGURE_OUTPUTS,
-            lcoe_tifs=(
-                expand(
-                    "<resources>/automatic/{shapes}/documents/{cycle}_2d_lcoe.tif",
-                    shapes="{shapes}",
-                    cycle=CYCLES,
-                )
-                if config["method_2d_aggregation"] == "LCOE_minimization"
-                else expand(
-                    "<resources>/automatic/{shapes}/documents/{cycle}_2d_{cat}_lcoe.tif",
-                    shapes="{shapes}",
-                    cycle=CYCLES,
-                    cat=DEPTH_CATEGORY_LABELS,
-                )
+            lcoe_tifs=expand(
+                "<resources>/automatic/{shapes}/documents/{cycle}_2d_lcoe.tif",
+                shapes="{shapes}",
+                cycle=CYCLES,
             ),
-            pot_tifs=(
-                expand(
-                    "<resources>/automatic/{shapes}/documents/{cycle}_2d_potential.tif",
-                    shapes="{shapes}",
-                    cycle=CYCLES,
-                )
-                if config["method_2d_aggregation"] == "LCOE_minimization"
-                else expand(
-                    "<resources>/automatic/{shapes}/documents/{cycle}_2d_{cat}_potential.tif",
-                    shapes="{shapes}",
-                    cycle=CYCLES,
-                    cat=DEPTH_CATEGORY_LABELS,
-                )
+            pot_tifs=expand(
+                "<resources>/automatic/{shapes}/documents/{cycle}_2d_potential.tif",
+                shapes="{shapes}",
+                cycle=CYCLES,
             ),
         log:
             "<logs>/{shapes}/make_2d.log",
         conda:
             "../envs/module.yaml"
         params:
-            method_2d_aggregation=config["method_2d_aggregation"],
-            depth_categories=(
-                config["depth_categories"]
-                if config["method_2d_aggregation"] == "depth_categories"
-                else []
-            ),
-            depthcat_labels=DEPTH_CATEGORY_LABELS,
             cycles=CYCLES,
             max_depth=config["max_depth"],
         message:
@@ -63,51 +38,79 @@ if POWER_ENABLED:
 rule aggregate_to_regions:
     """Aggregate 2D LCOE and potential rasters to user-defined regions for the configured parameters."""
     input:
-        lcoe_tifs=(
-            expand(
-                "<resources>/automatic/{shapes}/documents/{cycle}_2d_lcoe.tif",
-                shapes="{shapes}",
-                cycle=CYCLES,
-            )
-            if POWER_ENABLED and config["method_2d_aggregation"] == "LCOE_minimization"
-            else expand(
-                "<resources>/automatic/{shapes}/documents/{cycle}_2d_{cat}_lcoe.tif",
-                shapes="{shapes}",
-                cycle=CYCLES,
-                cat=DEPTH_CATEGORY_LABELS,
-            )
-        ),
-        pot_tifs=(
-            expand(
-                "<resources>/automatic/{shapes}/documents/{cycle}_2d_potential.tif",
-                shapes="{shapes}",
-                cycle=CYCLES,
-            )
-            if POWER_ENABLED and config["method_2d_aggregation"] == "LCOE_minimization"
-            else expand(
-                "<resources>/automatic/{shapes}/documents/{cycle}_2d_{cat}_potential.tif",
-                shapes="{shapes}",
-                cycle=CYCLES,
-                cat=DEPTH_CATEGORY_LABELS,
-            )
-        ),
+        lcoe_tifs=(rules.make_2d.output.lcoe_tifs if POWER_ENABLED else []),
+        pot_tifs=(rules.make_2d.output.pot_tifs if POWER_ENABLED else []),
         heat_fraction=([rules.allocate_heat.output.fraction] if HEAT_ENABLED else []),
+        heat_allocated=([rules.allocate_heat.output.allocated] if HEAT_ENABLED else []),
+        heat_lcoh=([rules.calculate_LCOH.output.lcoh] if HEAT_ENABLED else []),
         heat_allocations=(
-            [rules.allocate_heat.output.allocations] if HEAT_ENABLED else []
+            rules.allocate_heat.output.allocations if HEAT_ENABLED else []
         ),
         shapes="<shapes>",
     output:
         geoparquet="<geothermal_regions>",
-        manifest="<results>/{shapes}/geothermal_region_outputs.tsv",
+        power=expand(
+            "<resources>/automatic/{shapes}/documents/{cycle}_power_potential.tif",
+            shapes="{shapes}",
+            cycle=CYCLES,
+        ),
+        contested_power=(
+            expand(
+                "<resources>/automatic/{shapes}/documents/{cycle}_contested_power_potential.tif",
+                shapes="{shapes}",
+                cycle=CYCLES,
+            )
+            if HEAT_ENABLED
+            else []
+        ),
+        heat=(
+            ["<resources>/automatic/{shapes}/documents/heat_allocated_potential.tif"]
+            if HEAT_ENABLED
+            else []
+        ),
+        contested_heat=(
+            ["<resources>/automatic/{shapes}/documents/contested_heat_potential.tif"]
+            if HEAT_ENABLED
+            else []
+        ),
         regional_fig=(
             report(
-                f"<results>/{{shapes}}/figures/"
-                f"potential_overview_all_depths_cutoff_{CUTOFF_LABEL}.png",
-                category="Regional potential",
+                "<results>/{shapes}/figures/regional_power_potential.pdf",
+                category="power",
                 subcategory="{shapes}",
                 labels={"Figure": "Regional electricity potential"},
             )
-            if CUTOFF_LABEL is not None
+            if POWER_ENABLED
+            else []
+        ),
+        heat_potential_fig=(
+            report(
+                "<results>/{shapes}/figures/heat_potential_overview.pdf",
+                category="heat",
+                subcategory="{shapes}",
+                labels={"Figure": "Heat supplied to networks"},
+            )
+            if HEAT_ENABLED
+            else []
+        ),
+        heat_lcoh_fig=(
+            report(
+                "<results>/{shapes}/figures/lcoh_overview.pdf",
+                category="heat",
+                subcategory="{shapes}",
+                labels={"Figure": "LCOH raster"},
+            )
+            if HEAT_ENABLED
+            else []
+        ),
+        regional_heat_fig=(
+            report(
+                "<results>/{shapes}/figures/regional_heat_potential.pdf",
+                category="heat",
+                subcategory="{shapes}",
+                labels={"Figure": "Regional heating potential"},
+            )
+            if HEAT_ENABLED
             else []
         ),
     log:
@@ -116,6 +119,7 @@ rule aggregate_to_regions:
         "../envs/module.yaml"
     params:
         carrier_out=config["carrier_out"],
+        max_depth=config["max_depth"],
         cycles=CYCLES,
         method_region_aggregation=(
             config["method_region_aggregation"] if POWER_ENABLED else None
@@ -135,7 +139,6 @@ rule aggregate_to_regions:
             if POWER_ENABLED and config["method_region_aggregation"] == "cutoff"
             else None
         ),
-        bin_id=f"cutoff_{CUTOFF_LABEL}",
     message:
         "Aggregate geothermal results to {wildcards.shapes}."
     script:

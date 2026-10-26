@@ -112,40 +112,31 @@ class EligibilityFractionSchema:
 class GeothermalRegionsSchema:
     schema = pa.DataFrameSchema(
         {
+            "region_id": pa.Column(str, coerce=True),
             "category": pa.Column(
                 str, checks=pa.Check(lambda s: s.isin(["power", "heat", "contested"]))
             ),
             "carrier": pa.Column(
                 str, checks=pa.Check(lambda s: s.isin(["power", "heat"]))
             ),
-            "potential_unit": pa.Column(
-                str, checks=pa.Check(lambda s: s.isin(["MW_e", "MWh_th/year"]))
-            ),
-            "mean_lcoh": pa.Column(float, nullable=True, coerce=True),
             "technology": pa.Column(str, coerce=True),
-            "depth_category": pa.Column(str, coerce=True),
-            "region_id": pa.Column(str, coerce=True),
             "price_bin": pa.Column(str, coerce=True),
-            "bin_id": pa.Column(str, coerce=True),
             "bin_left": pa.Column(float, nullable=True, coerce=True),
             "bin_right": pa.Column(float, nullable=True, coerce=True),
             "potential": pa.Column(float, nullable=True, coerce=True),
+            "potential_unit": pa.Column(
+                str, checks=pa.Check(lambda s: s.isin(["MW_e", "MWh_th/year"]))
+            ),
             "mean_lcoe": pa.Column(float, nullable=True, coerce=True),
+            "mean_lcoh": pa.Column(float, nullable=True, coerce=True),
+            "mean_network_distance_m": pa.Column(
+                float, checks=pa.Check(lambda s: s >= 0), nullable=True, coerce=True
+            ),
             "n_cells": pa.Column(int, coerce=True),
             "geometry": pa.Column(checks=pa.Check(_valid_geometry)),
         },
         strict=True,
-        coerce=True,
-    )
-
-
-class GeothermalRegionManifestSchema:
-    schema = pa.DataFrameSchema(
-        {
-            col: pa.Column(str, coerce=True)
-            for col in ["kind", "depth_category", "bin_id", "price_bin", "path"]
-        },
-        strict=True,
+        ordered=True,
         coerce=True,
     )
 
@@ -153,20 +144,9 @@ class GeothermalRegionManifestSchema:
 def empty_geothermal_regions(crs=None) -> gpd.GeoDataFrame:
     df = pd.DataFrame(
         {
-            "category": pd.Series(dtype="object"),
-            "carrier": pd.Series(dtype="object"),
-            "potential_unit": pd.Series(dtype="object"),
-            "mean_lcoh": pd.Series(dtype="float64"),
-            "technology": pd.Series(dtype="object"),
-            "depth_category": pd.Series(dtype="object"),
-            "region_id": pd.Series(dtype="object"),
-            "price_bin": pd.Series(dtype="object"),
-            "bin_id": pd.Series(dtype="object"),
-            "bin_left": pd.Series(dtype="float64"),
-            "bin_right": pd.Series(dtype="float64"),
-            "potential": pd.Series(dtype="float64"),
-            "mean_lcoe": pd.Series(dtype="float64"),
-            "n_cells": pd.Series(dtype="int64"),
+            name: pd.Series(dtype=str(column.dtype))
+            for name, column in GeothermalRegionsSchema.schema.columns.items()
+            if name != "geometry"
         }
     )
     return gpd.GeoDataFrame(df, geometry=gpd.GeoSeries([], crs=crs), crs=crs)

@@ -3,7 +3,7 @@
 
 Consumes outputs of make_2d.py (one or more LCOE + potential GeoTIFF pairs)
 and produces a GeoParquet with per-region potential and mean-LCOE statistics,
-grouped by technology, depth category, and price bin.
+grouped by technology, category, and price bin.
 
 Supported aggregation methods (method_region_aggregation):
   - quantiles    : bin LCOE into N global quantile bins
@@ -11,106 +11,19 @@ Supported aggregation methods (method_region_aggregation):
   - cutoff       : single bin containing all cells with LCOE <= lcoe_cutoff
 """
 
-import os
-import re
 import sys
 from pathlib import Path
 
 import _schemas
-import affine
 import geopandas as gpd
 import gregor
 import numpy as np
 import pandas as pd
 import xarray as xr
-from _heat import align_to_grid, check_grid, read_raster
+from _heat import align_to_grid, check_grid, read_raster, write_raster
 
 if "snakemake" in dir():
     sys.stdout = sys.stderr = open(snakemake.log[0], "w", buffering=1)
-
-
-def write_empty_outputs(out_path: str, manifest_path: str, crs=None):
-    """Write schema-valid empty regional outputs."""
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    out_gdf = _schemas.GeothermalRegionsSchema.schema.validate(
-        _schemas.empty_geothermal_regions(crs)
-    )
-    out_gdf.to_parquet(out_path, index=False)
-    Path(manifest_path).parent.mkdir(parents=True, exist_ok=True)
-    _schemas.GeothermalRegionManifestSchema.schema.validate(
-        pd.DataFrame(
-            [
-                {
-                    "kind": "combined_parquet",
-                    "depth_category": "all",
-                    "bin_id": "all",
-                    "price_bin": "all",
-                    "path": out_path,
-                }
-            ]
-        )
-    ).to_csv(manifest_path, sep="\t", index=False)
-
-
-# ---------------------------------------------------------------------------
-# Filename parsing
-# ---------------------------------------------------------------------------
-
-
-def _parse_2d_tif_name(path: str):
-    """Parse a 2D output tif filename into (tech, depth_category, kind).
-
-    Accepts both forms produced by make_2d.py:
-      <tech>_2d_lcoe.tif                    → depth_category = "all_depths"
-      <tech>_2d_potential.tif               → depth_category = "all_depths"
-      <tech>_2d_<depthcat>_lcoe.tif         → depth_category = <depthcat>
-      <tech>_2d_<depthcat>_potential.tif    → depth_category = <depthcat>
-    """
-    name = os.path.basename(path)
-
-    # Depth-category form  (tech_2d_<cat>_<kind>.tif)
-    m = re.match(
-        r"^(?P<tech>[A-Za-z0-9]+)_2d_(?P<cat>.+)_(?P<kind>lcoe|potential)\.tif$", name
-    )
-    if m:
-        return m.group("tech").lower(), m.group("cat"), m.group("kind")
-
-    # No-category form  (tech_2d_<kind>.tif)
-    m = re.match(r"^(?P<tech>[A-Za-z0-9]+)_2d_(?P<kind>lcoe|potential)\.tif$", name)
-    if m:
-        return m.group("tech").lower(), "all_depths", m.group("kind")
-
-    raise ValueError(f"Unrecognized 2-D raster filename: {path}")
-
-
-# ---------------------------------------------------------------------------
-# Raster utilities
-# ---------------------------------------------------------------------------
-
-
-def ensure_north_up(da: xr.DataArray) -> xr.DataArray:
-    """Guarantee that the raster is north-up (negative pixel height).
-
-    Flips the y dimension and rewrites the affine transform when needed.
-    """
-    t = da.rio.transform()
-    if t.e < 0:
-        return da  # already north-up
-
-    height = da.sizes["y"]
-    da2 = da.isel(y=slice(None, None, -1))
-
-    # Recompute top-left y origin (use height-1 to stay on the last pixel centre)
-    y_top = t.f + t.e * (height - 1)
-    t2 = affine.Affine(t.a, t.b, t.c, t.d, -abs(t.e), y_top)
-
-    da2 = da2.rio.write_transform(t2, inplace=False)
-    da2 = da2.rio.write_crs(da.rio.crs, inplace=False)
-    nodata = da.rio.nodata
-    if nodata is not None:
-        da2 = da2.rio.write_nodata(nodata, inplace=False)
-
-    return da2
 
 
 def inherit_rio_meta(dst: xr.DataArray, src: xr.DataArray) -> xr.DataArray:
@@ -175,41 +88,25 @@ def _bins_for_method(method, lcoe_da, n_quantiles, fixed_bins, lcoe_cutoff):
 
 
 # ---------------------------------------------------------------------------
-# Region dissolution
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# Core aggregation for one (tech, depth_category) pair
+# Electricity aggregation
 # ---------------------------------------------------------------------------
 
 
 def aggregate_one_tech(
     tech: str,
-    lcoe_path: str,
-    pot_path: str,
+    lcoe: xr.DataArray,
+    pot: xr.DataArray,
     regions_gdf: gpd.GeoDataFrame,
     method: str,
     n_quantiles: int,
     fixed_bins: list,
     lcoe_cutoff: float | None,
-    depth_category: str = "all_depths",
     used_fraction=None,
+    power_path=None,
+    contested_path=None,
 ) -> tuple[pd.DataFrame, object]:
-    """Aggregate LCOE and potential for a single (tech, depth_category) pair.
-
-    Returns:
-    -------
-    df : pd.DataFrame
-        Rows of (technology, depth_category, region_id, price_bin, …).
-    crs : CRS
-        CRS of the input rasters (for writing the output GeoDataFrame).
-    """
-    lcoe, pot = read_raster(lcoe_path), read_raster(pot_path)
+    """Write eligible power alternatives and aggregate each price bin."""
     check_grid(lcoe, pot)
-    lcoe = ensure_north_up(lcoe)
-    pot = ensure_north_up(pot)
-
     fraction = (
         align_to_grid(used_fraction, pot).clip(0, 1)
         if used_fraction is not None
@@ -218,13 +115,23 @@ def aggregate_one_tech(
     regions = regions_gdf.to_crs(lcoe.rio.crs)
     bins = _bins_for_method(method, lcoe, n_quantiles, fixed_bins, lcoe_cutoff)
 
+    eligible = power_eligibility(lcoe, pot, bins, method)
+    feasible = np.isfinite(lcoe) & np.isfinite(pot) & (pot > 0)
+    # Price exclusions are zero potential; physically infeasible cells are nodata.
+    retained = pot.where(eligible, 0).where(feasible)
+    if power_path is not None:
+        write_raster(retained * (1 - fraction), power_path, "MW_e")
+    if contested_path is not None:
+        write_raster(retained * fraction, contested_path, "MW_e")
+
     rows = []
+    if regions.empty:
+        return pd.DataFrame(), eligible
     for bi, (bin_left, bin_right) in enumerate(bins):
         # Build the per-bin validity mask
         if method == "cutoff":
             in_bin = lcoe <= bin_right
             bin_label = f"<= {bin_right:g}"
-            bin_id = f"cutoff_{bin_right:g}"
             bin_left_v = np.nan
             bin_right_v = float(bin_right)
         else:
@@ -234,11 +141,6 @@ def aggregate_one_tech(
             else:
                 in_bin = (lcoe >= bin_left) & (lcoe <= bin_right)
             bin_label = f"{bin_left:g}-{bin_right:g}"
-            bin_id = (
-                f"quantile_{bi + 1:02d}"
-                if method == "quantiles"
-                else f"bin_{bin_label}"
-            )
             bin_left_v = float(bin_left)
             bin_right_v = float(bin_right)
 
@@ -288,9 +190,8 @@ def aggregate_one_tech(
                     "carrier": "power",
                     "potential_unit": "MW_e",
                     "mean_lcoh": np.nan,
+                    "mean_network_distance_m": np.nan,
                     "technology": tech,
-                    "depth_category": str(depth_category),
-                    "bin_id": bin_id,
                     "region_id": agg_p.index.astype(str),
                     "price_bin": bin_label,
                     "bin_left": bin_left_v,
@@ -304,25 +205,7 @@ def aggregate_one_tech(
             if not df.empty:
                 rows.append(df)
 
-    if rows:
-        out_df = pd.concat(rows, ignore_index=True)
-    else:
-        out_df = pd.DataFrame(
-            columns=[
-                "technology",
-                "depth_category",
-                "bin_id",
-                "region_id",
-                "price_bin",
-                "bin_left",
-                "bin_right",
-                "potential",
-                "mean_lcoe",
-                "n_cells",
-            ]
-        )
-
-    return out_df, lcoe.rio.crs
+    return (pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()), eligible
 
 
 # ---------------------------------------------------------------------------
@@ -330,9 +213,8 @@ def aggregate_one_tech(
 # ---------------------------------------------------------------------------
 
 
-def power_eligibility(costs, capacities, method, n_quantiles, fixed_bins, cutoff):
+def power_eligibility(costs, capacities, bins, method):
     """Identify retained power before reservation, using the original bin edges."""
-    bins = _bins_for_method(method, costs, n_quantiles, fixed_bins, cutoff)
     eligible = xr.zeros_like(costs, dtype=bool)
     for index, (left, right) in enumerate(bins):
         if method == "cutoff":
@@ -353,9 +235,11 @@ def aggregate_heat(ledger, eligible, region_ids, combined):
         contested = eligible.values[ledger.row.to_numpy(), ledger.col.to_numpy()]
         ledger.loc[contested, "category"] = "contested"
     ledger["annual_cost"] = ledger.heat_mwh_per_year * ledger.lcoh_eur_per_mwh
+    ledger["heat_distance"] = ledger.heat_mwh_per_year * ledger.network_distance_m
     grouped = ledger.groupby(["region_id", "category"]).agg(
         potential=("heat_mwh_per_year", "sum"),
         annual_cost=("annual_cost", "sum"),
+        heat_distance=("heat_distance", "sum"),
         n_cells=("cell_id", "nunique"),
     )
     categories = ["heat", "contested"] if combined else ["heat"]
@@ -364,189 +248,173 @@ def aggregate_heat(ledger, eligible, region_ids, combined):
     )
     grouped = grouped.reindex(index, fill_value=0).reset_index()
     grouped["mean_lcoh"] = grouped.annual_cost / grouped.potential.replace(0, np.nan)
-    grouped = grouped.drop(columns="annual_cost")
+    grouped["mean_network_distance_m"] = (
+        grouped.heat_distance / grouped.potential.replace(0, np.nan)
+    )
+    grouped = grouped.drop(columns=["annual_cost", "heat_distance"])
     grouped["carrier"] = "heat"
     grouped["potential_unit"] = "MWh_th/year"
     grouped["technology"] = "geothermal_heat"
-    grouped["depth_category"] = "target_temperature"
     grouped["price_bin"] = "all"
-    grouped["bin_id"] = "all"
     grouped["bin_left"] = np.nan
     grouped["bin_right"] = np.nan
     grouped["mean_lcoe"] = np.nan
-    return grouped
+    return grouped[(grouped.category != "contested") | (grouped.potential > 0)]
 
 
 def main():
-    """Aggregate all configured technology rasters to the supplied regions."""
-    # --- Inputs / outputs from Snakemake ---------------------------------
-    lcoe_tifs = list(snakemake.input.lcoe_tifs)
-    pot_tifs = list(snakemake.input.pot_tifs)
-    shapes_path = snakemake.input["shapes"]
-    out_path = snakemake.output["geoparquet"]
-    manifest_path = snakemake.output["manifest"]
-    resultdir = os.path.dirname(out_path)
+    """Write spatial alternatives and heat supplied to each consuming region."""
     heat_enabled = snakemake.params.carrier_out != "power"
+    combined = snakemake.params.carrier_out == "heat_and_power"
     used_fraction = (
         read_raster(snakemake.input.heat_fraction[0]) if heat_enabled else None
     )
     heat_eligible = xr.zeros_like(used_fraction, dtype=bool) if heat_enabled else None
-
-    # --- Parameters -------------------------------------------------------
-    cycles = [str(c).strip().lower() for c in snakemake.params.cycles]
-    method = str(snakemake.params["method_region_aggregation"]).lower()
-    n_quantiles = (
-        int(snakemake.params["n_quantiles"])
-        if cycles and method == "quantiles"
-        else None
-    )
+    method = snakemake.params.method_region_aggregation
+    n_quantiles = snakemake.params.n_quantiles
     fixed_bins = parse_fixed_bins(snakemake.params.fixed_bins)
     lcoe_cutoff = snakemake.params.lcoe_cutoff
-    if lcoe_cutoff is not None:
-        lcoe_cutoff = float(lcoe_cutoff)
 
-    # --- Build (tech, depth_category) → path maps -------------------------
-    lcoe_map: dict[tuple, str] = {}
-    pot_map: dict[tuple, str] = {}
+    regions = _schemas.ShapeSchema.validate(gpd.read_parquet(snakemake.input.shapes))
+    if "shape_class" in regions:
+        regions = regions[regions.shape_class != "maritime"]
+    regions = regions[["shape_id", "geometry"]].set_index("shape_id")
+    regions.index = regions.index.astype(str)
 
-    for p in lcoe_tifs:
-        tech, cat, _ = _parse_2d_tif_name(p)
-        lcoe_map[(tech, cat)] = p
-
-    for p in pot_tifs:
-        tech, cat, _ = _parse_2d_tif_name(p)
-        pot_map[(tech, cat)] = p
-
-    # Optionally filter to the cycles listed in params
-    if cycles:
-        lcoe_map = {k: v for k, v in lcoe_map.items() if k[0] in cycles}
-        pot_map = {k: v for k, v in pot_map.items() if k[0] in cycles}
-
-    pairs = sorted(set(lcoe_map) & set(pot_map))
-    # --- Load and prepare regions -----------------------------------------
-
-    gdf = _schemas.ShapeSchema.validate(gpd.read_parquet(shapes_path))
-    if "shape_class" in gdf.columns:
-        gdf = gdf[gdf["shape_class"] != "maritime"].copy()
-    if gdf.empty:
-        write_empty_outputs(out_path, manifest_path, gdf.crs)
-        return
-
-    regions = (
-        gdf[["shape_id", gdf.geometry.name]]
-        .dissolve(by="shape_id", as_index=False)
-        .set_index("shape_id")
-    )
-    if regions.empty:
-        write_empty_outputs(out_path, manifest_path, gdf.crs)
-        return
-
-    # --- Aggregate each (tech, depth_category) pair -----------------------
     frames = []
-    for tech, depth_cat in pairs:
-        if heat_enabled:
-            costs = read_raster(lcoe_map[(tech, depth_cat)])
-            capacities = read_raster(pot_map[(tech, depth_cat)])
-            check_grid(costs, capacities)
-            eligible = power_eligibility(
-                costs, capacities, method, n_quantiles, fixed_bins, lcoe_cutoff
-            )
-            heat_eligible = heat_eligible | align_to_grid(
-                eligible, used_fraction, fill=False
-            )
-        df, _ = aggregate_one_tech(
-            tech=tech,
-            lcoe_path=lcoe_map[(tech, depth_cat)],
-            pot_path=pot_map[(tech, depth_cat)],
-            regions_gdf=regions,
-            method=method,
-            n_quantiles=n_quantiles,
-            fixed_bins=fixed_bins,
-            lcoe_cutoff=lcoe_cutoff,
-            depth_category=depth_cat,
-            used_fraction=used_fraction,
+    cheapest_cost = cheapest_potential = None
+    for index, (tech, lcoe_path, pot_path, power_path) in enumerate(
+        zip(
+            snakemake.params.cycles,
+            snakemake.input.lcoe_tifs,
+            snakemake.input.pot_tifs,
+            snakemake.output.power,
+            strict=True,
         )
+    ):
+        costs, capacities = read_raster(lcoe_path), read_raster(pot_path)
+        df, eligible = aggregate_one_tech(
+            tech,
+            costs,
+            capacities,
+            regions,
+            method,
+            n_quantiles,
+            fixed_bins,
+            lcoe_cutoff,
+            used_fraction,
+            power_path=power_path,
+            contested_path=snakemake.output.contested_power[index]
+            if combined
+            else None,
+        )
+        # Choose before regional summation; regional mean costs would select a
+        # different portfolio. Ties follow the configured cycle order.
+        remaining = (
+            capacities * (1 - align_to_grid(used_fraction, capacities).clip(0, 1))
+            if heat_enabled
+            else capacities
+        )
+        candidate_cost = costs.where(eligible & (remaining > 0), np.inf)
+        if cheapest_cost is None:
+            cheapest_cost = xr.full_like(costs, np.inf)
+            cheapest_potential = xr.zeros_like(capacities)
+        better = candidate_cost < cheapest_cost
+        cheapest_potential = xr.where(better, remaining, cheapest_potential)
+        cheapest_cost = xr.where(better, candidate_cost, cheapest_cost)
+        if heat_enabled:
+            heat_eligible |= align_to_grid(eligible, used_fraction, fill=False)
         if not df.empty:
             frames.append(df)
 
     if heat_enabled:
-        ledger = pd.read_parquet(snakemake.input.heat_allocations[0])
-        frames.append(
-            aggregate_heat(
-                ledger,
-                heat_eligible,
-                regions.index,
-                snakemake.params["carrier_out"] == "heat_and_power",
-            )
+        heat_lcoh = read_raster(snakemake.input.heat_lcoh[0])
+        allocated = read_raster(snakemake.input.heat_allocated[0])
+        check_grid(allocated, used_fraction)
+        write_raster(
+            allocated.where(~heat_eligible, 0).where(allocated.notnull()),
+            snakemake.output.heat[0],
+            "MWh_th/year",
         )
-
-    # --- Assemble output GeoDataFrame -------------------------------------
-    regions2 = regions.copy()
-    regions2.index = regions2.index.astype(str)
-    geom_col = regions2.geometry.name
+        write_raster(
+            allocated.where(heat_eligible, 0).where(allocated.notnull()),
+            snakemake.output.contested_heat[0],
+            "MWh_th/year",
+        )
+        ledger = pd.read_parquet(snakemake.input.heat_allocations[0])
+        frames.append(aggregate_heat(ledger, heat_eligible, regions.index, combined))
 
     if frames:
-        out_df = pd.concat(frames, ignore_index=True)
-        out_gdf = gpd.GeoDataFrame(
-            out_df.join(regions2[[geom_col]], on="region_id"),
-            geometry=geom_col,
-            crs=regions2.crs,
+        data = pd.concat(frames, ignore_index=True)
+        result = gpd.GeoDataFrame(
+            data.join(regions[["geometry"]], on="region_id"),
+            geometry="geometry",
+            crs=regions.crs,
         )
+        result = result[list(_schemas.GeothermalRegionsSchema.schema.columns)]
     else:
-        write_empty_outputs(out_path, manifest_path, regions2.crs)
-        return
+        result = _schemas.empty_geothermal_regions(regions.crs)
+    Path(snakemake.output.geoparquet).parent.mkdir(parents=True, exist_ok=True)
+    result = _schemas.GeothermalRegionsSchema.schema.validate(result)
+    result.to_parquet(snakemake.output.geoparquet, index=False)
 
-    os.makedirs(resultdir, exist_ok=True)
-    out_gdf = _schemas.GeothermalRegionsSchema.schema.validate(out_gdf)
-    out_gdf.to_parquet(out_path, index=False)
-    output_rows = [
-        {
-            "kind": "combined_parquet",
-            "depth_category": "all",
-            "bin_id": "all",
-            "price_bin": "all",
-            "path": out_path,
-        }
-    ]
+    import _plots
 
-    for (depth_category, bin_id), group in out_gdf.groupby(
-        ["depth_category", "bin_id"], dropna=False
-    ):
-        price_bin = ", ".join(sorted(group["price_bin"].astype(str).unique()))
-        safe_category, safe_bin = (
-            re.sub(r"[^A-Za-z0-9._-]+", "_", str(value))[:200]
-            for value in (depth_category, bin_id)
-        )
-        split_path = os.path.join(
-            resultdir, f"geothermal_regions_{safe_category}_{safe_bin}.parquet"
-        )
-        group.to_parquet(split_path, index=False)
-        output_rows.append(
-            {
-                "kind": "split_parquet",
-                "depth_category": depth_category,
-                "bin_id": bin_id,
-                "price_bin": price_bin,
-                "path": split_path,
-            }
-        )
-
-    Path(manifest_path).parent.mkdir(parents=True, exist_ok=True)
-    _schemas.GeothermalRegionManifestSchema.schema.validate(
-        pd.DataFrame(output_rows)
-    ).to_csv(manifest_path, sep="\t", index=False)
-
-
-if "snakemake" in dir():
-    main()
     if snakemake.output.regional_fig:
-        import _plots
-
-        _plots.make_regional_potential_overview(
-            geoparquet_path=snakemake.output.geoparquet,
-            shapes_path=snakemake.input.shapes,
-            out_path=snakemake.output.regional_fig,
-            cycles=[str(c).strip().lower() for c in snakemake.params.cycles],
-            depth_category="all_depths",
-            bin_id=snakemake.params.bin_id,
+        power = result.loc[(result.carrier == "power") & (result.category == "power")]
+        maps = {
+            tech: power.loc[power.technology == tech]
+            .groupby("region_id")
+            .potential.sum()
+            .reindex(regions.index, fill_value=0)
+            .to_numpy()
+            for tech in snakemake.params.cycles
+        }
+        selected = gregor.aggregate.aggregate_raster_to_polygon(
+            inherit_rio_meta(cheapest_potential, costs),
+            regions.to_crs(costs.rio.crs),
+            stats="sum",
         )
+        maps["winner"] = selected["sum"].reindex(regions.index).fillna(0).to_numpy()
+        _plots.make_resource_overview(
+            maps,
+            list(snakemake.params.cycles),
+            snakemake.output.regional_fig,
+            snakemake.input.shapes,
+            snakemake.params.max_depth,
+            potential=True,
+            regions=regions,
+            reference_grid=costs,
+        )
+    if heat_enabled:
+        for data, output, potential in (
+            (heat_lcoh, snakemake.output.heat_lcoh_fig, False),
+            (allocated.where(allocated > 0), snakemake.output.heat_potential_fig, True),
+        ):
+            _plots.make_resource_overview(
+                {"heat": data},
+                ["heat"],
+                output,
+                snakemake.input.shapes,
+                snakemake.params.max_depth,
+                heat=True,
+                potential=potential,
+            )
+    if snakemake.output.regional_heat_fig:
+        # Heat categories partition supplied energy; include contested supply once.
+        heat = result.loc[result.carrier == "heat"].groupby("region_id").potential.sum()
+        _plots.make_resource_overview(
+            {"heat": heat.reindex(regions.index, fill_value=0).to_numpy()},
+            ["heat"],
+            snakemake.output.regional_heat_fig,
+            snakemake.input.shapes,
+            snakemake.params.max_depth,
+            potential=True,
+            heat=True,
+            regions=regions,
+            reference_grid=allocated,
+        )
+
+
+if __name__ == "__main__":
+    main()

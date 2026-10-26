@@ -7,34 +7,21 @@ and prevents plotting dependencies from leaking into calculation code.
 
 from pathlib import Path
 
-import _schemas
 import geopandas as gpd
 import matplotlib
 import numpy as np
-import pandas as pd
 import rioxarray  # noqa: F401  Register the xarray ``rio`` accessor.
 import xarray as xr
-from matplotlib import cm
-from matplotlib.colors import ListedColormap, PowerNorm
-from matplotlib.lines import Line2D
+from matplotlib.colors import ListedColormap, Normalize, PowerNorm
 from matplotlib.patches import Patch
 from rasterio.features import geometry_mask
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import seaborn as sns
 
 TECH_LABELS = {"orc": "ORC", "flash": "Flash", "kalina": "Kalina"}
 TECH_COLORS = {"orc": "#0072B2", "flash": "#E69F00", "kalina": "#009E73"}
 PANEL_LETTERS = "abcdefghijklmnopqrstuvwxyz"
-COMPONENTS = (
-    ("drilling", "Well drilling"),
-    ("stimulation", "EGS stimulation"),
-    ("pump", "Pumps"),
-    ("power_plant", "Power plant"),
-    ("fixed_om", "Fixed O&M"),
-)
-
 LCOE_CMAP = "YlOrBr_r"
 LCOE_COLORBAR_CUTOFF = 600.0
 LCOE_NORM_GAMMA = 0.4
@@ -57,7 +44,7 @@ BASE_STYLE = {
 }
 
 
-def write_blank_png(path, figsize=(6, 4)) -> None:
+def write_blank_figure(path, figsize=(6, 4)) -> None:
     """Write a valid empty placeholder when no plottable data are available."""
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     with plt.rc_context(BASE_STYLE):
@@ -157,24 +144,33 @@ def make_resource_overview(
     *,
     potential=False,
     selection_costs=None,
+    heat=False,
+    regions=None,
+    reference_grid=None,
 ):
     """Render cost and potential overviews with the same map layout."""
     if not cycles:
-        write_blank_png(out_path)
+        write_blank_figure(out_path)
         return
 
-    reference = maps[cycles[0]]
-    countries = _country_layer(shapes_path, reference)
+    reference = maps[cycles[0]] if reference_grid is None else reference_grid
+    countries = (
+        regions if regions is not None else _country_layer(shapes_path, reference)
+    )
+    if regions is not None and reference_grid is not None:
+        countries = countries.to_crs(reference_grid.rio.crs)
     if countries.empty:
-        write_blank_png(out_path)
+        write_blank_figure(out_path)
         return
 
-    panels = cycles + ["winner"]
+    panels = cycles if heat else list(TECH_LABELS) + ["winner"]
     ncols = 2 if len(panels) > 1 else 1
     nrows = int(np.ceil(len(panels) / ncols))
-    raster = reference.transpose("y", "x")
-    x, y = raster.x.values, raster.y.values
-    extent = [float(x.min()), float(x.max()), float(y.min()), float(y.max())]
+    if regions is None or reference_grid is not None:
+        left, bottom, right, top = reference.rio.bounds()
+    else:
+        left, bottom, right, top = regions.total_bounds
+    extent = [left, right, bottom, top]
     data_aspect = (extent[3] - extent[2]) / (extent[1] - extent[0])
 
     panel_w = 4.5
@@ -196,29 +192,50 @@ def make_resource_overview(
             axes.append(fig.add_axes([x0, y0, panel_w / fig_w, panel_h / fig_h]))
         lcoe_cmap = plt.get_cmap(LCOE_CMAP).copy()
         lcoe_cmap.set_bad((0, 0, 0, 0))
-        winner_cmap = ListedColormap([TECH_COLORS[c] for c in cycles])
+        winner_cmap = ListedColormap(
+            [TECH_COLORS[c] for c in cycles if c in TECH_COLORS]
+        )
         winner_cmap.set_bad((0, 0, 0, 0))
 
+        scale = (1e6 if heat else 1000.0) if potential else 1.0
         plot_arrays = {
-            cycle: _plot_values(
-                maps[cycle], countries, value_scale=1000.0 if potential else 1.0
+            cycle: (
+                np.asarray(maps[cycle], dtype=float) / scale
+                if regions is not None
+                else _plot_values(maps[cycle], countries, value_scale=scale)
             )
-            for cycle in cycles
+            for cycle in maps
         }
-        lcoe_vmin, data_vmax = _finite_limits(plot_arrays.values())
-        if not np.isfinite(lcoe_vmin) or not np.isfinite(data_vmax):
-            plt.close(fig)
-            write_blank_png(out_path)
-            return
+        if regions is not None:
+            # Zero supply is distinct from positive potential on the color scale.
+            plot_arrays = {
+                panel: np.where(values > 0, values, np.nan)
+                for panel, values in plot_arrays.items()
+            }
+        # Keep absent technologies visible, including when all data are unavailable.
+        for panel in panels:
+            if panel != "winner" and panel not in plot_arrays:
+                plot_arrays[panel] = np.full_like(
+                    next(iter(plot_arrays.values())), np.nan
+                )
+        data_vmin, data_vmax = _finite_limits(plot_arrays.values())
+        if not np.isfinite(data_vmax):
+            data_vmin = data_vmax = 0.0
         lcoe_vmax = min(data_vmax, LCOE_COLORBAR_CUTOFF)
-        lcoe_norm = PowerNorm(gamma=LCOE_NORM_GAMMA, vmin=70, vmax=LCOE_COLORBAR_CUTOFF)
-        colorbar_extend = "max" if data_vmax > lcoe_vmax else "neither"
+        lcoe_norm = (
+            Normalize(vmin=data_vmin, vmax=data_vmax)
+            if heat
+            else PowerNorm(gamma=LCOE_NORM_GAMMA, vmin=70, vmax=LCOE_COLORBAR_CUTOFF)
+        )
+        colorbar_extend = "max" if not heat and data_vmax > lcoe_vmax else "neither"
         if potential:
-            lcoe_norm = PowerNorm(
-                gamma=LCOE_NORM_GAMMA, vmin=0, vmax=max(data_vmax, 1e-6)
+            lcoe_norm = (
+                Normalize(vmin=0, vmax=max(data_vmax, 1e-6))
+                if heat or regions is not None
+                else PowerNorm(gamma=LCOE_NORM_GAMMA, vmin=0, vmax=max(data_vmax, 1e-6))
             )
             colorbar_extend = "neither"
-        if potential:
+        if potential and not heat and regions is None:
             costs = {
                 cycle: _plot_values(selection_costs[cycle], countries)
                 for cycle in cycles
@@ -230,8 +247,8 @@ def make_resource_overview(
                 stack, np.maximum(winner, 0)[None, ...], axis=0
             )[0]
             plot_arrays["winner"] = np.where(winner >= 0, selected, np.nan)
-        else:
-            winner = _winner_map(plot_arrays, cycles)
+        elif not potential and not heat:
+            winner = _winner_map({c: plot_arrays[c] for c in cycles}, cycles)
 
         for idx, panel in enumerate(panels):
             ax = axes[idx]
@@ -241,7 +258,9 @@ def make_resource_overview(
             if panel == "winner" and not potential:
                 ax.imshow(
                     np.where(winner >= 0, winner, np.nan),
-                    origin="lower",
+                    origin="lower"
+                    if reference.y.values[-1] >= reference.y.values[0]
+                    else "upper",
                     extent=extent,
                     interpolation="nearest",
                     cmap=winner_cmap,
@@ -251,10 +270,27 @@ def make_resource_overview(
                     zorder=2,
                 )
                 title = "Cheapest technology"
+            elif regions is not None:
+                countries.assign(_value=plot_arrays[panel]).plot(
+                    column="_value",
+                    ax=ax,
+                    cmap=lcoe_cmap,
+                    norm=lcoe_norm,
+                    edgecolor="none",
+                    zorder=2,
+                    missing_kwds={"color": LCOE_UNAVAILABLE_COLOR},
+                )
+                title = (
+                    "Cheapest technology potential"
+                    if panel == "winner"
+                    else TECH_LABELS.get(panel, "Heat")
+                )
             else:
                 ax.imshow(
                     plot_arrays[panel],
-                    origin="lower",
+                    origin="lower"
+                    if reference.y.values[-1] >= reference.y.values[0]
+                    else "upper",
                     extent=extent,
                     interpolation="nearest",
                     cmap=lcoe_cmap,
@@ -265,7 +301,7 @@ def make_resource_overview(
                 title = (
                     "Cheapest technology potential"
                     if panel == "winner"
-                    else TECH_LABELS.get(panel, panel.upper())
+                    else ("Heat" if heat else TECH_LABELS.get(panel, panel.upper()))
                 )
             ax.text(
                 0.02,
@@ -277,6 +313,9 @@ def make_resource_overview(
                 fontsize=14,
                 fontweight="bold",
             )
+            # GeoPandas otherwise adjusts the axes box to geographic aspect,
+            # changing the panel spacing relative to raster figures.
+            ax.set_aspect("auto")
             _clean_map_axes(ax)
 
         cbar_x0 = (margin_l + 0.1 * fig_w) / fig_w
@@ -287,13 +326,30 @@ def make_resource_overview(
         cbar = fig.colorbar(
             sm, cax=cax, orientation="horizontal", extend=colorbar_extend
         )
-        cbar.set_label(
-            "Potential at minimum-LCOE depth (GW$_e$ per grid cell)"
-            if potential
-            else "Levelized Cost of Electricity (€2020/MWh$_e$)"
-        )
+        if heat:
+            label = (
+                (
+                    "Heat supplied (TWh$_{th}$/year per "
+                    + ("region)" if regions is not None else "grid cell)")
+                )
+                if potential
+                else "Levelized Cost of Heat (€2020/MWh$_{th}$)"
+            )
+        else:
+            label = (
+                (
+                    "Potential (GW$_e$ per region)"
+                    if regions is not None
+                    else "Potential at minimum-LCOE depth (GW$_e$ per grid cell)"
+                )
+                if potential
+                else "Levelized Cost of Electricity (€2020/MWh$_e$)"
+            )
+        cbar.set_label(label)
         if potential:
-            cbar.set_ticks(np.linspace(0, data_vmax, 5))
+            cbar.set_ticks(np.linspace(0, max(data_vmax, 1e-6), 5))
+        elif heat:
+            cbar.set_ticks(np.linspace(lcoe_norm.vmin, lcoe_norm.vmax, 5))
         cbar.ax.tick_params(length=0, labelsize=11)
 
         handles = [
@@ -303,6 +359,7 @@ def make_resource_overview(
                 label=TECH_LABELS.get(c, c.upper()),
             )
             for c in cycles
+            if c in TECH_COLORS
         ]
         if potential:
             handles = []
@@ -313,7 +370,11 @@ def make_resource_overview(
             Patch(
                 facecolor=LCOE_UNAVAILABLE_COLOR,
                 edgecolor=COUNTRY_EDGE_COLOR,
-                label=f"Not possible below {depth_label}",
+                label="No supplied heat"
+                if heat and regions is not None
+                else "No potential"
+                if regions is not None or (heat and potential)
+                else f"Not possible below {depth_label}",
             )
         )
         axes[-1].legend(
@@ -324,531 +385,6 @@ def make_resource_overview(
             framealpha=0.9,
             edgecolor="#AAAAAA",
             fontsize=10,
-        )
-        Path(out_path).parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(out_path, dpi=200, bbox_inches="tight")
-        plt.close(fig)
-
-
-def _cumulative_potential_curve(
-    sort_da: xr.DataArray, potential_da: xr.DataArray, *, descending: bool = False
-) -> tuple[np.ndarray, np.ndarray]:
-    x = np.asarray(sort_da.values, dtype=np.float64).ravel()
-    potential = np.asarray(potential_da.values, dtype=np.float64).ravel() / 1000.0
-    valid = np.isfinite(x) & np.isfinite(potential) & (potential > 0)
-    if not np.any(valid):
-        return np.array([], dtype=float), np.array([], dtype=float)
-    order = np.argsort(x[valid], kind="mergesort")
-    if descending:
-        order = order[::-1]
-    return x[valid][order], np.cumsum(potential[valid][order])
-
-
-def make_lcoe_potential_cumulative_four_panel(
-    lcoe_maps: dict[str, xr.DataArray],
-    potential_maps: dict[str, xr.DataArray],
-    temperature_maps: dict[str, xr.DataArray],
-    cycles: list[str],
-    out_path,
-    *,
-    max_scatter_points_per_tech: int = 700,
-):
-    """Plot LCOE/potential distributions and cumulative-potential curves."""
-    lcoe_data = []
-    potential_data = []
-    labels = []
-    colors = []
-    scatter_rows = []
-    rng = np.random.default_rng(42)
-
-    for cycle in cycles:
-        label = TECH_LABELS.get(cycle, cycle.upper())
-        color = TECH_COLORS.get(cycle, "#333333")
-        lcoe = np.asarray(lcoe_maps[cycle].values, dtype=float).ravel()
-        lcoe = lcoe[np.isfinite(lcoe)]
-        potential = np.asarray(potential_maps[cycle].values, dtype=float).ravel() / 1000
-        potential = potential[np.isfinite(potential) & (potential > 0)]
-        if not lcoe.size or not potential.size:
-            continue
-        lcoe_data.append(lcoe)
-        potential_data.append(potential)
-        labels.append(label)
-        colors.append(color)
-        for metric, values in (("LCOE", lcoe), ("Potential", potential)):
-            sample_size = min(max_scatter_points_per_tech, values.size)
-            sample = rng.choice(values.size, size=sample_size, replace=False)
-            scatter_rows.extend(
-                {"technology": label, "metric": metric, "value": value}
-                for value in values[sample]
-            )
-
-    if not labels:
-        write_blank_png(out_path, figsize=(8.27, 8.27))
-        return
-
-    scatter_df = pd.DataFrame(scatter_rows)
-    palette = dict(zip(labels, colors))
-    with plt.rc_context(BASE_STYLE):
-        fig, axes = plt.subplots(2, 2, figsize=(8.27, 8.27))
-        ax_lcoe_box, ax_potential_box = axes[0]
-        ax_lcoe_curve, ax_temp_curve = axes[1]
-
-        def add_panel_letter(ax, label):
-            ax.text(
-                0.03,
-                0.95,
-                label,
-                transform=ax.transAxes,
-                ha="left",
-                va="top",
-                fontsize=14,
-                fontweight="bold",
-                bbox=dict(facecolor="white", edgecolor="none", alpha=0.82, pad=2),
-                zorder=6,
-            )
-
-        box_specs = [
-            (ax_lcoe_box, "LCOE", lcoe_data, "LCOE (€2020/MWh$_e$)", "a)"),
-            (
-                ax_potential_box,
-                "Potential",
-                potential_data,
-                "Theoretical potential (GW per grid cell)",
-                "b)",
-            ),
-        ]
-        for ax, metric, data, ylabel, panel_label in box_specs:
-            bp = ax.boxplot(
-                data,
-                positions=np.arange(len(labels)),
-                widths=0.48,
-                patch_artist=True,
-                showfliers=False,
-            )
-            for box, color in zip(bp["boxes"], colors):
-                box.set_facecolor(color)
-                box.set_alpha(0.58)
-                box.set_edgecolor("#707070")
-            for element in ("whiskers", "caps", "medians"):
-                for item in bp[element]:
-                    item.set_color("#707070" if element != "medians" else "#202020")
-            sns.stripplot(
-                data=scatter_df.loc[scatter_df["metric"] == metric],
-                x="technology",
-                y="value",
-                order=labels,
-                palette=palette,
-                jitter=0.22,
-                size=1.5,
-                alpha=0.20,
-                linewidth=0,
-                ax=ax,
-            )
-            ax.set_xticks(np.arange(len(labels)))
-            ax.set_xticklabels(labels)
-            ax.set_xlabel("")
-            ax.set_ylabel(ylabel)
-            ax.grid(False)
-            add_panel_letter(ax, panel_label)
-
-        curve_specs = [
-            (
-                ax_lcoe_curve,
-                lcoe_maps,
-                "LCOE threshold (€2020/MWh$_e$)",
-                False,
-                "c)",
-                "lower right",
-                True,
-            ),
-            (
-                ax_temp_curve,
-                temperature_maps,
-                "Temperature threshold (°C)",
-                True,
-                "d)",
-                "upper right",
-                False,
-            ),
-        ]
-        for ax, x_maps, xlabel, descending, panel, legend_loc, annotate in curve_specs:
-            for cycle in cycles:
-                x, y = _cumulative_potential_curve(
-                    x_maps[cycle], potential_maps[cycle], descending=descending
-                )
-                if not x.size:
-                    continue
-                ax.plot(
-                    x,
-                    y,
-                    color=TECH_COLORS.get(cycle, "#333333"),
-                    linewidth=2.2,
-                    label=TECH_LABELS.get(cycle, cycle.upper()),
-                )
-                if annotate:
-                    idx = min(int(np.searchsorted(y, 0.8 * y[-1])), len(y) - 1)
-                    ax.scatter(
-                        [x[idx]],
-                        [y[idx]],
-                        color=TECH_COLORS.get(cycle, "#333333"),
-                        edgecolor="black",
-                        linewidth=0.45,
-                        s=18,
-                        zorder=4,
-                    )
-                    ax.annotate(
-                        f"{x[idx]:.0f} €2020/MWh$_e$",
-                        (x[idx], y[idx]),
-                        xytext=(0, -8),
-                        textcoords="offset points",
-                        ha="center",
-                        va="top",
-                        fontsize=11,
-                        bbox=dict(
-                            boxstyle="round,pad=0.18",
-                            facecolor="white",
-                            edgecolor="none",
-                            alpha=0.85,
-                        ),
-                        zorder=5,
-                    )
-            add_panel_letter(ax, panel)
-            ax.set_xlabel(xlabel)
-            ax.set_ylabel("Cumulative potential (GW)")
-            ax.legend(
-                loc=legend_loc,
-                frameon=True,
-                facecolor="white",
-                framealpha=0.88,
-                edgecolor="#BBBBBB",
-                fontsize=11,
-            )
-            ax.grid(False)
-
-        for ax in axes.ravel():
-            ax.set_box_aspect(1)
-            ax.xaxis.label.set_size(11)
-            ax.yaxis.label.set_size(11)
-            ax.tick_params(axis="both", labelsize=11)
-            for spine in ax.spines.values():
-                spine.set_visible(True)
-        fig.tight_layout(pad=0.25, w_pad=0.45, h_pad=0.45)
-        Path(out_path).parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(out_path, dpi=250, bbox_inches="tight")
-        plt.close(fig)
-
-
-def _summarize_component_shares(technology_shares):
-    summaries = {}
-    for dataset in technology_shares:
-        technology = str(dataset["technology"].values[0])
-        summaries[technology] = {}
-        for component, _ in COMPONENTS:
-            if component not in dataset:
-                continue
-            values = np.asarray(dataset[component].values, dtype=float).ravel()
-            values = values[np.isfinite(values)]
-            if values.size:
-                summaries[technology][component] = {
-                    "mean": float(np.mean(values)),
-                    "values": values,
-                }
-    return summaries
-
-
-def _draw_cost_breakdown(ax, technology_shares):
-    summaries = _summarize_component_shares(technology_shares)
-    technologies = [technology for technology in TECH_LABELS if technology in summaries]
-    technologies.extend(t for t in summaries if t not in technologies)
-    if not technologies:
-        ax.axis("off")
-        return
-
-    positions = np.arange(1, len(COMPONENTS) + 1)
-    offsets = (
-        np.linspace(-0.22, 0.22, len(technologies)) if len(technologies) > 1 else [0.0]
-    )
-    rng = np.random.default_rng(42)
-    for technology, offset in zip(technologies, offsets):
-        color = TECH_COLORS.get(technology, "#4D4D4D")
-        for position, (component, _) in zip(positions, COMPONENTS):
-            stats = summaries[technology].get(component)
-            if stats is None:
-                continue
-            x = position + offset
-            bp = ax.boxplot(
-                [stats["values"]],
-                positions=[x],
-                widths=0.18,
-                patch_artist=True,
-                showfliers=False,
-                zorder=2,
-            )
-            bp["boxes"][0].set_facecolor(color)
-            bp["boxes"][0].set_alpha(0.58)
-            bp["boxes"][0].set_edgecolor("#707070")
-            for element in ("whiskers", "caps", "medians"):
-                for item in bp[element]:
-                    item.set_color("#707070" if element != "medians" else "#202020")
-            sample_size = min(700, stats["values"].size)
-            sample = rng.choice(stats["values"], size=sample_size, replace=False)
-            ax.scatter(
-                x + rng.uniform(-0.07, 0.07, size=sample_size),
-                sample,
-                s=3,
-                color=color,
-                alpha=0.20,
-                linewidth=0,
-                zorder=1,
-            )
-            ax.scatter(
-                x,
-                stats["mean"],
-                s=15,
-                marker="o",
-                facecolor="white",
-                edgecolor=color,
-                linewidth=1.2,
-                zorder=4,
-            )
-
-    labels = [label for _, label in COMPONENTS]
-    ax.set_xticks(positions, labels)
-    ax.set_xticklabels(labels, rotation=24, ha="right", fontsize=9.5)
-    ax.set_xlim(0.5, len(COMPONENTS) + 0.5)
-    ax.set_ylabel("Contribution to LCOE (%)", fontsize=11)
-    ax.set_ylim(bottom=0)
-    ax.tick_params(axis="y", labelsize=10)
-    ax.grid(False)
-    for spine in ax.spines.values():
-        spine.set_visible(True)
-    ymin, ymax = ax.get_ylim()
-    ax.set_ylim(ymin, ymax + 0.12 * (ymax - ymin))
-    handles = [
-        Patch(
-            facecolor=TECH_COLORS.get(technology, "#4D4D4D"),
-            edgecolor="#707070",
-            alpha=0.58,
-            label=TECH_LABELS.get(technology, technology.upper()),
-        )
-        for technology in technologies
-    ]
-    handles.append(
-        Line2D(
-            [0],
-            [0],
-            marker="o",
-            color="none",
-            markerfacecolor="white",
-            markeredgecolor="#202020",
-            markeredgewidth=1.2,
-            markersize=5.5,
-            label="Mean",
-        )
-    )
-    ax.legend(
-        handles=handles,
-        loc="upper right",
-        frameon=True,
-        facecolor="white",
-        framealpha=0.9,
-        edgecolor="#BBBBBB",
-        title="Technology",
-        fontsize=9,
-        title_fontsize=9,
-    )
-
-
-def make_depth_cost_breakdown_four_panel(
-    depth_maps: dict[str, xr.DataArray], technology_shares, shapes_path, out_path
-):
-    """Combine optimal-depth maps and geographic LCOE cost shares."""
-    technologies = [t for t in TECH_LABELS if t in depth_maps]
-    if not technologies:
-        write_blank_png(out_path, figsize=(8.27, 8.27))
-        return
-    reference = depth_maps[technologies[0]]
-    countries = _country_layer(shapes_path, reference)
-    arrays = [
-        _plot_values(depth_maps[t], countries, value_scale=1000.0) for t in technologies
-    ]
-    vmin, vmax = _finite_limits(arrays)
-    if not np.isfinite(vmin) or not np.isfinite(vmax):
-        write_blank_png(out_path, figsize=(8.27, 8.27))
-        return
-    raster = reference.transpose("y", "x")
-    x, y = raster.x.values, raster.y.values
-    extent = [float(x.min()), float(x.max()), float(y.min()), float(y.max())]
-
-    with plt.rc_context(BASE_STYLE):
-        cmap = plt.get_cmap(LCOE_CMAP).copy()
-        cmap.set_bad((0, 0, 0, 0))
-        fig, axes = plt.subplots(2, 2, figsize=(8.27, 8.27))
-        map_axes = [axes[0, 0], axes[0, 1], axes[1, 0]]
-        image = None
-        for index, (ax, technology, values) in enumerate(
-            zip(map_axes, technologies, arrays)
-        ):
-            _decorate_map(ax, countries, extent)
-            image = ax.imshow(
-                values,
-                origin="lower",
-                extent=extent,
-                interpolation="nearest",
-                cmap=cmap,
-                vmin=vmin,
-                vmax=vmax,
-                aspect="auto",
-                zorder=2,
-            )
-            ax.text(
-                0.02,
-                0.98,
-                f"{PANEL_LETTERS[index]}) {TECH_LABELS.get(technology, technology.upper())}",
-                transform=ax.transAxes,
-                ha="left",
-                va="top",
-                fontsize=14,
-                fontweight="bold",
-            )
-            _clean_map_axes(ax)
-            ax.set_box_aspect(1)
-        for ax in map_axes[len(technologies) :]:
-            ax.axis("off")
-
-        cost_ax = axes[1, 1]
-        _draw_cost_breakdown(cost_ax, technology_shares)
-        cost_ax.set_box_aspect(1)
-        cost_ax.text(
-            0.02,
-            0.98,
-            "d)",
-            transform=cost_ax.transAxes,
-            ha="left",
-            va="top",
-            fontsize=14,
-            fontweight="bold",
-            bbox=dict(facecolor="white", edgecolor="none", alpha=0.82, pad=2),
-            zorder=6,
-        )
-        fig.subplots_adjust(
-            left=0.055, right=0.985, top=0.98, bottom=0.12, wspace=0.16, hspace=0.16
-        )
-        if image is not None:
-            cax = fig.add_axes([0.09, 0.045, 0.38, 0.022])
-            colorbar = fig.colorbar(
-                cm.ScalarMappable(norm=image.norm, cmap=image.cmap),
-                cax=cax,
-                orientation="horizontal",
-            )
-            colorbar.set_label("Depth at minimum LCOE (km)", fontsize=12)
-            colorbar.ax.tick_params(length=0, labelsize=11)
-        Path(out_path).parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(out_path, dpi=200)
-        plt.close(fig)
-
-
-def make_regional_potential_overview(
-    geoparquet_path,
-    shapes_path,
-    out_path,
-    cycles: list[str],
-    depth_category: str,
-    bin_id: str,
-):
-    """Plot regional potential for one configured depth/category bin."""
-    gdf = gpd.read_parquet(geoparquet_path)
-    if "category" in gdf:
-        gdf = gdf[(gdf["category"] == "power") & (gdf["carrier"] == "power")]
-    gdf = gdf.loc[
-        (gdf["depth_category"].astype(str) == str(depth_category))
-        & (gdf["bin_id"].astype(str) == str(bin_id))
-    ].copy()
-    regions = _schemas.ShapeSchema.validate(gpd.read_parquet(shapes_path))
-    if "shape_class" in regions.columns:
-        regions = regions.loc[regions["shape_class"] != "maritime"].copy()
-    regions["shape_id"] = regions["shape_id"].astype(str)
-    regions = regions[["shape_id", regions.geometry.name]].dissolve(
-        by="shape_id", as_index=False
-    )
-    if gdf.crs is not None and regions.crs != gdf.crs:
-        regions = regions.to_crs(gdf.crs)
-    panel_specs = [
-        (
-            technology,
-            regions.merge(
-                gdf.loc[gdf["technology"] == technology, ["region_id", "potential"]],
-                left_on="shape_id",
-                right_on="region_id",
-                how="left",
-            ),
-        )
-        for technology in cycles
-        if not gdf.loc[gdf["technology"] == technology].empty
-    ]
-    if not panel_specs:
-        write_blank_png(out_path)
-        return
-    values = [
-        panel["potential"].to_numpy(dtype=float) / 1000.0 for _, panel in panel_specs
-    ]
-    vmin, vmax = _finite_limits(values)
-    if not np.isfinite(vmin) or not np.isfinite(vmax):
-        write_blank_png(out_path)
-        return
-
-    bounds = panel_specs[0][1].total_bounds
-    xmin, ymin, xmax, ymax = bounds
-    data_aspect = (ymax - ymin) / (xmax - xmin)
-    n_panels = len(panel_specs)
-    fig_w, fig_h = 9.5, 5.3
-    gap, margin_l, margin_r, margin_t, margin_b = 0.08, 0.14, 0.14, 0.42, 0.78
-    available_w = fig_w - margin_l - margin_r - (n_panels - 1) * gap
-    available_h = fig_h - margin_t - margin_b
-    panel_w = available_w / n_panels
-    panel_h = min(available_h, panel_w * data_aspect)
-
-    with plt.rc_context(BASE_STYLE):
-        fig = plt.figure(figsize=(fig_w, fig_h))
-        axes = []
-        for index in range(n_panels):
-            x0 = (margin_l + index * (panel_w + gap)) / fig_w
-            y0 = (margin_b + 0.5 * (available_h - panel_h)) / fig_h
-            axes.append(fig.add_axes([x0, y0, panel_w / fig_w, panel_h / fig_h]))
-        cmap = plt.get_cmap("viridis").copy()
-        cmap.set_bad(UNAVAILABLE_COLOR)
-        for idx, (ax, (technology, panel)) in enumerate(zip(axes, panel_specs)):
-            panel["_plot_value"] = panel["potential"].astype(float) / 1000.0
-            ax.set_facecolor(UNAVAILABLE_COLOR)
-            panel.plot(
-                column="_plot_value",
-                ax=ax,
-                cmap=cmap,
-                vmin=vmin,
-                vmax=vmax,
-                linewidth=0,
-                missing_kwds={"color": UNAVAILABLE_COLOR},
-            )
-            panel.geometry.boundary.plot(ax=ax, linewidth=0.35, color="#666666")
-            ax.text(
-                0.02,
-                0.98,
-                f"{PANEL_LETTERS[idx]}) {TECH_LABELS.get(technology, technology.upper())}",
-                transform=ax.transAxes,
-                ha="left",
-                va="top",
-                fontsize=11,
-                fontweight="bold",
-            )
-            _clean_map_axes(ax)
-        cax = fig.add_axes([0.14, 0.08, 0.72, 0.04])
-        sm = plt.cm.ScalarMappable(cmap=cmap)
-        sm.set_clim(vmin, vmax)
-        cbar = fig.colorbar(sm, cax=cax, orientation="horizontal")
-        cbar.set_label("Potential (GW)")
-        cbar.ax.tick_params(length=0, labelsize=9)
-        fig.suptitle(
-            f"Potential per region — {depth_category}, {bin_id}", y=0.96, fontsize=12
         )
         Path(out_path).parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(out_path, dpi=200, bbox_inches="tight")

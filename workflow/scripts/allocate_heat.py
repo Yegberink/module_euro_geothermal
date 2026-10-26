@@ -13,8 +13,14 @@ import _schemas
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-import shapely
-from _heat import DEMAND_COLUMN, METRIC_CRS, check_grid, read_raster, write_raster
+from _heat import (
+    DEMAND_COLUMN,
+    METRIC_CRS,
+    assign_cell_regions,
+    check_grid,
+    read_raster,
+    write_raster,
+)
 from scipy.optimize import linprog
 from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components
@@ -77,16 +83,8 @@ def candidate_edges(
         polygons, predicate="dwithin", distance=buffer_km * 1000
     )
     if not allow_cross_region_supply:
-        network_regions = (
-            regions.to_crs(METRIC_CRS)
-            .set_index("shape_id")
-            .geometry.loc[networks.region_id]
-            .to_numpy()
-        )
-        # Cell centres define source location; boundary centres are included.
-        local = shapely.covers(
-            network_regions[network_index], cells.geometry.to_numpy()[cell_index]
-        )
+        cell_regions = assign_cell_regions(cells, regions).to_numpy()
+        local = cell_regions[cell_index] == networks.region_id.to_numpy()[network_index]
         network_index, cell_index = network_index[local], cell_index[local]
     edges = np.column_stack([network_index, cells.cell_id.to_numpy()[cell_index]])
     return edges[np.lexsort((edges[:, 1], edges[:, 0]))]
@@ -171,7 +169,7 @@ def solve_allocation(edges, demand, capacity, cost):
 
 
 def main():
-    """Write network summaries, an auditable allocation ledger, and used rasters."""
+    """Write allocated heat rasters and cell-to-network supply links."""
     start = time.perf_counter()
     networks = (
         _schemas.HeatNetworksSchema.validate(gpd.read_parquet(snakemake.input.networks))
@@ -202,27 +200,23 @@ def main():
         potential.values.ravel(),
         lcoh.values.ravel(),
     )
-    supplied = np.bincount(edges[:, 0], weights=flow, minlength=len(networks))
-    annual_cost = np.bincount(
-        edges[:, 0],
-        weights=flow * lcoh.values.ravel()[edges[:, 1]],
-        minlength=len(networks),
-    )
-    networks["geothermal_supplied_mwh_per_year"] = supplied
-    networks["geothermal_unmet_mwh_per_year"] = np.maximum(
-        networks[DEMAND_COLUMN] - supplied, 0
-    )
-    networks["geothermal_lcoh_eur_per_mwh"] = np.divide(
-        annual_cost, supplied, out=np.full(len(networks), np.nan), where=supplied > 0
-    )
     selected = flow > 0
     ni, ci = edges[selected].T
     row, col = np.divmod(ci, potential.sizes["x"])
+    # Polygon distance is zero for centres inside or on the network boundary.
+    centres = gpd.GeoSeries(
+        gpd.points_from_xy(potential.x.values[col], potential.y.values[row]),
+        crs=potential.rio.crs,
+    ).to_crs(METRIC_CRS)
+    distances = centres.distance(
+        networks.to_crs(METRIC_CRS).geometry.iloc[ni], align=False
+    ).to_numpy()
     ledger = pd.DataFrame(
         {
             "area_id": networks.area_id.to_numpy()[ni],
             "region_id": networks.region_id.to_numpy()[ni],
             "cell_id": ci,
+            "network_distance_m": distances,
             "row": row,
             "col": col,
             "x": potential.x.values[col],
@@ -232,6 +226,8 @@ def main():
             "lcoh_eur_per_mwh": lcoh.values.ravel()[ci],
         }
     )
+    Path(snakemake.output.allocations[0]).parent.mkdir(parents=True, exist_ok=True)
+    ledger.to_parquet(snakemake.output.allocations[0], index=False)
     used = np.bincount(edges[:, 1], weights=flow, minlength=potential.size).reshape(
         potential.shape
     )
@@ -249,12 +245,8 @@ def main():
     # Preserve floating-point precision for conservation across thousands of networks.
     write_raster(allocated, snakemake.output.allocated, "MWh_th/year")
     write_raster(fraction, snakemake.output.fraction, "1")
-    for name in ["networks", "allocations"]:
-        Path(snakemake.output[name]).parent.mkdir(parents=True, exist_ok=True)
-    networks.to_parquet(snakemake.output.networks, index=False)
-    ledger.to_parquet(snakemake.output.allocations, index=False)
     print(
-        f"Allocation completed in {time.perf_counter() - start:.2f} s; supplied {supplied.sum():.3f} MWh/year"
+        f"Allocation completed in {time.perf_counter() - start:.2f} s; supplied {flow.sum():.3f} MWh/year"
     )
 
 

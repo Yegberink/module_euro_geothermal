@@ -62,8 +62,9 @@ if HEAT_ENABLED:
             networks="<district_heating>",
             shapes="<shapes>",
         output:
-            networks="<geothermal_heat_networks>",
-            allocations="<geothermal_heat_allocations>",
+            allocations=[
+                "<resources>/automatic/{shapes}/documents/heat_allocations.parquet"
+            ],
             allocated="<resources>/automatic/{shapes}/documents/heat_allocated.tif",
             fraction="<resources>/automatic/{shapes}/documents/heat_used_fraction.tif",
         log:

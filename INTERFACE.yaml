@@ -40,32 +40,15 @@ pathvars:
         - `category`: power, heat, or contested resource alternative.
         - `carrier`: power or heat.
         - `technology`: conversion cycle or geothermal_heat.
-        - `depth_category`: depth interval, all_depths, or target_temperature.
-        - `price_bin`, `bin_id`: readable and path-safe cost-bin identifiers.
+        - `price_bin`: readable cost-bin identifier.
         - `bin_left`, `bin_right`: cost-bin bounds in EUR2020/MWh.
         - `potential`: capacity or annual heat, interpreted with `potential_unit`.
         - `potential_unit`: MW_e for power or MWh_th/year for heat.
         - `mean_lcoe`, `mean_lcoh`: weighted EUR2020/MWh costs; null when inapplicable.
+        - `mean_network_distance_m`: supplied-energy-weighted cell-to-network distance in metres; null for power or zero heat supply.
         - `n_cells`: contributing raster-cell count.
         - `geometry`: aggregation-region polygon.
-    geothermal_heat_networks:
-      default: "<results>/{shapes}/geothermal_heat_networks.parquet"
-      description: |
-        Available in heat and combined modes. Original network attributes plus
-        `region_id`, `geothermal_supplied_mwh_per_year`, `geothermal_unmet_mwh_per_year`,
-        and `geothermal_lcoh_eur_per_mwh`.
-    geothermal_heat_allocations:
-      default: "<results>/{shapes}/geothermal_heat_allocations.parquet"
-      description: |
-        Available in heat and combined modes. Positive cell-to-network allocations:
-        `area_id`, consumer `region_id`, `cell_id`, `row`, `col`, source `x` and `y`,
-        `heat_mwh_per_year`, `cell_fraction`, and `lcoh_eur_per_mwh`.
-        Coordinates use the source grid CRS; allocations preserve cross-region links.
-    overall_potential_summary:
-      default: "<results>/{shapes}/overall_potential_summary.tsv"
-      description: |
-        Available in power and combined modes. Tab-separated `technology` and
-        `potential_tw` columns for each cycle and the lowest_lcoe_technology portfolio.
-        These raster-wide totals do not apply regional cutoffs or heat reservations.
+        Heat potential is annual geothermal supply to networks in the consuming
+        region, including imports when enabled. Zero contested-heat rows are omitted.
 wildcards:
   shapes: Name of the provided shape set.

@@ -28,6 +28,5 @@ module_geothermal:
   temp_turbine_out:
     ORC: 70.0
 
-  method_2d_aggregation: LCOE_minimization
   method_region_aggregation: cutoff
   lcoe_cutoff: 1500

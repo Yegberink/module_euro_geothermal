@@ -3,12 +3,32 @@
 from pathlib import Path
 
 import _schemas
+import geopandas as gpd
 import numpy as np
 import rioxarray as rxr
 from affine import Affine
 
 METRIC_CRS = "EPSG:3035"
 DEMAND_COLUMN = _schemas.DEMAND_COLUMN
+
+
+def assign_cell_regions(cells, regions):
+    """Assign centres to regions, breaking boundary/overlap ties by region ID.
+
+    This ownership defines which source cells may supply each consumer region
+    when cross-region supply is disabled.
+    """
+    regions = regions.to_crs(cells.crs)[["shape_id", "geometry"]].copy()
+    regions["shape_id"] = regions.shape_id.astype(str)
+    matches = gpd.sjoin(
+        cells[["geometry"]], regions, how="left", predicate="intersects"
+    )
+    return (
+        matches.sort_values("shape_id")
+        .groupby(level=0)
+        .shape_id.first()
+        .reindex(cells.index)
+    )
 
 
 def read_raster(path):
