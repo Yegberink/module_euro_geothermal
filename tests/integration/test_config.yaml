@@ -1,4 +1,3 @@
-# Minimal power configuration with cutoff aggregation.
 module_geothermal:
   eligibility:
     enabled: false

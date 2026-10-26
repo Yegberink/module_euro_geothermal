@@ -6,21 +6,27 @@ additionalProperties: false
 
 properties:
   eligibility:
+    description: "Land eligibility from the supplied area-potential raster; configure enabled explicitly."
     $ref: "#/$defs/eligibility"
   heat_production_temperature:
+    description: "District-heating production temperature (°C); interpolate its shallowest reachable depth."
     type: number
     exclusiveMinimum: 0
   heat_reinjection_temperature:
+    description: "Reinjection temperature (°C); must be below production temperature."
     type: number
     minimum: 0
   thermal_plant_cost_per_kw:
+    description: "Thermal plant CAPEX (EUR2020/kWth of installed capacity)."
     type: number
     minimum: 0
   heat_capacity_factor:
+    description: "Annual heat availability fraction, greater than zero and at most one; no electric parasitic factor applies."
     type: number
     exclusiveMinimum: 0
     maximum: 1
   heat_network_buffer_km:
+    description: "Maximum distance (km) from a source-cell centre to a district-heating polygon."
     type: number
     minimum: 0
   heat_allow_cross_region_supply:
@@ -34,7 +40,7 @@ properties:
   carrier_out:
     type: string
     enum: ["power", "heat", "heat_and_power"]
-    description: "Resource alternatives to evaluate; combined mode is not cogeneration."
+    description: "Select power, heat, or heat_and_power. Combined mode reports competing resource uses, not cogeneration."
 
   max_depth:
     type: number
@@ -45,7 +51,7 @@ properties:
 
   which_cycles:
     type: array
-    description: "Power cycle types to evaluate."
+    description: "Select one or more of orc, flash, and kalina for electricity generation. Heat-only mode needs no cycle parameters."
     items:
       type: string
       enum: ["orc", "flash", "kalina"]
@@ -59,26 +65,29 @@ properties:
 
   temp_turbine_out:
     type: object
-    description: "Minimum turbine outlet temperature (°C) per cycle."
+    description: "Turbine outlet temperatures (°C), with an ORC, Flash, or Kalina entry for every selected electricity cycle."
     additionalProperties: false
     properties:
       ORC:
         type: number
+        description: "ORC turbine outlet temperature (°C); required when this electricity cycle is selected."
         minimum: 0
         maximum: 320
       Flash:
         type: number
+        description: "Flash turbine outlet temperature (°C); required when this electricity cycle is selected."
         minimum: 0
         maximum: 485
       Kalina:
         type: number
+        description: "Kalina turbine outlet temperature (°C); required when this electricity cycle is selected."
         minimum: 0
         maximum: 180
 
   drilling_cost_curve:
     type: string
     enum: [thermogis, shamoushaki_2021, getem_2017, getem_2025]
-    description: "Drilling cost curve shared by heat and power."
+    description: "Drilling cost curve shared by heat and power. Choices: thermogis, shamoushaki_2021, getem_2017, getem_2025."
 
   stimulation_cost_per_doublet:
     type: number
@@ -88,7 +97,7 @@ properties:
   pump_cost:
     type: number
     minimum: 0
-    description: "Pump cost (million EUR2020) per pair."
+    description: "Pump cost (million EUR2020) per doublet pair."
 
   lifetime:
     type: number
@@ -157,7 +166,7 @@ properties:
   method_region_aggregation:
     type: string
     enum: ["quantiles", "fixed_bins", "cutoff"]
-    description: "Method to aggregate raster to regions."
+    description: "Select quantiles (each raster’s finite LCOE distribution, with boundaries shared by regions), fixed_bins (uniform cost intervals), or cutoff (capacity at or below the cutoff and its mean LCOE). Use quantiles or fixed_bins for cost-supply distributions."
 
   n_quantiles:
     type: integer
@@ -166,7 +175,7 @@ properties:
 
   fixed_bins:
     type: array
-    description: "Fixed LCOE bins in EUR2020/MWh as strings like '0-50'. Used when method_region_aggregation=fixed_bins."
+    description: "Ordered, non-overlapping LCOE intervals in EUR2020/MWh, written as strings such as \"0-50\"; used with fixed_bins aggregation."
     minItems: 1
     items:
       type: string
@@ -271,3 +280,4 @@ $defs:
     properties:
       enabled:
         type: boolean
+        description: "Required explicitly. True requires the area_potential input; false uses the full nominal model-cell area."

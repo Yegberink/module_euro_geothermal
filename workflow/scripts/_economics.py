@@ -7,7 +7,7 @@ from scipy.optimize import curve_fit
 # BLS CPI-U, US city average, all items, annual averages, not seasonally adjusted.
 # https://www.bls.gov/cpi/tables/supplemental-files/historical-cpi-u-202402.pdf
 # https://www.bls.gov/regions/southwest/data/xg-tables/ro6xg01.htm
-# Source price years are model assumptions; see config/README.md.
+# Source price years are model assumptions; see INTERFACE.yaml.
 CPI_US = {2017: 245.120, 2020: 258.811, 2021: 270.970, 2025: 321.943}
 # Bundesbank/ECB 2020 annual average: 1 EUR = 1.1422 USD (not EUR per USD).
 # https://www.bundesbank.de/resource/blob/895836/a5c692d5571fbc2729ebd2a735ebbce7/mL/2022-08-15-11-28-07-wechselkursstatistik-data.pdf

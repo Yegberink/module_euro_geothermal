@@ -40,15 +40,15 @@ pathvars:
         - `category`: power, heat, or contested resource alternative.
         - `carrier`: power or heat.
         - `technology`: conversion cycle or geothermal_heat.
-        - `price_bin`: readable cost-bin identifier.
-        - `bin_left`, `bin_right`: cost-bin bounds in EUR2020/MWh.
-        - `potential`: capacity or annual heat, interpreted with `potential_unit`.
+        - `price_bin`: readable LCOE interval identifier, or all for heat.
+        - `bin_left`: lower LCOE bound in EUR2020/MWh; null for cutoff and heat.
+        - `bin_right`: upper LCOE bound in EUR2020/MWh; null for heat.
+        - `potential`: net electric capacity or annual heat supplied to the consuming region.
         - `potential_unit`: MW_e for power or MWh_th/year for heat.
-        - `mean_lcoe`, `mean_lcoh`: weighted EUR2020/MWh costs; null when inapplicable.
+        - `mean_lcoe`: capacity-weighted EUR2020/MWh electric; null for heat.
+        - `mean_lcoh`: supplied-energy-weighted EUR2020/MWh thermal; null for power.
         - `mean_network_distance_m`: supplied-energy-weighted cell-to-network distance in metres; null for power or zero heat supply.
         - `n_cells`: contributing raster-cell count.
         - `geometry`: aggregation-region polygon.
-        Heat potential is annual geothermal supply to networks in the consuming
-        region, including imports when enabled. Zero contested-heat rows are omitted.
 wildcards:
   shapes: Name of the provided shape set.
