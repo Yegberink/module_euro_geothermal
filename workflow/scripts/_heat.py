@@ -1,7 +1,5 @@
 """Shared heat input validation and raster I/O, independent of model economics."""
 
-from pathlib import Path
-
 import _schemas
 import geopandas as gpd
 import numpy as np
@@ -57,7 +55,6 @@ def check_grid(left, right):
 
 def write_raster(data, path, units):
     """Write a north-up compressed raster with explicit units and NaN nodata."""
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
     data = data.sortby("y", ascending=False).transpose("y", "x")
     data.attrs["units"] = units
     data.rio.write_nodata(np.nan).rio.to_raster(path, compress="deflate")

@@ -7,7 +7,6 @@ that supply level. This avoids network-order bias and double counting cells.
 
 import sys
 import time
-from pathlib import Path
 
 import _schemas
 import geopandas as gpd
@@ -226,7 +225,6 @@ def main():
             "lcoh_eur_per_mwh": lcoh.values.ravel()[ci],
         }
     )
-    Path(snakemake.output.allocations[0]).parent.mkdir(parents=True, exist_ok=True)
     ledger.to_parquet(snakemake.output.allocations[0], index=False)
     used = np.bincount(edges[:, 1], weights=flow, minlength=potential.size).reshape(
         potential.shape

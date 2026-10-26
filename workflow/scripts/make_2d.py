@@ -1,7 +1,6 @@
 """Reduce depth-resolved geothermal cubes to declared 2-D rasters."""
 
 import sys
-from pathlib import Path
 
 import _plots
 import numpy as np
@@ -15,6 +14,13 @@ if "snakemake" in dir():
 def _ensure_raster_metadata(
     da: xr.DataArray, *, x_name: str = "x", y_name: str = "y", crs: str | None = None
 ) -> xr.DataArray:
+    if da.sizes.get("y", 1) == 0 or da.sizes.get("x", 1) == 0:
+        da = xr.DataArray(
+            np.full((1, 1), np.nan, dtype=np.float32),
+            coords={"y": [0.0], "x": [0.0]},
+            dims=("y", "x"),
+            attrs=dict(da.attrs),
+        )
     if da.dims != (y_name, x_name):
         da = da.transpose(y_name, x_name)
     da = da.rio.set_spatial_dims(x_dim=x_name, y_dim=y_name, inplace=False)
@@ -29,24 +35,6 @@ def _ensure_raster_metadata(
             crs_guess = f"EPSG:{int(crs_guess)}"
         da = da.rio.write_crs(crs_guess, inplace=False)
     return da
-
-
-def write_geotiff(
-    da: xr.DataArray, out_path, *, nodata: float = np.nan, crs: str | None = None
-):
-    """Write a georeferenced data array as a compressed GeoTIFF."""
-    out_path = Path(out_path)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    if da.sizes.get("y", 1) == 0 or da.sizes.get("x", 1) == 0:
-        da = xr.DataArray(
-            np.full((1, 1), np.nan, dtype=np.float32),
-            coords={"y": [0.0], "x": [0.0]},
-            dims=("y", "x"),
-            attrs=dict(da.attrs),
-        )
-    raster = _ensure_raster_metadata(da, crs=crs)
-    raster = raster.rio.write_nodata(nodata, inplace=False)
-    raster.rio.to_raster(str(out_path), compress="deflate")
 
 
 def aggregate_3d_to_2d_lcoe_min(ds: xr.Dataset, depth_dim: str) -> xr.Dataset:
@@ -73,47 +61,48 @@ def aggregate_3d_to_2d_lcoe_min(ds: xr.Dataset, depth_dim: str) -> xr.Dataset:
 
 def main():
     """Reduce all requested cubes and render the model figures."""
-    cycles = [str(c).strip().lower() for c in snakemake.params.cycles]
+    cycles = snakemake.params.cycles
     max_depth = float(snakemake.params.max_depth)
-
-    cubes_by_cycle = {
-        Path(path).name.replace("_lcoe_cube.nc", "").lower(): path
-        for path in snakemake.input.cubes
-    }
-    lcoe_outputs = dict(zip(cycles, snakemake.output.lcoe_tifs, strict=True))
-    potential_outputs = dict(zip(cycles, snakemake.output.pot_tifs, strict=True))
 
     lcoe_maps = {}
     potential_maps = {}
 
-    for cycle in cycles:
-        with xr.open_dataset(cubes_by_cycle[cycle]) as cube:
+    for cycle, cube_path, lcoe_path, potential_path in zip(
+        cycles,
+        snakemake.input.cubes,
+        snakemake.output.lcoe_tifs,
+        snakemake.output.pot_tifs,
+        strict=True,
+    ):
+        with xr.open_dataset(cube_path) as cube:
             crs = cube.attrs["crs"]
             reduced = aggregate_3d_to_2d_lcoe_min(cube, "depth_m").load()
             lcoe_maps[cycle] = _ensure_raster_metadata(reduced["lcoe_2d"], crs=crs)
             potential_maps[cycle] = _ensure_raster_metadata(
                 reduced["potential_2d"], crs=crs
             )
-            write_geotiff(reduced["lcoe_2d"], lcoe_outputs[cycle], crs=crs)
-            write_geotiff(reduced["potential_2d"], potential_outputs[cycle], crs=crs)
+            for raster, path in (
+                (lcoe_maps[cycle], lcoe_path),
+                (potential_maps[cycle], potential_path),
+            ):
+                raster.rio.write_nodata(np.nan).rio.to_raster(path, compress="deflate")
 
-    if hasattr(snakemake.output, "overview_fig"):
-        _plots.make_resource_overview(
-            maps=lcoe_maps,
-            cycles=cycles,
-            out_path=snakemake.output.overview_fig,
-            shapes_path=snakemake.input.shapes,
-            max_depth=max_depth,
-        )
-        _plots.make_resource_overview(
-            maps=potential_maps,
-            cycles=cycles,
-            out_path=snakemake.output.potential_overview_fig,
-            shapes_path=snakemake.input.shapes,
-            max_depth=max_depth,
-            potential=True,
-            selection_costs=lcoe_maps,
-        )
+    _plots.make_resource_overview(
+        maps=lcoe_maps,
+        cycles=cycles,
+        out_path=snakemake.output.overview_fig,
+        shapes_path=snakemake.input.shapes,
+        max_depth=max_depth,
+    )
+    _plots.make_resource_overview(
+        maps=potential_maps,
+        cycles=cycles,
+        out_path=snakemake.output.potential_overview_fig,
+        shapes_path=snakemake.input.shapes,
+        max_depth=max_depth,
+        potential=True,
+        selection_costs=lcoe_maps,
+    )
 
 
 if __name__ == "__main__":

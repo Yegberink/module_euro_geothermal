@@ -56,7 +56,6 @@ def main():
                 )
                 window["empty"] |= not len(indices)
     path = Path(snakemake.output.extent)
-    path.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(window, sort_keys=True) + "\n"
     # Demand or small buffer changes must not force a new cost pass when the
     # source-grid window is unchanged. Snakemake also checks small-file checksums.

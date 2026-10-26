@@ -5,8 +5,6 @@ module. Keeping the rendering here makes the set of workflow figures explicit
 and prevents plotting dependencies from leaking into calculation code.
 """
 
-from pathlib import Path
-
 import geopandas as gpd
 import matplotlib
 import numpy as np
@@ -46,7 +44,6 @@ BASE_STYLE = {
 
 def write_blank_figure(path, figsize=(6, 4)) -> None:
     """Write a valid empty placeholder when no plottable data are available."""
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
     with plt.rc_context(BASE_STYLE):
         fig, ax = plt.subplots(figsize=figsize)
         ax.axis("off")
@@ -386,6 +383,5 @@ def make_resource_overview(
             edgecolor="#AAAAAA",
             fontsize=10,
         )
-        Path(out_path).parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(out_path, dpi=200, bbox_inches="tight")
         plt.close(fig)

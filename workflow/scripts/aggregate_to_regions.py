@@ -12,8 +12,8 @@ Supported aggregation methods (method_region_aggregation):
 """
 
 import sys
-from pathlib import Path
 
+import _plots
 import _schemas
 import geopandas as gpd
 import gregor
@@ -41,22 +41,6 @@ def inherit_rio_meta(dst: xr.DataArray, src: xr.DataArray) -> xr.DataArray:
 # ---------------------------------------------------------------------------
 
 
-def parse_fixed_bins(raw):
-    """Parse fixed_bins from config into a sorted list of (left, right) float tuples.
-
-    Accepts either ["0-50", "50-100"] or [[0, 50], [50, 100]].
-    """
-    out = []
-    for b in raw or []:
-        if isinstance(b, str) and "-" in b:
-            a, c = b.split("-", 1)
-            out.append((float(a), float(c)))
-        else:
-            out.append((float(b[0]), float(b[1])))
-    out.sort(key=lambda x: x[0])
-    return out
-
-
 def compute_quantile_bins(lcoe_da: xr.DataArray, n_quantiles: int):
     """Compute *n_quantiles* global quantile bins from finite LCOE values.
 
@@ -74,17 +58,6 @@ def compute_quantile_bins(lcoe_da: xr.DataArray, n_quantiles: int):
         edges = np.array([edges[0], edges[0] + 1e-6])
 
     return [(float(edges[i]), float(edges[i + 1])) for i in range(len(edges) - 1)]
-
-
-def _bins_for_method(method, lcoe_da, n_quantiles, fixed_bins, lcoe_cutoff):
-    """Return the list of (left, right) bins for the chosen method."""
-    if method == "quantiles":
-        return compute_quantile_bins(lcoe_da, n_quantiles=n_quantiles)
-    if method == "fixed_bins":
-        return list(fixed_bins)
-    if method == "cutoff":
-        return [(np.nan, float(lcoe_cutoff))]
-    return []
 
 
 # ---------------------------------------------------------------------------
@@ -113,7 +86,14 @@ def aggregate_one_tech(
         else xr.zeros_like(pot)
     )
     regions = regions_gdf.to_crs(lcoe.rio.crs)
-    bins = _bins_for_method(method, lcoe, n_quantiles, fixed_bins, lcoe_cutoff)
+    if method == "quantiles":
+        bins = compute_quantile_bins(lcoe, n_quantiles)
+    elif method == "fixed_bins":
+        bins = fixed_bins
+    elif method == "cutoff":
+        bins = [(np.nan, float(lcoe_cutoff))]
+    else:
+        bins = []
 
     eligible = power_eligibility(lcoe, pot, bins, method)
     feasible = np.isfinite(lcoe) & np.isfinite(pot) & (pot > 0)
@@ -272,7 +252,9 @@ def main():
     heat_eligible = xr.zeros_like(used_fraction, dtype=bool) if heat_enabled else None
     method = snakemake.params.method_region_aggregation
     n_quantiles = snakemake.params.n_quantiles
-    fixed_bins = parse_fixed_bins(snakemake.params.fixed_bins)
+    fixed_bins = [
+        tuple(map(float, value.split("-", 1))) for value in snakemake.params.fixed_bins
+    ]
     lcoe_cutoff = snakemake.params.lcoe_cutoff
 
     regions = _schemas.ShapeSchema.validate(gpd.read_parquet(snakemake.input.shapes))
@@ -354,11 +336,8 @@ def main():
         result = result[list(_schemas.GeothermalRegionsSchema.schema.columns)]
     else:
         result = _schemas.empty_geothermal_regions(regions.crs)
-    Path(snakemake.output.geoparquet).parent.mkdir(parents=True, exist_ok=True)
     result = _schemas.GeothermalRegionsSchema.schema.validate(result)
     result.to_parquet(snakemake.output.geoparquet, index=False)
-
-    import _plots
 
     if snakemake.output.regional_fig:
         power = result.loc[(result.carrier == "power") & (result.category == "power")]

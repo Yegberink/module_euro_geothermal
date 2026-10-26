@@ -12,7 +12,7 @@ if "snakemake" in dir():
     sys.stdout = sys.stderr = open(snakemake.log[0], "w", buffering=1)
 
 
-def crop_ds_bbox_projected(ds, x_name="x", y_name="y", bbox=None, pad_m=20_000):
+def crop_ds_bbox_projected(ds, *, bbox, pad_m, x_name="x", y_name="y"):
     """Crop a projected dataset to a padded bounding box."""
     minx, miny, maxx, maxy = bbox
     minx -= pad_m

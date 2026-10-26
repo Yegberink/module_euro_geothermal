@@ -33,13 +33,8 @@ DRILLING_COST_CURVE_SPEC = resolve_drilling_curve_definition(
 )
 
 
-def load_efficiency_curve_csv(csv_path, cycle_key):
-    """cycle_key is expected to be one of: ORC, Flash, Kalina (matching your config keys).
-
-    This function lowercases it to match CSV columns like orc_temperature/orc_efficiency.
-    """
-    cycle = str(cycle_key).lower()
-
+def load_efficiency_curve_csv(csv_path, cycle):
+    """Load the efficiency columns for a validated lowercase cycle name."""
     df = pd.read_csv(csv_path)
 
     t_col = f"{cycle}_temperature"
@@ -57,6 +52,41 @@ def load_efficiency_curve_csv(csv_path, cycle_key):
 
 
 LCOE_COMPONENT_NAMES = ("drilling", "stimulation", "pump", "power_plant", "fixed_om")
+
+
+def gross_power_and_doublets(
+    efficiency,
+    production_temp,
+    depth,
+    temp_turb_out,
+    sed_thickness,
+    area_available,
+    min_dt,
+    well_spacing,
+    flowrate_egs,
+    flowrate_conventional,
+):
+    """Return gross MW, doublet count, and EGS status for one voxel."""
+    # Missing sediment implies EGS at every positive depth.
+    sed_ok = np.where(np.isfinite(sed_thickness), sed_thickness, 0.0).astype(np.float32)
+    cutoff = np.minimum(Z_THR_M, sed_ok)
+    is_egs = depth > cutoff if include_egs else np.full_like(depth, False, dtype=bool)
+
+    # Spacing is in km and available area in km²; each doublet occupies two squares.
+    n_pairs = area_available / (2 * well_spacing**2)
+    flowrate_wells = np.where(
+        is_egs, flowrate_egs * n_pairs, flowrate_conventional * n_pairs
+    )
+    dT = production_temp - temp_turb_out
+    if not np.isfinite(efficiency) or not np.isfinite(dT) or dT < min_dt:
+        return np.nan, n_pairs, is_egs
+
+    Cp_water = 4250.0
+    therm_out = flowrate_wells * Cp_water * dT / 1e6
+    power = therm_out * efficiency
+    if not np.isfinite(power) or power <= 0.0:
+        return np.nan, n_pairs, is_egs
+    return power, n_pairs, is_egs
 
 
 def calculate_LCOE_components_vec(
@@ -84,47 +114,27 @@ def calculate_LCOE_components_vec(
 ):
     """Return total LCOE followed by its five additive cost contributions."""
     nan_result = tuple(np.float32(np.nan) for _ in range(1 + len(LCOE_COMPONENT_NAMES)))
-    Cp_water = 4250.0
-    MIN_DT = min_dt
-
-    # Missing sediment implies EGS at every positive depth.
-    sed_ok = np.where(np.isfinite(sed_thickness), sed_thickness, 0.0).astype(np.float32)
-    cutoff = np.minimum(Z_THR_M, sed_ok)
-
-    if include_egs:
-        is_egs = depth > cutoff
-    else:
-        is_egs = np.full_like(depth, False, dtype=bool)
-
-    # `well_spacing` and `area_available` are both expressed in km / km^2 here.
-    doublet_occupation = 2 * well_spacing**2  # km^2 per doublet
-    n_pairs = area_available / doublet_occupation
-
-    nr_wells = n_pairs * 2
-    flowrate_wells = np.where(
-        is_egs, flowrate_egs * n_pairs, flowrate_conventional * n_pairs
+    W, n_pairs, is_egs = gross_power_and_doublets(
+        efficiency,
+        production_temp,
+        depth,
+        temp_turb_out,
+        sed_thickness,
+        area_available,
+        min_dt,
+        well_spacing,
+        flowrate_egs,
+        flowrate_conventional,
     )
-
-    dT = production_temp - temp_turb_out
-
-    # Early rejection
-    if (not np.isfinite(efficiency)) or (not np.isfinite(dT)) or (dT < MIN_DT):
+    if not np.isfinite(W):
         return nan_result
+    nr_wells = n_pairs * 2
 
-    therm_out = flowrate_wells * Cp_water * dT / 1e6
-    power_out = therm_out * efficiency
-
-    if (not np.isfinite(power_out)) or (power_out <= 0.0):
-        return nan_result
-
-    W = power_out
-
-    ct = str(cycle_type).lower()
-    if ct == "flash":
+    if cycle_type == "flash":
         eur_per_kw = flash_money_per_kw
-    elif ct == "orc":
+    elif cycle_type == "orc":
         eur_per_kw = orc_money_per_kw
-    elif ct == "kalina":
+    elif cycle_type == "kalina":
         eur_per_kw = kalina_money_per_kw
     else:
         return nan_result
@@ -192,42 +202,19 @@ def calculate_capacity_vec(
     flowrate_conventional,
 ):
     """Calculate net installed capacity for one voxel."""
-    Cp_water = 4250.0
-    MIN_DT = min_dt
-
-    # Missing sediment implies EGS at every positive depth.
-    sed_ok = np.where(np.isfinite(sed_thickness), sed_thickness, 0.0).astype(np.float32)
-    cutoff = np.minimum(Z_THR_M, sed_ok)
-
-    if include_egs:
-        is_egs = depth > cutoff
-    else:
-        is_egs = np.full_like(depth, False, dtype=bool)
-
-    # `well_spacing` and `area_available` are both expressed in km / km^2 here,
-    # so `n_pairs` is the number of geothermal doublets that fit in one grid cell.
-    doublet_occupation = 2 * well_spacing**2  # km^2 per doublet
-
-    n_pairs = area_available / doublet_occupation
-
-    flowrate_wells = np.where(
-        is_egs, flowrate_egs * n_pairs, flowrate_conventional * n_pairs
+    power, _, _ = gross_power_and_doublets(
+        efficiency,
+        production_temp,
+        depth,
+        temp_turb_out,
+        sed_thickness,
+        area_available,
+        min_dt,
+        well_spacing,
+        flowrate_egs,
+        flowrate_conventional,
     )
-
-    dT = production_temp - temp_turb_out
-
-    # Early rejection
-    if (not np.isfinite(efficiency)) or (not np.isfinite(dT)) or (dT < MIN_DT):
-        return np.float32(np.nan)
-
-    therm_out = flowrate_wells * Cp_water * dT / 1e6
-    power_out_gross = therm_out * efficiency
-
-    if (not np.isfinite(power_out_gross)) or (power_out_gross <= 0.0):
-        return np.float32(np.nan)
-
-    W_net = power_out_gross * (1.0 - parasitic_fraction)
-    potential = W_net
+    potential = power * (1.0 - parasitic_fraction)
 
     if (not np.isfinite(potential)) or (potential <= 0.0):
         return np.float32(np.nan)
@@ -237,7 +224,7 @@ def calculate_capacity_vec(
 
 def main():
     """Calculate and write the LCOE cube requested by Snakemake."""
-    cycle = str(snakemake.params.cycle).strip().lower()
+    cycle = snakemake.params.cycle
     cycle_key = {"orc": "ORC", "flash": "Flash", "kalina": "Kalina"}[cycle]
 
     # Explicit outputs from Snakemake rule (one tech per job)
@@ -251,13 +238,11 @@ def main():
     area = 100 * fraction
 
     max_depth = float(snakemake.params.max_depth)
-    include_egs = bool(snakemake.params.include_egs)
-    egs_cutoff = float(snakemake.params.EGS_cutoff)
 
     # Determine effective depth limit
     effective_max = max_depth
     if not include_egs:
-        effective_max = min(effective_max, egs_cutoff)
+        effective_max = min(effective_max, Z_THR_M)
 
     # Slice depth dimension
     T = T.sel(depth_m=slice(None, effective_max))
@@ -282,7 +267,7 @@ def main():
     cutoff2d.attrs.update({"crs": crs_str, "units": "m"})
     cutoff3d = cutoff2d.broadcast_like(T)
 
-    temps_curve, effs_curve = load_efficiency_curve_csv(CSV_PATH, cycle_key)
+    temps_curve, effs_curve = load_efficiency_curve_csv(CSV_PATH, cycle)
 
     use_dask = "parallelized" if hasattr(T.data, "chunks") else False
 
@@ -333,7 +318,7 @@ def main():
     )
     lcoe, *component_arrays = [
         output.transpose("depth_m", "y", "x").assign_attrs(
-            units="EUR2020/MWh_e", tech=str(cycle_key), crs=crs_str
+            units="EUR2020/MWh_e", tech=cycle_key, crs=crs_str
         )
         for output in lcoe_outputs
     ]
@@ -363,7 +348,7 @@ def main():
             ),
         )
         .transpose("depth_m", "y", "x")
-        .assign_attrs(units="MW", tech=str(cycle_key), crs=crs_str)
+        .assign_attrs(units="MW", tech=cycle_key, crs=crs_str)
     )
 
     ds_out = xr.Dataset(
@@ -380,7 +365,7 @@ def main():
         coords={"depth_m": lcoe["depth_m"], "y": lcoe["y"], "x": lcoe["x"]},
         attrs={
             "crs": crs_str,
-            "tech": str(cycle_key),
+            "tech": cycle_key,
             "carrier_out": "power",
             "currency": "EUR",
             "price_year": 2020,
