@@ -45,8 +45,8 @@ pathvars:
         - `bin_right`: upper LCOE bound in EUR2020/MWh; null for heat.
         - `potential`: net electric capacity or annual heat supplied to the consuming region.
         - `potential_unit`: MW_e for power or MWh_th/year for heat.
-        - `mean_lcoe`: capacity-weighted EUR2020/MWh electric; null for heat.
-        - `mean_lcoh`: supplied-energy-weighted EUR2020/MWh thermal; null for power.
+        - `mean_specific_capex_power`: capacity-weighted investment in EUR2020/kW_e of net electrical capacity; null for heat.
+        - `mean_specific_capex_heat`: supplied-energy-weighted investment in EUR2020/kW_th of useful thermal capacity; null for power or zero heat supply.
         - `mean_network_distance_m`: supplied-energy-weighted cell-to-network distance in metres; null for power or zero heat supply.
         - `n_cells`: contributing raster-cell count.
         - `geometry`: aggregation-region polygon.

@@ -127,8 +127,8 @@ class GeothermalRegionsSchema:
             "potential_unit": pa.Column(
                 str, checks=pa.Check(lambda s: s.isin(["MW_e", "MWh_th/year"]))
             ),
-            "mean_lcoe": pa.Column(float, nullable=True, coerce=True),
-            "mean_lcoh": pa.Column(float, nullable=True, coerce=True),
+            "mean_specific_capex_power": pa.Column(float, nullable=True, coerce=True),
+            "mean_specific_capex_heat": pa.Column(float, nullable=True, coerce=True),
             "mean_network_distance_m": pa.Column(
                 float, checks=pa.Check(lambda s: s >= 0), nullable=True, coerce=True
             ),

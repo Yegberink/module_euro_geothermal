@@ -46,6 +46,10 @@ def aggregate_3d_to_2d_lcoe_min(ds: xr.Dataset, depth_dim: str) -> xr.Dataset:
 
     out = xr.Dataset(
         data_vars={
+            "specific_capex_2d": ds["specific_capex"]
+            .isel({depth_dim: argmin})
+            .where(valid)
+            .astype(np.float32),
             "lcoe_2d": lcoe.isel({depth_dim: argmin}).where(valid).astype(np.float32),
             "potential_2d": potential.isel({depth_dim: argmin})
             .where(valid)
@@ -67,11 +71,12 @@ def main():
     lcoe_maps = {}
     potential_maps = {}
 
-    for cycle, cube_path, lcoe_path, potential_path in zip(
+    for cycle, cube_path, lcoe_path, potential_path, capex_path in zip(
         cycles,
         snakemake.input.cubes,
         snakemake.output.lcoe_tifs,
         snakemake.output.pot_tifs,
+        snakemake.output.capex_tifs,
         strict=True,
     ):
         with xr.open_dataset(cube_path) as cube:
@@ -84,6 +89,10 @@ def main():
             for raster, path in (
                 (lcoe_maps[cycle], lcoe_path),
                 (potential_maps[cycle], potential_path),
+                (
+                    _ensure_raster_metadata(reduced["specific_capex_2d"], crs=crs),
+                    capex_path,
+                ),
             ):
                 raster.rio.write_nodata(np.nan).rio.to_raster(path, compress="deflate")
 

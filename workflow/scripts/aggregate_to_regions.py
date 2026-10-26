@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Aggregate 2D geothermal LCOE and potential rasters to user-defined regions.
 
-Consumes outputs of make_2d.py (one or more LCOE + potential GeoTIFF pairs)
-and produces a GeoParquet with per-region potential and mean-LCOE statistics,
+Consumes power LCOE, potential and specific CAPEX rasters, and allocated heat,
+and produces a GeoParquet with per-region potential and mean specific CAPEX,
 grouped by technology, category, and price bin.
 
 Supported aggregation methods (method_region_aggregation):
@@ -69,6 +69,7 @@ def aggregate_one_tech(
     tech: str,
     lcoe: xr.DataArray,
     pot: xr.DataArray,
+    specific_capex: xr.DataArray,
     regions_gdf: gpd.GeoDataFrame,
     method: str,
     n_quantiles: int,
@@ -80,6 +81,7 @@ def aggregate_one_tech(
 ) -> tuple[pd.DataFrame, object]:
     """Write eligible power alternatives and aggregate each price bin."""
     check_grid(lcoe, pot)
+    check_grid(specific_capex, pot)
     fraction = (
         align_to_grid(used_fraction, pot).clip(0, 1)
         if used_fraction is not None
@@ -138,18 +140,18 @@ def aggregate_one_tech(
             if n_valid == 0:
                 continue
 
-            # Weighted-sum rasters (potential, lcoe*potential, cell count)
+            # Weight specific CAPEX by the capacity assigned to each category.
             pot_bin = inherit_rio_meta(category_pot.where(valid, other=0.0), pot)
-            lp_bin = inherit_rio_meta(
-                (lcoe * category_pot).where(valid, other=0.0), pot
+            capex_bin = inherit_rio_meta(
+                (specific_capex * category_pot).where(valid, other=0.0), pot
             )
             cnt_bin = inherit_rio_meta(xr.where(valid, 1.0, 0.0), pot)
 
             agg_p = gregor.aggregate.aggregate_raster_to_polygon(
                 pot_bin, regions, stats="sum"
             )
-            agg_lp = gregor.aggregate.aggregate_raster_to_polygon(
-                lp_bin, regions, stats="sum"
+            agg_capex = gregor.aggregate.aggregate_raster_to_polygon(
+                capex_bin, regions, stats="sum"
             )
             agg_n = gregor.aggregate.aggregate_raster_to_polygon(
                 cnt_bin, regions, stats="sum"
@@ -162,14 +164,16 @@ def aggregate_one_tech(
             if (total_pot.fillna(0.0) <= 0.0).all():
                 continue
 
-            mean_lcoe = agg_lp["sum"].astype(float) / total_pot.replace(0.0, np.nan)
+            mean_specific_capex_power = agg_capex["sum"].astype(
+                float
+            ) / total_pot.replace(0.0, np.nan)
 
             df = pd.DataFrame(
                 {
                     "category": category,
                     "carrier": "power",
                     "potential_unit": "MW_e",
-                    "mean_lcoh": np.nan,
+                    "mean_specific_capex_heat": np.nan,
                     "mean_network_distance_m": np.nan,
                     "technology": tech,
                     "region_id": agg_p.index.astype(str),
@@ -177,7 +181,7 @@ def aggregate_one_tech(
                     "bin_left": bin_left_v,
                     "bin_right": bin_right_v,
                     "potential": total_pot.values,
-                    "mean_lcoe": mean_lcoe.values,
+                    "mean_specific_capex_power": mean_specific_capex_power.values,
                     "n_cells": agg_n["sum"].fillna(0).round().astype(np.int64).values,
                 }
             )
@@ -207,18 +211,23 @@ def power_eligibility(costs, capacities, bins, method):
     return eligible & np.isfinite(costs) & np.isfinite(capacities) & (capacities > 0)
 
 
-def aggregate_heat(ledger, eligible, region_ids, combined):
+def aggregate_heat(ledger, eligible, region_ids, combined, specific_capex):
     """Attribute allocated heat to consumers, without duplicating power options."""
     ledger = ledger.copy()
     ledger["category"] = "heat"
     if combined and len(ledger):
         contested = eligible.values[ledger.row.to_numpy(), ledger.col.to_numpy()]
         ledger.loc[contested, "category"] = "contested"
-    ledger["annual_cost"] = ledger.heat_mwh_per_year * ledger.lcoh_eur_per_mwh
+    # A common heat capacity factor makes supplied-energy weighting equivalent
+    # to weighting by the thermal capacity developed for each consumer.
+    ledger["weighted_capex"] = (
+        ledger.heat_mwh_per_year
+        * specific_capex.values[ledger.row.to_numpy(), ledger.col.to_numpy()]
+    )
     ledger["heat_distance"] = ledger.heat_mwh_per_year * ledger.network_distance_m
     grouped = ledger.groupby(["region_id", "category"]).agg(
         potential=("heat_mwh_per_year", "sum"),
-        annual_cost=("annual_cost", "sum"),
+        weighted_capex=("weighted_capex", "sum"),
         heat_distance=("heat_distance", "sum"),
         n_cells=("cell_id", "nunique"),
     )
@@ -227,18 +236,20 @@ def aggregate_heat(ledger, eligible, region_ids, combined):
         [region_ids.astype(str), categories], names=["region_id", "category"]
     )
     grouped = grouped.reindex(index, fill_value=0).reset_index()
-    grouped["mean_lcoh"] = grouped.annual_cost / grouped.potential.replace(0, np.nan)
+    grouped["mean_specific_capex_heat"] = (
+        grouped.weighted_capex / grouped.potential.replace(0, np.nan)
+    )
     grouped["mean_network_distance_m"] = (
         grouped.heat_distance / grouped.potential.replace(0, np.nan)
     )
-    grouped = grouped.drop(columns=["annual_cost", "heat_distance"])
+    grouped = grouped.drop(columns=["weighted_capex", "heat_distance"])
     grouped["carrier"] = "heat"
     grouped["potential_unit"] = "MWh_th/year"
     grouped["technology"] = "geothermal_heat"
     grouped["price_bin"] = "all"
     grouped["bin_left"] = np.nan
     grouped["bin_right"] = np.nan
-    grouped["mean_lcoe"] = np.nan
+    grouped["mean_specific_capex_power"] = np.nan
     return grouped[(grouped.category != "contested") | (grouped.potential > 0)]
 
 
@@ -265,11 +276,12 @@ def main():
 
     frames = []
     cheapest_cost = cheapest_potential = None
-    for index, (tech, lcoe_path, pot_path, power_path) in enumerate(
+    for index, (tech, lcoe_path, pot_path, capex_path, power_path) in enumerate(
         zip(
             snakemake.params.cycles,
             snakemake.input.lcoe_tifs,
             snakemake.input.pot_tifs,
+            snakemake.input.capex_tifs,
             snakemake.output.power,
             strict=True,
         )
@@ -279,6 +291,7 @@ def main():
             tech,
             costs,
             capacities,
+            read_raster(capex_path),
             regions,
             method,
             n_quantiles,
@@ -324,7 +337,11 @@ def main():
             "MWh_th/year",
         )
         ledger = pd.read_parquet(snakemake.input.heat_allocations[0])
-        frames.append(aggregate_heat(ledger, heat_eligible, regions.index, combined))
+        heat_capex = read_raster(snakemake.input.heat_capex[0])
+        check_grid(heat_capex, allocated)
+        frames.append(
+            aggregate_heat(ledger, heat_eligible, regions.index, combined, heat_capex)
+        )
 
     if frames:
         data = pd.concat(frames, ignore_index=True)

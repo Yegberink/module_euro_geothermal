@@ -17,6 +17,11 @@ if POWER_ENABLED:
                 shapes="{shapes}",
                 cycle=CYCLES,
             ),
+            capex_tifs=expand(
+                "<resources>/automatic/{shapes}/documents/{cycle}_2d_specific_capex.tif",
+                shapes="{shapes}",
+                cycle=CYCLES,
+            ),
             pot_tifs=expand(
                 "<resources>/automatic/{shapes}/documents/{cycle}_2d_potential.tif",
                 shapes="{shapes}",
@@ -40,6 +45,10 @@ rule aggregate_to_regions:
     input:
         lcoe_tifs=(rules.make_2d.output.lcoe_tifs if POWER_ENABLED else []),
         pot_tifs=(rules.make_2d.output.pot_tifs if POWER_ENABLED else []),
+        capex_tifs=(rules.make_2d.output.capex_tifs if POWER_ENABLED else []),
+        heat_capex=(
+            [rules.calculate_LCOH.output.specific_capex] if HEAT_ENABLED else []
+        ),
         heat_fraction=([rules.allocate_heat.output.fraction] if HEAT_ENABLED else []),
         heat_allocated=([rules.allocate_heat.output.allocated] if HEAT_ENABLED else []),
         heat_lcoh=([rules.calculate_LCOH.output.lcoh] if HEAT_ENABLED else []),

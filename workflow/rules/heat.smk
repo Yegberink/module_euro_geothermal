@@ -26,6 +26,7 @@ if HEAT_ENABLED:
             sed=rules.resample_gst1_sediment.output.sediment,
             drilling_csv=DRILLING_CSV,
         output:
+            specific_capex="<resources>/automatic/{shapes}/documents/heat_specific_capex.tif",
             lcoh="<resources>/automatic/{shapes}/documents/heat_lcoh.tif",
             potential="<resources>/automatic/{shapes}/documents/heat_potential.tif",
             depth="<resources>/automatic/{shapes}/documents/heat_depth.tif",

@@ -112,8 +112,8 @@ def calculate_LCOE_components_vec(
     kalina_money_per_kw,
     min_dt,
 ):
-    """Return total LCOE followed by its five additive cost contributions."""
-    nan_result = tuple(np.float32(np.nan) for _ in range(1 + len(LCOE_COMPONENT_NAMES)))
+    """Return LCOE, its five contributions, and CAPEX per net electrical kW."""
+    nan_result = tuple(np.float32(np.nan) for _ in range(2 + len(LCOE_COMPONENT_NAMES)))
     W, n_pairs, is_egs = gross_power_and_doublets(
         efficiency,
         production_temp,
@@ -185,7 +185,11 @@ def calculate_LCOE_components_vec(
     if not np.isfinite(lcoe):
         return nan_result
 
-    return (np.float32(lcoe), *(np.float32(value) for value in component_lcoe))
+    return (
+        np.float32(lcoe),
+        *(np.float32(value) for value in component_lcoe),
+        np.float32(capex_total * 1e3 / (W * (1.0 - parasitic_fraction))),
+    )
 
 
 def calculate_capacity_vec(
@@ -283,7 +287,7 @@ def main():
 
     t_out = float(snakemake.params.temp_turbine_out[cycle_key])
 
-    # Total LCOE and its exact additive cost-component contributions.
+    # Evaluate capital costs alongside the additive LCOE contributions.
     lcoe_outputs = xr.apply_ufunc(
         calculate_LCOE_components_vec,
         eff,
@@ -293,10 +297,10 @@ def main():
         sed3d,
         area,
         input_core_dims=[[], [], [], [], [], []],
-        output_core_dims=[[] for _ in range(1 + len(LCOE_COMPONENT_NAMES))],
+        output_core_dims=[[] for _ in range(2 + len(LCOE_COMPONENT_NAMES))],
         vectorize=True,
         dask=use_dask,
-        output_dtypes=[np.float32 for _ in range(1 + len(LCOE_COMPONENT_NAMES))],
+        output_dtypes=[np.float32 for _ in range(2 + len(LCOE_COMPONENT_NAMES))],
         keep_attrs=True,
         kwargs=dict(
             cycle_type=cycle,
@@ -316,7 +320,7 @@ def main():
             flowrate_conventional=snakemake.params.flowrate_conventional,
         ),
     )
-    lcoe, *component_arrays = [
+    lcoe, *component_arrays, specific_capex = [
         output.transpose("depth_m", "y", "x").assign_attrs(
             units="EUR2020/MWh_e", tech=cycle_key, crs=crs_str
         )
@@ -359,6 +363,7 @@ def main():
                 f"lcoe_{name}": values.astype(np.float32)
                 for name, values in lcoe_components.items()
             },
+            "specific_capex": specific_capex.astype(np.float32),
             "potential": cap.astype(np.float32),
             "egs_cutoff_depth_m": cutoff3d.astype(np.float32),
         },
@@ -379,6 +384,9 @@ def main():
     )
     ds_out["lcoe"].attrs.update(
         {"units": "EUR2020/MWh_e", "long_name": f"LCOE ({cycle_key})"}
+    )
+    ds_out["specific_capex"].attrs.update(
+        units="EUR2020/kW_e", long_name="CAPEX per net electrical capacity"
     )
     for name in LCOE_COMPONENT_NAMES:
         label = name.replace("_", " ").title()

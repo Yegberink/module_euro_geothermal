@@ -130,13 +130,19 @@ def calculate_heat(
         "capacity": therm_out,
         "potential": annual_heat,
         "lcoh": lcoh,
+        "specific_capex": np.divide(
+            capex_total * 1e3,
+            therm_out,
+            out=np.full_like(annual_heat, np.nan),
+            where=therm_out > 0,
+        ),
         **components,
     }
     return {name: np.where(valid, value, np.nan) for name, value in values.items()}
 
 
 def main():
-    """Read the prepared source window and write the three declared heat maps."""
+    """Read the prepared source window and write the declared heat maps."""
     window = json.loads(Path(snakemake.input.extent).read_text())
     with xr.open_dataset(snakemake.input.nc) as source:
         _schemas.TemperatureDepthSchema.validate(source.depth_m.values)
@@ -178,6 +184,7 @@ def main():
     )
     for name, unit in [
         ("lcoh", "EUR2020/MWh_th"),
+        ("specific_capex", "EUR2020/kW_th"),
         ("potential", "MWh_th/year"),
         ("depth", "m"),
     ]:
