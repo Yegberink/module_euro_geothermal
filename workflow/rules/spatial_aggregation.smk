@@ -4,6 +4,7 @@ if POWER_ENABLED:
 
     rule make_2d:
         input:
+            plots=workflow.source_path("../scripts/_plots.py"),
             shapes="<shapes>",
             cubes=lambda wc: expand(
                 rules.calculate_LCOE.output.cube,
@@ -43,6 +44,7 @@ if POWER_ENABLED:
 rule aggregate_to_regions:
     """Aggregate 2D LCOE and potential rasters to user-defined regions for the configured parameters."""
     input:
+        plots=workflow.source_path("../scripts/_plots.py"),
         lcoe_tifs=(rules.make_2d.output.lcoe_tifs if POWER_ENABLED else []),
         pot_tifs=(rules.make_2d.output.pot_tifs if POWER_ENABLED else []),
         capex_tifs=(rules.make_2d.output.capex_tifs if POWER_ENABLED else []),

@@ -1,7 +1,7 @@
 carrier_out: heat_and_power
 
 eligibility:
-  enabled: false
+  enabled: true
 
 method_region_aggregation: cutoff
 

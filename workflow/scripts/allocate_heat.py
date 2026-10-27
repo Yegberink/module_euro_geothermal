@@ -6,7 +6,6 @@ that supply level. This avoids network-order bias and double counting cells.
 """
 
 import sys
-import time
 
 import _schemas
 import geopandas as gpd
@@ -51,9 +50,6 @@ def assign_network_regions(networks, regions):
         choices["distance"] = choices.geometry.distance(centroids.geometry.iloc[index])
         chosen = choices.sort_values(["distance", "shape_id"]).iloc[0]
         assigned.loc[index] = chosen.shape_id
-        print(
-            f"Centroid fallback: network {networks.area_id.iloc[index]} -> {chosen.shape_id} ({chosen.distance:.1f} m)"
-        )
     return assigned.astype(str).to_numpy()
 
 
@@ -125,7 +121,11 @@ def solve_allocation(edges, demand, capacity, cost):
             ),
             shape=(len(networks) + len(cells), len(local)),
         ).tocsr()
-        bounds = np.r_[demand[networks], capacity[cells]]
+        # Optimize in GWh: large MWh totals make the fixed-supply equality
+        # numerically infeasible in HiGHS. The 1e-8 GWh solver tolerance
+        # corresponds to the 1e-5 MWh conservation tolerance checked below.
+        mwh_per_gwh = 1000.0
+        bounds = np.r_[demand[networks], capacity[cells]] / mwh_per_gwh
         options = {
             "primal_feasibility_tolerance": 1e-8,
             "dual_feasibility_tolerance": 1e-8,
@@ -157,7 +157,7 @@ def solve_allocation(edges, demand, capacity, cost):
         )
         if not cheapest.success:
             raise RuntimeError(f"Heat cost minimization failed: {cheapest.message}")
-        allocated[indices] = np.maximum(cheapest.x, 0)
+        allocated[indices] = np.maximum(cheapest.x, 0) * mwh_per_gwh
     network_sum = np.bincount(edges[:, 0], weights=allocated, minlength=len(demand))
     cell_sum = np.bincount(edges[:, 1], weights=allocated, minlength=len(capacity))
     if np.any(network_sum > demand + 1e-5) or np.any(
@@ -169,7 +169,6 @@ def solve_allocation(edges, demand, capacity, cost):
 
 def main():
     """Write allocated heat rasters and cell-to-network supply links."""
-    start = time.perf_counter()
     networks = (
         _schemas.HeatNetworksSchema.validate(gpd.read_parquet(snakemake.input.networks))
         .sort_values("area_id", kind="stable")
@@ -189,9 +188,6 @@ def main():
         potential,
         snakemake.params.buffer_km,
         snakemake.params.allow_cross_region_supply,
-    )
-    print(
-        f"Candidate edges: {len(edges)}; construction and attribution: {time.perf_counter() - start:.2f} s"
     )
     flow = solve_allocation(
         edges,
@@ -243,9 +239,6 @@ def main():
     # Preserve floating-point precision for conservation across thousands of networks.
     write_raster(allocated, snakemake.output.allocated, "MWh_th/year")
     write_raster(fraction, snakemake.output.fraction, "1")
-    print(
-        f"Allocation completed in {time.perf_counter() - start:.2f} s; supplied {flow.sum():.3f} MWh/year"
-    )
 
 
 if __name__ == "__main__":

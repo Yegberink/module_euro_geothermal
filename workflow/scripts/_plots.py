@@ -47,7 +47,7 @@ def write_blank_figure(path, figsize=(6, 4)) -> None:
     with plt.rc_context(BASE_STYLE):
         fig, ax = plt.subplots(figsize=figsize)
         ax.axis("off")
-        fig.savefig(path, dpi=200, bbox_inches="tight")
+        fig.savefig(path, dpi=100, bbox_inches="tight")
         plt.close(fig)
 
 
@@ -87,6 +87,8 @@ def _decorate_map(
     extent: list[float],
     unavailable_color: str = UNAVAILABLE_COLOR,
 ):
+    # Rasterize detailed map geometry to keep report PDFs quick to render.
+    ax.set_rasterization_zorder(4)
     ax.set_facecolor(MAP_BACKGROUND_COLOR)
     countries.plot(ax=ax, facecolor=unavailable_color, edgecolor="none", zorder=1)
     countries.boundary.plot(ax=ax, color=COUNTRY_EDGE_COLOR, linewidth=0.35, zorder=3)
@@ -309,6 +311,7 @@ def make_resource_overview(
                 va="top",
                 fontsize=14,
                 fontweight="bold",
+                zorder=4,
             )
             # GeoPandas otherwise adjusts the axes box to geographic aspect,
             # changing the panel spacing relative to raster figures.
@@ -383,5 +386,5 @@ def make_resource_overview(
             edgecolor="#AAAAAA",
             fontsize=10,
         )
-        fig.savefig(out_path, dpi=200, bbox_inches="tight")
+        fig.savefig(out_path, dpi=100, bbox_inches="tight")
         plt.close(fig)
