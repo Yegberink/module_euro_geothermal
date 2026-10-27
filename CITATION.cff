@@ -3,9 +3,11 @@
 # https://citation-file-format.github.io/
 cff-version: 1.2.0
 message: If you use this software or data produced by it, please cite it using the metadata from this file.
-title: "Modelblocks - module_geothermal: Data module for calculating geothermal potential and costs."
-repository: "https://github.com/Yegberink/module_geothermal"
+title: "Modelblocks - module_euro_geothermal: Geothermal Potential and Costs"
+repository: "https://github.com/Yegberink/module_euro_geothermal"
 license: Apache-2.0
 authors:
-  - given-names: Yannick
-    family-names: Egberink
+  - given-names: "Yannick"
+    family-names: "Egberink"
+    email: "y.f.egberink@tudelft.nl"
+

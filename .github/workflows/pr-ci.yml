@@ -1,5 +1,5 @@
 # !!!!! DO NOT MODIFY UNLESS ABSOLUTELY NECESSARY !!!!!
-# This workflow helps standardise integration tests across data modules.
+# This workflow helps standardise integration tests across data modules
 name: Pull Request CI tests for Modelblocks data modules
 on:
   pull_request:
