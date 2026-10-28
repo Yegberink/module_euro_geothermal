@@ -26,33 +26,37 @@ if HEAT_ENABLED:
             sed=rules.resample_gst1_sediment.output.sediment,
             drilling_csv=DRILLING_CSV,
         output:
-            specific_capex="<resources>/automatic/{shapes}/documents/heat_specific_capex.tif",
-            lcoh="<resources>/automatic/{shapes}/documents/heat_lcoh.tif",
-            potential="<resources>/automatic/{shapes}/documents/heat_potential.tif",
-            depth="<resources>/automatic/{shapes}/documents/heat_depth.tif",
+            specific_capex="<resources>/automatic/{shapes}/{scenario}/documents/heat_specific_capex.tif",
+            lcoh="<resources>/automatic/{shapes}/{scenario}/documents/heat_lcoh.tif",
+            potential="<resources>/automatic/{shapes}/{scenario}/documents/heat_potential.tif",
+            depth="<resources>/automatic/{shapes}/{scenario}/documents/heat_depth.tif",
         log:
-            "<logs>/{shapes}/calculate_LCOH.log",
+            "<logs>/{shapes}/{scenario}/calculate_LCOH.log",
         conda:
             "../envs/module.yaml"
         params:
-            max_depth=config["max_depth"],
+            max_depth=lambda wc: config["scenario"][wc.scenario]["max_depth"],
             include_egs=config["include_egs"],
-            EGS_cutoff=config["EGS_cutoff"],
+            EGS_cutoff=lambda wc: config["scenario"][wc.scenario]["EGS_cutoff"],
             drilling_cost_curve=config["drilling_cost_curve"],
-            stimulation_cost_per_doublet=config["stimulation_cost_per_doublet"],
-            pump_cost=config["pump_cost"],
-            lifetime=config["lifetime"],
+            stimulation_cost_per_doublet=lambda wc: config["scenario"][wc.scenario][
+                "stimulation_cost_per_doublet"
+            ],
+            pump_cost=lambda wc: config["scenario"][wc.scenario]["pump_cost"],
+            lifetime=lambda wc: config["scenario"][wc.scenario]["lifetime"],
             discount_rate=config["discount_rate"],
-            fixed_OM_rate=config["fixed_OM_rate"],
-            well_spacing=config["well_spacing"],
-            flowrate_egs=config["flowrate_egs"],
-            flowrate_conventional=config["flowrate_conventional"],
+            fixed_OM_rate=lambda wc: config["scenario"][wc.scenario]["fixed_OM_rate"],
+            well_spacing=lambda wc: config["scenario"][wc.scenario]["well_spacing"],
+            flowrate_egs=lambda wc: config["scenario"][wc.scenario]["flowrate_egs"],
+            flowrate_conventional=lambda wc: config["scenario"][wc.scenario][
+                "flowrate_conventional"
+            ],
             heat_production_temperature=config["heat_production_temperature"],
             heat_reinjection_temperature=config["heat_reinjection_temperature"],
             thermal_plant_cost_per_kw=config["thermal_plant_cost_per_kw"],
             heat_capacity_factor=config["heat_capacity_factor"],
         message:
-            "Calculate geothermal LCOH once per cell for {wildcards.shapes}."
+            "Calculate geothermal LCOH per cell for {wildcards.shapes} ({wildcards.scenario})."
         script:
             "../scripts/calculate_LCOH.py"
 
@@ -64,12 +68,12 @@ if HEAT_ENABLED:
             shapes="<shapes>",
         output:
             allocations=[
-                "<resources>/automatic/{shapes}/documents/heat_allocations.parquet"
+                "<resources>/automatic/{shapes}/{scenario}/documents/heat_allocations.parquet"
             ],
-            allocated="<resources>/automatic/{shapes}/documents/heat_allocated.tif",
-            fraction="<resources>/automatic/{shapes}/documents/heat_used_fraction.tif",
+            allocated="<resources>/automatic/{shapes}/{scenario}/documents/heat_allocated.tif",
+            fraction="<resources>/automatic/{shapes}/{scenario}/documents/heat_used_fraction.tif",
         log:
-            "<logs>/{shapes}/allocate_heat.log",
+            "<logs>/{shapes}/{scenario}/allocate_heat.log",
         conda:
             "../envs/module.yaml"
         params:

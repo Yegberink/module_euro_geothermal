@@ -1,3 +1,5 @@
+import re
+
 import yaml
 
 from snakemake.utils import min_version, validate
@@ -10,12 +12,7 @@ pathvars:
     area_potential="<resources>/user/{shapes}/area_potential_geothermal.tif",
     shapes="<resources>/user/{shapes}/shapes.parquet",
     district_heating="<resources>/user/{shapes}/areas.parquet",
-    geothermal_regions="<results>/{shapes}/geothermal_regions.parquet",
-
-
-wildcard_constraints:
-    shapes="[A-Za-z0-9][A-Za-z0-9_-]*",
-    cycle="orc|flash|kalina",
+    geothermal_regions="<results>/{shapes}/{scenario}/geothermal_regions.parquet",
 
 
 # Load the example configuration. This will be overridden by users.
@@ -26,6 +23,12 @@ configfile: workflow.source_path("../config/config.yaml")
 validate(config, workflow.source_path("internal/config.schema.yaml"))
 with open(workflow.source_path("internal/settings.yaml"), "r") as f:
     internal = yaml.safe_load(f) or {}
+
+
+wildcard_constraints:
+    shapes="[A-Za-z0-9][A-Za-z0-9_-]*",
+    cycle="orc|flash|kalina",
+    scenario="|".join(re.escape(name) for name in config["scenario"]),
 
 
 # Add all your includes here.

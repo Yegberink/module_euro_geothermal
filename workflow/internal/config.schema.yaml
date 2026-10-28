@@ -5,6 +5,12 @@ type: object
 additionalProperties: false
 
 properties:
+  scenario:
+    description: "User-named scenarios, each specifying a complete set of model parameters."
+    type: object
+    minProperties: 1
+    additionalProperties:
+      $ref: "#/$defs/scenario_parameters"
   eligibility:
     description: "Land eligibility from the supplied area-potential raster; configure enabled explicitly."
     $ref: "#/$defs/eligibility"
@@ -187,20 +193,12 @@ properties:
     description: "LCOE cutoff (EUR2020/MWh) used when method_region_aggregation=cutoff."
 
 required:
+  - scenario
   - eligibility
   - include_egs
   - carrier_out
-  - max_depth
-  - EGS_cutoff
   - drilling_cost_curve
-  - stimulation_cost_per_doublet
-  - pump_cost
-  - lifetime
   - discount_rate
-  - fixed_OM_rate
-  - well_spacing
-  - flowrate_egs
-  - flowrate_conventional
 
 allOf:
   - if:
@@ -208,12 +206,15 @@ allOf:
         carrier_out:
           enum: [power, heat_and_power]
     then:
-      required: [which_cycles, capacity_factor, parasitic_fraction, orc_money_per_kw, flash_money_per_kw, kalina_money_per_kw, min_dt, method_region_aggregation]
+      required: [which_cycles, method_region_aggregation]
+      properties:
+        scenario:
+          additionalProperties:
+            required: [capacity_factor, parasitic_fraction, orc_money_per_kw, flash_money_per_kw, kalina_money_per_kw, min_dt, temp_turbine_out]
       allOf:
         - properties:
             which_cycles:
               minItems: 1
-          required: ["temp_turbine_out"]
 
         - if:
             properties:
@@ -222,8 +223,11 @@ allOf:
                   const: "orc"
           then:
             properties:
-              temp_turbine_out:
-                required: ["ORC"]
+              scenario:
+                additionalProperties:
+                  properties:
+                    temp_turbine_out:
+                      required: ["ORC"]
 
         - if:
             properties:
@@ -232,8 +236,11 @@ allOf:
                   const: "flash"
           then:
             properties:
-              temp_turbine_out:
-                required: ["Flash"]
+              scenario:
+                additionalProperties:
+                  properties:
+                    temp_turbine_out:
+                      required: ["Flash"]
 
         - if:
             properties:
@@ -242,8 +249,11 @@ allOf:
                   const: "kalina"
           then:
             properties:
-              temp_turbine_out:
-                required: ["Kalina"]
+              scenario:
+                additionalProperties:
+                  properties:
+                    temp_turbine_out:
+                      required: ["Kalina"]
 
         - if:
             properties:
@@ -273,6 +283,43 @@ allOf:
       required: [heat_production_temperature, heat_reinjection_temperature, thermal_plant_cost_per_kw, heat_capacity_factor, heat_network_buffer_km, heat_allow_cross_region_supply]
 
 $defs:
+  scenario_parameters:
+    type: object
+    required: [max_depth, EGS_cutoff, stimulation_cost_per_doublet, pump_cost, lifetime, fixed_OM_rate, well_spacing, flowrate_egs, flowrate_conventional]
+    additionalProperties: false
+    properties:
+      max_depth:
+        $ref: "#/properties/max_depth"
+      EGS_cutoff:
+        $ref: "#/properties/EGS_cutoff"
+      stimulation_cost_per_doublet:
+        $ref: "#/properties/stimulation_cost_per_doublet"
+      pump_cost:
+        $ref: "#/properties/pump_cost"
+      lifetime:
+        $ref: "#/properties/lifetime"
+      capacity_factor:
+        $ref: "#/properties/capacity_factor"
+      fixed_OM_rate:
+        $ref: "#/properties/fixed_OM_rate"
+      parasitic_fraction:
+        $ref: "#/properties/parasitic_fraction"
+      orc_money_per_kw:
+        $ref: "#/properties/orc_money_per_kw"
+      flash_money_per_kw:
+        $ref: "#/properties/flash_money_per_kw"
+      kalina_money_per_kw:
+        $ref: "#/properties/kalina_money_per_kw"
+      well_spacing:
+        $ref: "#/properties/well_spacing"
+      flowrate_egs:
+        $ref: "#/properties/flowrate_egs"
+      flowrate_conventional:
+        $ref: "#/properties/flowrate_conventional"
+      min_dt:
+        $ref: "#/properties/min_dt"
+      temp_turbine_out:
+        $ref: "#/properties/temp_turbine_out"
   eligibility:
     type: object
     additionalProperties: false

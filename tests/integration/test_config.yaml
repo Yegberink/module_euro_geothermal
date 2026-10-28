@@ -1,31 +1,30 @@
 module_geothermal:
+  scenario:
+    medium:
+      max_depth: 3000
+      EGS_cutoff: 3000.0
+      stimulation_cost_per_doublet: 3.0
+      orc_money_per_kw: 1978.0
+      flash_money_per_kw: 1528.0
+      kalina_money_per_kw: 2175.0
+      pump_cost: 0.6
+      lifetime: 30.0
+      capacity_factor: 0.88
+      fixed_OM_rate: 0.015
+      parasitic_fraction: 0.21
+      well_spacing: 1.5
+      flowrate_egs: 60.0
+      flowrate_conventional: 100.0
+      min_dt: 10.0
+      temp_turbine_out:
+        ORC: 70.0
   eligibility:
     enabled: false
   which_cycles:
-    - orc
+  - orc
   carrier_out: power
-
-  max_depth: 3000
   include_egs: true
-  EGS_cutoff: 3000.0
   drilling_cost_curve: thermogis
-  stimulation_cost_per_doublet: 3.0
-
-  orc_money_per_kw: 1978.0
-  flash_money_per_kw: 1528.0
-  kalina_money_per_kw: 2175.0
-  pump_cost: 0.6
-  lifetime: 30.0
   discount_rate: 0.075
-  capacity_factor: 0.88
-  fixed_OM_rate: 0.015
-  parasitic_fraction: 0.21
-  well_spacing: 1.5
-  flowrate_egs: 60.0
-  flowrate_conventional: 100.0
-  min_dt: 10.0
-  temp_turbine_out:
-    ORC: 70.0
-
   method_region_aggregation: cutoff
   lcoe_cutoff: 1500

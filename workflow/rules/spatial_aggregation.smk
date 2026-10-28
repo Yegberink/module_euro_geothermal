@@ -9,34 +9,38 @@ if POWER_ENABLED:
             cubes=lambda wc: expand(
                 rules.calculate_LCOE.output.cube,
                 shapes=wc.shapes,
+                scenario=wc.scenario,
                 cycle=CYCLES,
             ),
         output:
             **MAKE_2D_FIGURE_OUTPUTS,
             lcoe_tifs=expand(
-                "<resources>/automatic/{shapes}/documents/{cycle}_2d_lcoe.tif",
+                "<resources>/automatic/{shapes}/{scenario}/documents/{cycle}_2d_lcoe.tif",
                 shapes="{shapes}",
+                scenario="{scenario}",
                 cycle=CYCLES,
             ),
             capex_tifs=expand(
-                "<resources>/automatic/{shapes}/documents/{cycle}_2d_specific_capex.tif",
+                "<resources>/automatic/{shapes}/{scenario}/documents/{cycle}_2d_specific_capex.tif",
                 shapes="{shapes}",
+                scenario="{scenario}",
                 cycle=CYCLES,
             ),
             pot_tifs=expand(
-                "<resources>/automatic/{shapes}/documents/{cycle}_2d_potential.tif",
+                "<resources>/automatic/{shapes}/{scenario}/documents/{cycle}_2d_potential.tif",
                 shapes="{shapes}",
+                scenario="{scenario}",
                 cycle=CYCLES,
             ),
         log:
-            "<logs>/{shapes}/make_2d.log",
+            "<logs>/{shapes}/{scenario}/make_2d.log",
         conda:
             "../envs/module.yaml"
         params:
             cycles=CYCLES,
-            max_depth=config["max_depth"],
+            max_depth=lambda wc: config["scenario"][wc.scenario]["max_depth"],
         message:
-            "Reduce geothermal results for {wildcards.shapes} to 2-D rasters."
+            "Reduce geothermal results for {wildcards.shapes} ({wildcards.scenario}) to 2-D rasters."
         script:
             "../scripts/make_2d.py"
 
@@ -61,34 +65,40 @@ rule aggregate_to_regions:
     output:
         geoparquet="<geothermal_regions>",
         power=expand(
-            "<resources>/automatic/{shapes}/documents/{cycle}_power_potential.tif",
+            "<resources>/automatic/{shapes}/{scenario}/documents/{cycle}_power_potential.tif",
             shapes="{shapes}",
+            scenario="{scenario}",
             cycle=CYCLES,
         ),
         contested_power=(
             expand(
-                "<resources>/automatic/{shapes}/documents/{cycle}_contested_power_potential.tif",
+                "<resources>/automatic/{shapes}/{scenario}/documents/{cycle}_contested_power_potential.tif",
                 shapes="{shapes}",
+                scenario="{scenario}",
                 cycle=CYCLES,
             )
             if HEAT_ENABLED
             else []
         ),
         heat=(
-            ["<resources>/automatic/{shapes}/documents/heat_allocated_potential.tif"]
+            [
+                "<resources>/automatic/{shapes}/{scenario}/documents/heat_allocated_potential.tif"
+            ]
             if HEAT_ENABLED
             else []
         ),
         contested_heat=(
-            ["<resources>/automatic/{shapes}/documents/contested_heat_potential.tif"]
+            [
+                "<resources>/automatic/{shapes}/{scenario}/documents/contested_heat_potential.tif"
+            ]
             if HEAT_ENABLED
             else []
         ),
         regional_fig=(
             report(
-                "<results>/{shapes}/figures/regional_power_potential.pdf",
+                "<results>/{shapes}/{scenario}/figures/regional_power_potential.pdf",
                 category="power",
-                subcategory="{shapes}",
+                subcategory="{shapes}/{scenario}",
                 labels={"Figure": "Regional electricity potential"},
             )
             if POWER_ENABLED
@@ -96,9 +106,9 @@ rule aggregate_to_regions:
         ),
         heat_potential_fig=(
             report(
-                "<results>/{shapes}/figures/heat_potential_overview.pdf",
+                "<results>/{shapes}/{scenario}/figures/heat_potential_overview.pdf",
                 category="heat",
-                subcategory="{shapes}",
+                subcategory="{shapes}/{scenario}",
                 labels={"Figure": "Heat supplied to networks"},
             )
             if HEAT_ENABLED
@@ -106,9 +116,9 @@ rule aggregate_to_regions:
         ),
         heat_lcoh_fig=(
             report(
-                "<results>/{shapes}/figures/lcoh_overview.pdf",
+                "<results>/{shapes}/{scenario}/figures/lcoh_overview.pdf",
                 category="heat",
-                subcategory="{shapes}",
+                subcategory="{shapes}/{scenario}",
                 labels={"Figure": "LCOH raster"},
             )
             if HEAT_ENABLED
@@ -116,21 +126,21 @@ rule aggregate_to_regions:
         ),
         regional_heat_fig=(
             report(
-                "<results>/{shapes}/figures/regional_heat_potential.pdf",
+                "<results>/{shapes}/{scenario}/figures/regional_heat_potential.pdf",
                 category="heat",
-                subcategory="{shapes}",
+                subcategory="{shapes}/{scenario}",
                 labels={"Figure": "Regional heating potential"},
             )
             if HEAT_ENABLED
             else []
         ),
     log:
-        "<logs>/{shapes}/aggregate_to_regions.log",
+        "<logs>/{shapes}/{scenario}/aggregate_to_regions.log",
     conda:
         "../envs/module.yaml"
     params:
         carrier_out=config["carrier_out"],
-        max_depth=config["max_depth"],
+        max_depth=lambda wc: config["scenario"][wc.scenario]["max_depth"],
         cycles=CYCLES,
         method_region_aggregation=(
             config["method_region_aggregation"] if POWER_ENABLED else None
@@ -151,6 +161,6 @@ rule aggregate_to_regions:
             else None
         ),
     message:
-        "Aggregate geothermal results to {wildcards.shapes}."
+        "Aggregate geothermal results to {wildcards.shapes} ({wildcards.scenario})."
     script:
         "../scripts/aggregate_to_regions.py"

@@ -65,6 +65,8 @@ controls, model parameters, and aggregation choices, and the
 [module interface](./INTERFACE.yaml) for model assumptions. A complete
 worked configuration is available in [`config/config.yaml`](./config/config.yaml).
 
+The `scenario` mapping accepts any user-defined scenario names. The example configuration provides a `low`, `medium`, and `high` geothermal potential scenario.
+
 All monetary inputs in euros and all cost results use **constant 2020 euros
 (EUR2020)**
 

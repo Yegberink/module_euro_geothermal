@@ -33,7 +33,7 @@ pathvars:
         - `geometry`: valid Polygon or MultiPolygon geometry.
   results:
     geothermal_regions:
-      default: "<results>/{shapes}/geothermal_regions.parquet"
+      default: "<results>/{shapes}/{scenario}/geothermal_regions.parquet"
       description: |
         Regional resource alternatives in the input shapes' CRS:
         - `region_id`: string form of the input `shape_id`.
@@ -52,3 +52,4 @@ pathvars:
         - `geometry`: aggregation-region polygon.
 wildcards:
   shapes: Name of the provided shape set.
+  scenario: User-defined model parameter scenario from the scenario configuration mapping.

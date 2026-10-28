@@ -5,7 +5,7 @@ import re
 from snakemake.io import report as report_output
 
 
-def additional_config_validation() -> None:
+def additional_config_validation(config=config) -> None:
     """Check configuration relationships beyond the JSON schema."""
     if config["carrier_out"] != "power":
         if (
@@ -36,15 +36,15 @@ CYCLES = config["which_cycles"] if POWER_ENABLED else []
 MAKE_2D_FIGURE_OUTPUTS = (
     {
         "overview_fig": report_output(
-            "<results>/{shapes}/figures/lcoe_overview.pdf",
+            "<results>/{shapes}/{scenario}/figures/lcoe_overview.pdf",
             category="power",
-            subcategory="{shapes}",
+            subcategory="{shapes}/{scenario}",
             labels={"Figure": "LCOE and conversion technology"},
         ),
         "potential_overview_fig": report_output(
-            "<results>/{shapes}/figures/potential_overview.pdf",
+            "<results>/{shapes}/{scenario}/figures/potential_overview.pdf",
             category="power",
-            subcategory="{shapes}",
+            subcategory="{shapes}/{scenario}",
             labels={"Figure": "Potential at minimum LCOE"},
         ),
     }

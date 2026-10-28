@@ -49,33 +49,49 @@ if POWER_ENABLED:
             eff=workflow.source_path("../internal/efficiency_curves.csv"),
             drilling_csv=DRILLING_CSV,
         output:
-            cube="<resources>/automatic/{shapes}/documents/{cycle}_lcoe_cube.nc",
+            cube="<resources>/automatic/{shapes}/{scenario}/documents/{cycle}_lcoe_cube.nc",
         log:
-            "<logs>/{shapes}/{cycle}/calculate_LCOE.log",
+            "<logs>/{shapes}/{scenario}/{cycle}/calculate_LCOE.log",
         conda:
             "../envs/module.yaml"
         params:
             cycle=lambda wc: wc.cycle,
-            max_depth=config["max_depth"],
+            max_depth=lambda wc: config["scenario"][wc.scenario]["max_depth"],
             include_egs=config["include_egs"],
-            EGS_cutoff=config["EGS_cutoff"],
+            EGS_cutoff=lambda wc: config["scenario"][wc.scenario]["EGS_cutoff"],
             drilling_cost_curve=config["drilling_cost_curve"],
-            stimulation_cost_per_doublet=config["stimulation_cost_per_doublet"],
-            pump_cost=config["pump_cost"],
-            lifetime=config["lifetime"],
+            stimulation_cost_per_doublet=lambda wc: config["scenario"][wc.scenario][
+                "stimulation_cost_per_doublet"
+            ],
+            pump_cost=lambda wc: config["scenario"][wc.scenario]["pump_cost"],
+            lifetime=lambda wc: config["scenario"][wc.scenario]["lifetime"],
             discount_rate=config["discount_rate"],
-            capacity_factor=config["capacity_factor"],
-            fixed_OM_rate=config["fixed_OM_rate"],
-            parasitic_fraction=config["parasitic_fraction"],
-            orc_money_per_kw=config["orc_money_per_kw"],
-            flash_money_per_kw=config["flash_money_per_kw"],
-            kalina_money_per_kw=config["kalina_money_per_kw"],
-            well_spacing=config["well_spacing"],
-            flowrate_egs=config["flowrate_egs"],
-            flowrate_conventional=config["flowrate_conventional"],
-            min_dt=config["min_dt"],
-            temp_turbine_out=config["temp_turbine_out"],
+            capacity_factor=lambda wc: config["scenario"][wc.scenario][
+                "capacity_factor"
+            ],
+            fixed_OM_rate=lambda wc: config["scenario"][wc.scenario]["fixed_OM_rate"],
+            parasitic_fraction=lambda wc: config["scenario"][wc.scenario][
+                "parasitic_fraction"
+            ],
+            orc_money_per_kw=lambda wc: config["scenario"][wc.scenario][
+                "orc_money_per_kw"
+            ],
+            flash_money_per_kw=lambda wc: config["scenario"][wc.scenario][
+                "flash_money_per_kw"
+            ],
+            kalina_money_per_kw=lambda wc: config["scenario"][wc.scenario][
+                "kalina_money_per_kw"
+            ],
+            well_spacing=lambda wc: config["scenario"][wc.scenario]["well_spacing"],
+            flowrate_egs=lambda wc: config["scenario"][wc.scenario]["flowrate_egs"],
+            flowrate_conventional=lambda wc: config["scenario"][wc.scenario][
+                "flowrate_conventional"
+            ],
+            min_dt=lambda wc: config["scenario"][wc.scenario]["min_dt"],
+            temp_turbine_out=lambda wc: config["scenario"][wc.scenario][
+                "temp_turbine_out"
+            ],
         message:
-            "Calculate {wildcards.cycle} geothermal potential and LCOE for {wildcards.shapes}."
+            "Calculate {wildcards.cycle} geothermal potential and LCOE for {wildcards.shapes} ({wildcards.scenario})."
         script:
             "../scripts/calculate_LCOE.py"
