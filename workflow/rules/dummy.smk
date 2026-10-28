@@ -1,8 +1,4 @@
 rule dummy_add_text:
-    message:
-        "Dummy rule combining user inputs and automatic downloads."
-    params:
-        config_text=config["dummy_text"],
     input:
         user_message="<user_message>",
         readme="<resources>/automatic/dummy_readme.md",
@@ -12,5 +8,9 @@ rule dummy_add_text:
         "<logs>/dummy_add_text.log",
     conda:
         "../envs/module.yaml"
+    params:
+        config_text=config["dummy_text"],
+    message:
+        "Dummy rule combining user inputs and automatic downloads."
     script:
         "../scripts/dummy_script.py"
