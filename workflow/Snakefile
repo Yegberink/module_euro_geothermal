@@ -6,12 +6,15 @@ from snakemake.utils import min_version, validate
 
 min_version("9.19")
 
-
-# Define pathvars for all user resources and public results.
+# !!!!! IMPORTANT !!!!!
+# Define pathvars for all user resource files and result files
+# This allows users to re-wire how the module is used in their workflow with ease.
 pathvars:
+    # User resources
     area_potential="<resources>/user/{shapes}/area_potential_geothermal.tif",
     shapes="<resources>/user/{shapes}/shapes.parquet",
     district_heating="<resources>/user/{shapes}/areas.parquet",
+    # Module results
     geothermal_regions="<results>/{shapes}/{scenario}/geothermal_regions.parquet",
 
 
@@ -19,7 +22,7 @@ pathvars:
 configfile: workflow.source_path("../config/config.yaml")
 
 
-# Validate user configuration and load internal resource metadata.
+# Validate the configuration using the schema file.
 validate(config, workflow.source_path("internal/config.schema.yaml"))
 with open(workflow.source_path("internal/settings.yaml"), "r") as f:
     internal = yaml.safe_load(f) or {}
