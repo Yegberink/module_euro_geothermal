@@ -1,0 +1,13 @@
+# Citation file
+# For more information, see:
+# https://citation-file-format.github.io/
+cff-version: 1.2.0
+message: If you use this software or data produced by it, please cite it using the metadata from this file.
+title: "Modelblocks - module_euro_geothermal: European Geothermal Potential and Costs"
+repository: "https://github.com/Yegberink/module_euro_geothermal"
+license: Apache-2.0
+authors:
+  - given-names: "Yannick"
+    family-names: "Egberink"
+    email: "y.f.egberink@tudelft.nl"
+
