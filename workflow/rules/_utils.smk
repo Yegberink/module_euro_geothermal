@@ -71,3 +71,91 @@ DRILLING_CSV = (
     if config["drilling_cost_curve"] in {"getem_2017", "getem_2025"}
     else []
 )
+
+
+# Resolve upstream rule outputs when Snakemake builds aggregation jobs.
+AGGREGATION_INPUTS = {}
+AGGREGATION_OUTPUTS = {}
+AGGREGATION_PARAMS = {}
+
+if POWER_ENABLED:
+    AGGREGATION_INPUTS.update(
+        lcoe_tifs=lambda wc: expand(rules.make_2d.output.lcoe_tifs, **wc),
+        pot_tifs=lambda wc: expand(rules.make_2d.output.pot_tifs, **wc),
+        capex_tifs=lambda wc: expand(rules.make_2d.output.capex_tifs, **wc),
+    )
+    AGGREGATION_OUTPUTS.update(
+        power=expand(
+            "<resources>/automatic/{shapes}/{scenario}/documents/{cycle}_power_potential.tif",
+            shapes="{shapes}",
+            scenario="{scenario}",
+            cycle=CYCLES,
+        ),
+        regional_fig=report_output(
+            "<results>/{shapes}/{scenario}/figures/regional_power_potential.pdf",
+            category="power",
+            subcategory="{shapes}/{scenario}",
+            labels={"Figure": "Regional electricity potential"},
+        ),
+    )
+    AGGREGATION_PARAMS.update(
+        method_region_aggregation=config["method_region_aggregation"],
+        n_quantiles=(
+            config["n_quantiles"]
+            if config["method_region_aggregation"] == "quantiles"
+            else None
+        ),
+        fixed_bins=(
+            config["fixed_bins"]
+            if config["method_region_aggregation"] == "fixed_bins"
+            else []
+        ),
+        lcoe_cutoff=(
+            config["lcoe_cutoff"]
+            if config["method_region_aggregation"] == "cutoff"
+            else None
+        ),
+    )
+
+if HEAT_ENABLED:
+    AGGREGATION_INPUTS.update(
+        heat_capex=lambda wc: expand(rules.calculate_LCOH.output.specific_capex, **wc),
+        heat_fraction=lambda wc: expand(rules.allocate_heat.output.fraction, **wc),
+        heat_allocated=lambda wc: expand(rules.allocate_heat.output.allocated, **wc),
+        heat_lcoh=lambda wc: expand(rules.calculate_LCOH.output.lcoh, **wc),
+        heat_allocations=lambda wc: expand(
+            rules.allocate_heat.output.allocations, **wc
+        ),
+    )
+    AGGREGATION_OUTPUTS.update(
+        contested_power=expand(
+            "<resources>/automatic/{shapes}/{scenario}/documents/{cycle}_contested_power_potential.tif",
+            shapes="{shapes}",
+            scenario="{scenario}",
+            cycle=CYCLES,
+        ),
+        heat=[
+            "<resources>/automatic/{shapes}/{scenario}/documents/heat_allocated_potential.tif"
+        ],
+        contested_heat=[
+            "<resources>/automatic/{shapes}/{scenario}/documents/contested_heat_potential.tif"
+        ],
+        heat_potential_fig=report_output(
+            "<results>/{shapes}/{scenario}/figures/heat_potential_overview.pdf",
+            category="heat",
+            subcategory="{shapes}/{scenario}",
+            labels={"Figure": "Heat supplied to networks"},
+        ),
+        heat_lcoh_fig=report_output(
+            "<results>/{shapes}/{scenario}/figures/lcoh_overview.pdf",
+            category="heat",
+            subcategory="{shapes}/{scenario}",
+            labels={"Figure": "LCOH raster"},
+        ),
+        regional_heat_fig=report_output(
+            "<results>/{shapes}/{scenario}/figures/regional_heat_potential.pdf",
+            category="heat",
+            subcategory="{shapes}/{scenario}",
+            labels={"Figure": "Regional heating potential"},
+        ),
+    )

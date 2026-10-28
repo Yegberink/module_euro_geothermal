@@ -48,118 +48,21 @@ if POWER_ENABLED:
 rule aggregate_to_regions:
     """Aggregate 2D LCOE and potential rasters to user-defined regions for the configured parameters."""
     input:
+        **AGGREGATION_INPUTS,
         plots=workflow.source_path("../scripts/_plots.py"),
-        lcoe_tifs=(rules.make_2d.output.lcoe_tifs if POWER_ENABLED else []),
-        pot_tifs=(rules.make_2d.output.pot_tifs if POWER_ENABLED else []),
-        capex_tifs=(rules.make_2d.output.capex_tifs if POWER_ENABLED else []),
-        heat_capex=(
-            [rules.calculate_LCOH.output.specific_capex] if HEAT_ENABLED else []
-        ),
-        heat_fraction=([rules.allocate_heat.output.fraction] if HEAT_ENABLED else []),
-        heat_allocated=([rules.allocate_heat.output.allocated] if HEAT_ENABLED else []),
-        heat_lcoh=([rules.calculate_LCOH.output.lcoh] if HEAT_ENABLED else []),
-        heat_allocations=(
-            rules.allocate_heat.output.allocations if HEAT_ENABLED else []
-        ),
         shapes="<shapes>",
     output:
+        **AGGREGATION_OUTPUTS,
         geoparquet="<geothermal_regions>",
-        power=expand(
-            "<resources>/automatic/{shapes}/{scenario}/documents/{cycle}_power_potential.tif",
-            shapes="{shapes}",
-            scenario="{scenario}",
-            cycle=CYCLES,
-        ),
-        contested_power=(
-            expand(
-                "<resources>/automatic/{shapes}/{scenario}/documents/{cycle}_contested_power_potential.tif",
-                shapes="{shapes}",
-                scenario="{scenario}",
-                cycle=CYCLES,
-            )
-            if HEAT_ENABLED
-            else []
-        ),
-        heat=(
-            [
-                "<resources>/automatic/{shapes}/{scenario}/documents/heat_allocated_potential.tif"
-            ]
-            if HEAT_ENABLED
-            else []
-        ),
-        contested_heat=(
-            [
-                "<resources>/automatic/{shapes}/{scenario}/documents/contested_heat_potential.tif"
-            ]
-            if HEAT_ENABLED
-            else []
-        ),
-        regional_fig=(
-            report(
-                "<results>/{shapes}/{scenario}/figures/regional_power_potential.pdf",
-                category="power",
-                subcategory="{shapes}/{scenario}",
-                labels={"Figure": "Regional electricity potential"},
-            )
-            if POWER_ENABLED
-            else []
-        ),
-        heat_potential_fig=(
-            report(
-                "<results>/{shapes}/{scenario}/figures/heat_potential_overview.pdf",
-                category="heat",
-                subcategory="{shapes}/{scenario}",
-                labels={"Figure": "Heat supplied to networks"},
-            )
-            if HEAT_ENABLED
-            else []
-        ),
-        heat_lcoh_fig=(
-            report(
-                "<results>/{shapes}/{scenario}/figures/lcoh_overview.pdf",
-                category="heat",
-                subcategory="{shapes}/{scenario}",
-                labels={"Figure": "LCOH raster"},
-            )
-            if HEAT_ENABLED
-            else []
-        ),
-        regional_heat_fig=(
-            report(
-                "<results>/{shapes}/{scenario}/figures/regional_heat_potential.pdf",
-                category="heat",
-                subcategory="{shapes}/{scenario}",
-                labels={"Figure": "Regional heating potential"},
-            )
-            if HEAT_ENABLED
-            else []
-        ),
     log:
         "<logs>/{shapes}/{scenario}/aggregate_to_regions.log",
     conda:
         "../envs/module.yaml"
     params:
+        **AGGREGATION_PARAMS,
         carrier_out=config["carrier_out"],
         scenario=lambda wc: config["scenario"][wc.scenario],
         cycles=CYCLES,
-        method_region_aggregation=(
-            config["method_region_aggregation"] if POWER_ENABLED else None
-        ),
-        n_quantiles=(
-            config["n_quantiles"]
-            if POWER_ENABLED and config["method_region_aggregation"] == "quantiles"
-            else None
-        ),
-        fixed_bins=(
-            config["fixed_bins"]
-            if POWER_ENABLED and config["method_region_aggregation"] == "fixed_bins"
-            else []
-        ),
-        lcoe_cutoff=(
-            config["lcoe_cutoff"]
-            if POWER_ENABLED and config["method_region_aggregation"] == "cutoff"
-            else None
-        ),
     message:
         "Aggregate geothermal results to {wildcards.shapes} ({wildcards.scenario})."
     script:

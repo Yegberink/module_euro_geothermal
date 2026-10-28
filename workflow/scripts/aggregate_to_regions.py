@@ -255,18 +255,13 @@ def aggregate_heat(ledger, eligible, region_ids, combined, specific_capex):
 
 def main():
     """Write spatial alternatives and heat supplied to each consuming region."""
+    power_enabled = snakemake.params.carrier_out != "heat"
     heat_enabled = snakemake.params.carrier_out != "power"
     combined = snakemake.params.carrier_out == "heat_and_power"
     used_fraction = (
         read_raster(snakemake.input.heat_fraction[0]) if heat_enabled else None
     )
     heat_eligible = xr.zeros_like(used_fraction, dtype=bool) if heat_enabled else None
-    method = snakemake.params.method_region_aggregation
-    n_quantiles = snakemake.params.n_quantiles
-    fixed_bins = [
-        tuple(map(float, value.split("-", 1))) for value in snakemake.params.fixed_bins
-    ]
-    lcoe_cutoff = snakemake.params.lcoe_cutoff
 
     regions = _schemas.ShapeSchema.validate(gpd.read_parquet(snakemake.input.shapes))
     if "shape_class" in regions:
@@ -275,52 +270,61 @@ def main():
     regions.index = regions.index.astype(str)
 
     frames = []
-    cheapest_cost = cheapest_potential = None
-    for index, (tech, lcoe_path, pot_path, capex_path, power_path) in enumerate(
-        zip(
-            snakemake.params.cycles,
-            snakemake.input.lcoe_tifs,
-            snakemake.input.pot_tifs,
-            snakemake.input.capex_tifs,
-            snakemake.output.power,
-            strict=True,
-        )
-    ):
-        costs, capacities = read_raster(lcoe_path), read_raster(pot_path)
-        df, eligible = aggregate_one_tech(
-            tech,
-            costs,
-            capacities,
-            read_raster(capex_path),
-            regions,
-            method,
-            n_quantiles,
-            fixed_bins,
-            lcoe_cutoff,
-            used_fraction,
-            power_path=power_path,
-            contested_path=snakemake.output.contested_power[index]
-            if combined
-            else None,
-        )
-        # Choose before regional summation; regional mean costs would select a
-        # different portfolio. Ties follow the configured cycle order.
-        remaining = (
-            capacities * (1 - align_to_grid(used_fraction, capacities).clip(0, 1))
-            if heat_enabled
-            else capacities
-        )
-        candidate_cost = costs.where(eligible & (remaining > 0), np.inf)
-        if cheapest_cost is None:
-            cheapest_cost = xr.full_like(costs, np.inf)
-            cheapest_potential = xr.zeros_like(capacities)
-        better = candidate_cost < cheapest_cost
-        cheapest_potential = xr.where(better, remaining, cheapest_potential)
-        cheapest_cost = xr.where(better, candidate_cost, cheapest_cost)
-        if heat_enabled:
-            heat_eligible |= align_to_grid(eligible, used_fraction, fill=False)
-        if not df.empty:
-            frames.append(df)
+    if power_enabled:
+        method = snakemake.params.method_region_aggregation
+        n_quantiles = snakemake.params.n_quantiles
+        fixed_bins = [
+            tuple(map(float, value.split("-", 1)))
+            for value in snakemake.params.fixed_bins
+        ]
+        lcoe_cutoff = snakemake.params.lcoe_cutoff
+
+        cheapest_cost = cheapest_potential = None
+        for index, (tech, lcoe_path, pot_path, capex_path, power_path) in enumerate(
+            zip(
+                snakemake.params.cycles,
+                snakemake.input.lcoe_tifs,
+                snakemake.input.pot_tifs,
+                snakemake.input.capex_tifs,
+                snakemake.output.power,
+                strict=True,
+            )
+        ):
+            costs, capacities = read_raster(lcoe_path), read_raster(pot_path)
+            df, eligible = aggregate_one_tech(
+                tech,
+                costs,
+                capacities,
+                read_raster(capex_path),
+                regions,
+                method,
+                n_quantiles,
+                fixed_bins,
+                lcoe_cutoff,
+                used_fraction,
+                power_path=power_path,
+                contested_path=snakemake.output.contested_power[index]
+                if combined
+                else None,
+            )
+            # Choose before regional summation; regional mean costs would select a
+            # different portfolio. Ties follow the configured cycle order.
+            remaining = (
+                capacities * (1 - align_to_grid(used_fraction, capacities).clip(0, 1))
+                if heat_enabled
+                else capacities
+            )
+            candidate_cost = costs.where(eligible & (remaining > 0), np.inf)
+            if cheapest_cost is None:
+                cheapest_cost = xr.full_like(costs, np.inf)
+                cheapest_potential = xr.zeros_like(capacities)
+            better = candidate_cost < cheapest_cost
+            cheapest_potential = xr.where(better, remaining, cheapest_potential)
+            cheapest_cost = xr.where(better, candidate_cost, cheapest_cost)
+            if heat_enabled:
+                heat_eligible |= align_to_grid(eligible, used_fraction, fill=False)
+            if not df.empty:
+                frames.append(df)
 
     if heat_enabled:
         heat_lcoh = read_raster(snakemake.input.heat_lcoh[0])
@@ -356,7 +360,7 @@ def main():
     result = _schemas.GeothermalRegionsSchema.schema.validate(result)
     result.to_parquet(snakemake.output.geoparquet, index=False)
 
-    if snakemake.output.regional_fig:
+    if power_enabled:
         power = result.loc[(result.carrier == "power") & (result.category == "power")]
         maps = {
             tech: power.loc[power.technology == tech]
@@ -396,7 +400,6 @@ def main():
                 heat=True,
                 potential=potential,
             )
-    if snakemake.output.regional_heat_fig:
         # Heat categories partition supplied energy; include contested supply once.
         heat = result.loc[result.carrier == "heat"].groupby("region_id").potential.sum()
         _plots.make_resource_overview(
