@@ -1,0 +1,18 @@
+# Changes here will be overwritten by Copier
+# !!!!! DO NOT MANUALLY MODIFY THIS FILE !!!!!
+_commit: v1.0.3
+_src_path: https://github.com/modelblocks-org/data-module-template.git
+authors:
+-   email: y.f.egberink@tudelft.nl
+    family_name: Egberink
+    given_name: Yannick
+github_org: Yegberink
+license: Apache-2.0
+maintainers:
+-   email: y.f.egberink@tudelft.nl
+    family_name: Egberink
+    given_name: Yannick
+module_code_name: module_euro_geothermal
+module_description: This module calculates geothermal heat or power production in
+    Europe based on a temperature model by Limberger et al. (2014).
+module_human_name: European Geothermal Potential and Costs
