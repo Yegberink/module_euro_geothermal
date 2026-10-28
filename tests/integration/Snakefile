@@ -2,36 +2,29 @@
 configfile: workflow.source_path("./test_config.yaml")
 
 
-# Emulate how another workflow might create inputs for this module.
-rule create_external_input:
+# Emulate how another workflow might create shape inputs for this module.
+rule create_external_shapes:
     output:
-        text_file="resources/user/user_message.md",
+        "resources/user/test/shapes.parquet",
+    log:
+        "logs/create_external_shapes.log",
+    conda:
+        "../../workflow/envs/module.yaml"
+    params:
+        url="https://zenodo.org/records/20765043/files/EUROPE_S_C1_ADM1.parquet?download=1",
     message:
-        "Example of a rule external to your module."
-    run:
-        from pathlib import Path
-        from textwrap import dedent
-
-        text = dedent(
-            """Modular workflows can be used by more than one project!
-            For example, this text comes from a file external to the module.
-            Try your best to make this workflow reusable so that others may benefit from your methods."""
-        )
-        file_path = Path(output.text_file)
-        with file_path.open("w") as f:
-            f.write(text)
+        "Emulating shape inputs for integration testing."
+    shell:
+        "curl --fail --silent --show-error --location --output {output:q} {params.url:q} 2> {log:q}"
 
 
 # Import the module and configure it.
-# `snakefile:` specifies the module. It can use file paths and special github(...) / gitlab(...) markers
-# `config`: specifies the module configuration.
-# `pathvars:` helps you re-wire where the module places files.
-module module_euro_geothermal:
+module module_geothermal:
     pathvars:
         # Redirect specific user resources (inputs)
-        user_message=rules.create_external_input.output.text_file,
+        shapes=rules.create_external_shapes.output[0],
         # Redirect specific module results (outputs)
-        combined_text="results/output/combined_text.md",
+        geothermal_regions="results/output/{shapes}/{scenario}/geothermal_regions.parquet",
         # Redirect intermediate files that are internal to the module
         logs="resources/module/logs",
         resources="resources/module/resources",
@@ -39,17 +32,17 @@ module module_euro_geothermal:
     snakefile:
         "../../workflow/Snakefile"
     config:
-        config["module_euro_geothermal"]
+        config["module_geothermal"]
 
 
-# rename all module rules with a prefix, to avoid naming conflicts.
-use rule * from module_euro_geothermal as module_euro_geothermal_*
+# Rename all module rules with a prefix, to avoid naming conflicts.
+use rule * from module_geothermal as module_geothermal_*
 
 
-# Request something from the module
+# Request something from the module.
 rule all:
     default_target: True
     input:
-        "results/output/combined_text.md",
+        "results/output/test/medium/geothermal_regions.parquet",
     message:
-        "A generic test case for your module."
+        "A generic dry-run test case for the geothermal module."

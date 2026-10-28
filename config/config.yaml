@@ -1,2 +1,99 @@
-# A minimal example of how to configure this module
-dummy_text: This is a user input.
+carrier_out: heat_and_power
+
+eligibility:
+  enabled: true
+
+method_region_aggregation: cutoff
+
+n_quantiles: 4
+
+fixed_bins:
+  - "0-50"
+  - "50-100"
+  - "100-150"
+  - "150-200"
+  - "200-250"
+
+lcoe_cutoff: 75.0
+
+heat_allow_cross_region_supply: true
+heat_network_buffer_km: 10.0
+
+which_cycles:
+  - orc
+  - flash
+  - kalina
+
+include_egs: true
+
+drilling_cost_curve: thermogis
+
+discount_rate: 0.075
+
+heat_production_temperature: 80.0
+heat_reinjection_temperature: 40.0
+thermal_plant_cost_per_kw: 234.0
+heat_capacity_factor: 0.88
+
+# Example geothermal potential scenarios
+scenario:
+  low:
+    max_depth: 3000
+    EGS_cutoff: 2000.0
+    stimulation_cost_per_doublet: 10.0
+    well_spacing: 2.0
+    flowrate_egs: 42.0
+    flowrate_conventional: 70.0
+    pump_cost: 0.78
+    lifetime: 20.0
+    capacity_factor: 0.6
+    fixed_OM_rate: 0.02
+    parasitic_fraction: 0.6
+    orc_money_per_kw: 2571.4
+    flash_money_per_kw: 1986.4
+    kalina_money_per_kw: 2827.5
+    temp_turbine_out:
+      ORC: 91.0
+      Flash: 195.0
+      Kalina: 104.0
+    min_dt: 13.0
+  medium:
+    max_depth: 6000
+    EGS_cutoff: 3000.0
+    stimulation_cost_per_doublet: 3.0
+    well_spacing: 1.5
+    flowrate_egs: 60.0
+    flowrate_conventional: 100.0
+    pump_cost: 0.6
+    lifetime: 30.0
+    capacity_factor: 0.88
+    fixed_OM_rate: 0.015
+    parasitic_fraction: 0.21
+    orc_money_per_kw: 1978.0
+    flash_money_per_kw: 1528.0
+    kalina_money_per_kw: 2175.0
+    temp_turbine_out:
+      ORC: 70.0
+      Flash: 150.0
+      Kalina: 80.0
+    min_dt: 10.0
+  high:
+    max_depth: 9000
+    EGS_cutoff: 5000.0
+    stimulation_cost_per_doublet: 1.03
+    well_spacing: 0.8
+    flowrate_egs: 78.0
+    flowrate_conventional: 130.0
+    pump_cost: 0.42
+    lifetime: 40.0
+    capacity_factor: 0.91
+    fixed_OM_rate: 0.008
+    parasitic_fraction: 0.02
+    orc_money_per_kw: 1384.6
+    flash_money_per_kw: 1069.6
+    kalina_money_per_kw: 1522.5
+    temp_turbine_out:
+      ORC: 49.0
+      Flash: 105.0
+      Kalina: 56.0
+    min_dt: 7.0

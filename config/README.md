@@ -1,8 +1,15 @@
-We recommend consulting the following before using this module:
-- `config/config.yaml`: a generic example configuration of this module.
-- `workflow/internal/config.schema.yaml`: a schematic overview of all the configuration options of this module.
-- `INTERFACE.yaml`: lists module input and output files, and their default locations.
-- `tests/integration/Snakefile`: an example of how to call this module from another workflow.
+# Configuration
 
-This data module is part of the [Modelblocks](https://www.modelblocks.org/) project.
-Please consult the [Modelblocks documentation](https://modelblocks.readthedocs.io/) for more details.
+Consult the following before using this module:
+
+- [`config/config.yaml`](config.yaml): example configuration.
+- [`INTERFACE.yaml`](../INTERFACE.yaml): model assumptions,
+  input requirements, and output descriptions.
+- [`workflow/internal/config.schema.yaml`](../workflow/internal/config.schema.yaml):
+  configuration options, required settings, and validation constraints.
+- [`tests/integration/Snakefile`](../tests/integration/Snakefile): example of
+  importing this module into another workflow.
+
+This module is part of the [Modelblocks](https://www.modelblocks.org/) project.
+See the [Modelblocks documentation](https://modelblocks.readthedocs.io/) for
+more information.

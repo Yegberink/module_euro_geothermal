@@ -1,3 +1,5 @@
+import re
+
 import yaml
 
 from snakemake.utils import min_version, validate
@@ -10,9 +12,11 @@ min_version("9.19")
 # This allows users to re-wire how the module is used in their workflow with ease.
 pathvars:
     # User resources
-    user_message="<resources>/user/user_message.md",
+    area_potential="<resources>/user/{shapes}/area_potential_geothermal.tif",
+    shapes="<resources>/user/{shapes}/shapes.parquet",
+    district_heating="<resources>/user/{shapes}/areas.parquet",
     # Module results
-    combined_text="<results>/combined_text.md",
+    geothermal_regions="<results>/{shapes}/{scenario}/geothermal_regions.parquet",
 
 
 # Load the example configuration. This will be overridden by users.
@@ -21,21 +25,38 @@ configfile: workflow.source_path("../config/config.yaml")
 
 # Validate the configuration using the schema file.
 validate(config, workflow.source_path("internal/config.schema.yaml"))
-
-# Load internal settings separately so users cannot modify them.
 with open(workflow.source_path("internal/settings.yaml"), "r") as f:
-    internal = yaml.safe_load(f)
+    internal = yaml.safe_load(f) or {}
+
+
+wildcard_constraints:
+    shapes="[A-Za-z0-9][A-Za-z0-9_-]*",
+    cycle="orc|flash|kalina",
+    scenario="|".join(re.escape(name) for name in config["scenario"]),
 
 
 # Add all your includes here.
+include: "rules/_utils.smk"
+
+
+additional_config_validation()
+
+
 include: "rules/automatic.smk"
-include: "rules/dummy.smk"
+include: "rules/lcoe.smk"
+include: "rules/heat.smk"
+include: "rules/eligibility.smk"
+include: "rules/spatial_aggregation.smk"
 
 
 # Add additional files to be delivered alongside the workflow here.
 # This is needed e.g. for python code files that are never
 # explicitly used as a script or input in a snakemake rule.
-# e.g.: workflow.source_path("scripts/_utils.py")
+workflow.source_path("scripts/_schemas.py")
+workflow.source_path("scripts/_plots.py")
+workflow.source_path("scripts/_heat.py")
+workflow.source_path("scripts/_economics.py")
+workflow.source_path("scripts/_eligibility.py")
 
 
 rule all:

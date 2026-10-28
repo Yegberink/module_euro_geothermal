@@ -1,8 +1,330 @@
 $schema: "https://json-schema.org/draft/2020-12/schema"
-description: "Schema for user-provided configuration files."
+$id: "file://workflow/internal/config.schema.yaml"
+title: "Geothermal module config"
 type: object
 additionalProperties: false
+
 properties:
-  dummy_text:
-    description: A template example. Should be deleted in real applications.
+  scenario:
+    description: "User-named scenarios, each specifying a complete set of model parameters."
+    type: object
+    minProperties: 1
+    additionalProperties:
+      $ref: "#/$defs/scenario_parameters"
+  eligibility:
+    description: "Land eligibility from the supplied area-potential raster; configure enabled explicitly."
+    $ref: "#/$defs/eligibility"
+  heat_production_temperature:
+    description: "District-heating production temperature (°C); interpolate its shallowest reachable depth."
+    type: number
+    exclusiveMinimum: 0
+  heat_reinjection_temperature:
+    description: "Reinjection temperature (°C); must be below production temperature."
+    type: number
+    minimum: 0
+  thermal_plant_cost_per_kw:
+    description: "Thermal plant CAPEX (EUR2020/kWth of installed capacity)."
+    type: number
+    minimum: 0
+  heat_capacity_factor:
+    description: "Annual heat availability fraction, greater than zero and at most one; no electric parasitic factor applies."
+    type: number
+    exclusiveMinimum: 0
+    maximum: 1
+  heat_network_buffer_km:
+    description: "Maximum distance (km) from a source-cell centre to a district-heating polygon."
+    type: number
+    minimum: 0
+  heat_allow_cross_region_supply:
+    type: boolean
+    description: "Allow heat sources outside the network's assigned region, within the network buffer."
+
+  include_egs:
+    type: boolean
+    description: "Whether to include Enhanced Geothermal Systems (EGS)."
+
+  carrier_out:
     type: string
+    enum: ["power", "heat", "heat_and_power"]
+    description: "Select power, heat, or heat_and_power. Combined mode reports competing resource uses, not cogeneration."
+
+  max_depth:
+    type: number
+    minimum: 250
+    maximum: 10000
+    multipleOf: 250
+    description: "Maximum drilling depth (m) considered in the geothermal analysis; must be a multiple of 250 m."
+
+  which_cycles:
+    type: array
+    description: "Select one or more of orc, flash, and kalina for electricity generation. Heat-only mode needs no cycle parameters."
+    items:
+      type: string
+      enum: ["orc", "flash", "kalina"]
+    uniqueItems: true
+
+  EGS_cutoff:
+    type: number
+    minimum: 0
+    maximum: 10000
+    description: "Depth (m) below which only EGS is assumed."
+
+  temp_turbine_out:
+    type: object
+    description: "Turbine outlet temperatures (°C), with an ORC, Flash, or Kalina entry for every selected electricity cycle."
+    additionalProperties: false
+    properties:
+      ORC:
+        type: number
+        description: "ORC turbine outlet temperature (°C); required when this electricity cycle is selected."
+        minimum: 0
+        maximum: 320
+      Flash:
+        type: number
+        description: "Flash turbine outlet temperature (°C); required when this electricity cycle is selected."
+        minimum: 0
+        maximum: 485
+      Kalina:
+        type: number
+        description: "Kalina turbine outlet temperature (°C); required when this electricity cycle is selected."
+        minimum: 0
+        maximum: 180
+
+  drilling_cost_curve:
+    type: string
+    enum: [thermogis, shamoushaki_2021, getem_2017, getem_2025]
+    description: "Drilling cost curve shared by heat and power. Choices: thermogis, shamoushaki_2021, getem_2017, getem_2025."
+
+  stimulation_cost_per_doublet:
+    type: number
+    minimum: 0
+    description: "Stimulation cost per doublet (million EUR2020)."
+
+  pump_cost:
+    type: number
+    minimum: 0
+    description: "Pump cost (million EUR2020) per doublet pair."
+
+  lifetime:
+    type: number
+    exclusiveMinimum: 0
+    description: "Project lifetime (years)."
+
+  discount_rate:
+    type: number
+    minimum: 0
+    maximum: 1
+    description: "Annual discount rate as a fraction, shared by heat and power; zero means undiscounted costs."
+
+  capacity_factor:
+    type: number
+    minimum: 0
+    maximum: 1
+    description: "Annual availability factor for electricity generation."
+
+  fixed_OM_rate:
+    type: number
+    minimum: 0
+    maximum: 1
+    description: "Fixed O&M rate as fraction of CAPEX per year."
+
+  parasitic_fraction:
+    type: number
+    minimum: 0
+    maximum: 1
+    description: "Parasitic fraction of gross power output."
+
+  orc_money_per_kw:
+    type: number
+    minimum: 0
+    description: "ORC specific CAPEX (EUR2020/kW)."
+
+  flash_money_per_kw:
+    type: number
+    minimum: 0
+    description: "Flash specific CAPEX (EUR2020/kW)."
+
+  kalina_money_per_kw:
+    type: number
+    minimum: 0
+    description: "Kalina specific CAPEX (EUR2020/kW)."
+
+  well_spacing:
+    type: number
+    exclusiveMinimum: 0
+    description: "Distance between production and injection well (km)."
+
+  flowrate_egs:
+    type: number
+    exclusiveMinimum: 0
+    description: "Mass flow rate per EGS doublet (kg/s)."
+
+  flowrate_conventional:
+    type: number
+    exclusiveMinimum: 0
+    description: "Mass flow rate per conventional doublet (kg/s)."
+
+  min_dt:
+    type: number
+    minimum: 0
+    description: "Minimum temperature difference between production temperature and turbine outlet temperature for power generation (°C)."
+
+  method_region_aggregation:
+    type: string
+    enum: ["quantiles", "fixed_bins", "cutoff"]
+    description: "Select quantiles (each raster’s finite LCOE distribution, with boundaries shared by regions), fixed_bins (uniform cost intervals), or cutoff (capacity at or below the cutoff and its mean LCOE). Use quantiles or fixed_bins for cost-supply distributions."
+
+  n_quantiles:
+    type: integer
+    minimum: 1
+    description: "Number of quantiles used when method_region_aggregation=quantiles."
+
+  fixed_bins:
+    type: array
+    description: "Ordered, non-overlapping LCOE intervals in EUR2020/MWh, written as strings such as \"0-50\"; used with fixed_bins aggregation."
+    minItems: 1
+    items:
+      type: string
+      pattern: "^[0-9]+(\\.[0-9]+)?-[0-9]+(\\.[0-9]+)?$"
+
+  lcoe_cutoff:
+    type: number
+    minimum: 0
+    description: "LCOE cutoff (EUR2020/MWh) used when method_region_aggregation=cutoff."
+
+required:
+  - scenario
+  - eligibility
+  - include_egs
+  - carrier_out
+  - drilling_cost_curve
+  - discount_rate
+
+allOf:
+  - if:
+      properties:
+        carrier_out:
+          enum: [power, heat_and_power]
+    then:
+      required: [which_cycles, method_region_aggregation]
+      properties:
+        scenario:
+          additionalProperties:
+            required: [capacity_factor, parasitic_fraction, orc_money_per_kw, flash_money_per_kw, kalina_money_per_kw, min_dt, temp_turbine_out]
+      allOf:
+        - properties:
+            which_cycles:
+              minItems: 1
+
+        - if:
+            properties:
+              which_cycles:
+                contains:
+                  const: "orc"
+          then:
+            properties:
+              scenario:
+                additionalProperties:
+                  properties:
+                    temp_turbine_out:
+                      required: ["ORC"]
+
+        - if:
+            properties:
+              which_cycles:
+                contains:
+                  const: "flash"
+          then:
+            properties:
+              scenario:
+                additionalProperties:
+                  properties:
+                    temp_turbine_out:
+                      required: ["Flash"]
+
+        - if:
+            properties:
+              which_cycles:
+                contains:
+                  const: "kalina"
+          then:
+            properties:
+              scenario:
+                additionalProperties:
+                  properties:
+                    temp_turbine_out:
+                      required: ["Kalina"]
+
+        - if:
+            properties:
+              method_region_aggregation:
+                const: "quantiles"
+          then:
+            required: ["n_quantiles"]
+
+        - if:
+            properties:
+              method_region_aggregation:
+                const: "fixed_bins"
+          then:
+            required: ["fixed_bins"]
+
+        - if:
+            properties:
+              method_region_aggregation:
+                const: "cutoff"
+          then:
+            required: ["lcoe_cutoff"]
+  - if:
+      properties:
+        carrier_out:
+          enum: [heat, heat_and_power]
+    then:
+      required: [heat_production_temperature, heat_reinjection_temperature, thermal_plant_cost_per_kw, heat_capacity_factor, heat_network_buffer_km, heat_allow_cross_region_supply]
+
+$defs:
+  scenario_parameters:
+    type: object
+    required: [max_depth, EGS_cutoff, stimulation_cost_per_doublet, pump_cost, lifetime, fixed_OM_rate, well_spacing, flowrate_egs, flowrate_conventional]
+    additionalProperties: false
+    properties:
+      max_depth:
+        $ref: "#/properties/max_depth"
+      EGS_cutoff:
+        $ref: "#/properties/EGS_cutoff"
+      stimulation_cost_per_doublet:
+        $ref: "#/properties/stimulation_cost_per_doublet"
+      pump_cost:
+        $ref: "#/properties/pump_cost"
+      lifetime:
+        $ref: "#/properties/lifetime"
+      capacity_factor:
+        $ref: "#/properties/capacity_factor"
+      fixed_OM_rate:
+        $ref: "#/properties/fixed_OM_rate"
+      parasitic_fraction:
+        $ref: "#/properties/parasitic_fraction"
+      orc_money_per_kw:
+        $ref: "#/properties/orc_money_per_kw"
+      flash_money_per_kw:
+        $ref: "#/properties/flash_money_per_kw"
+      kalina_money_per_kw:
+        $ref: "#/properties/kalina_money_per_kw"
+      well_spacing:
+        $ref: "#/properties/well_spacing"
+      flowrate_egs:
+        $ref: "#/properties/flowrate_egs"
+      flowrate_conventional:
+        $ref: "#/properties/flowrate_conventional"
+      min_dt:
+        $ref: "#/properties/min_dt"
+      temp_turbine_out:
+        $ref: "#/properties/temp_turbine_out"
+  eligibility:
+    type: object
+    additionalProperties: false
+    required: [enabled]
+    properties:
+      enabled:
+        type: boolean
+        description: "Required explicitly. True requires the area_potential input; false uses the full nominal model-cell area."

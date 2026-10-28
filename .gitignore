@@ -14,6 +14,7 @@ __pycache__
 ### Environments
 .pixi/*
 !.pixi/.gitignore
+!.pixi/config.toml
 
 ### Snakemake
 .snakemake/
@@ -28,3 +29,6 @@ gurobi.log
 **/results/*
 **/temp/*
 **/tmp/*
+
+# Ignore agents.md
+agents.md
