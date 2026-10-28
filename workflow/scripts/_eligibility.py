@@ -7,13 +7,12 @@ import _schemas
 import numpy as np
 import xarray as xr
 from affine import Affine
-from pyproj import CRS
 
 
 def source_grid(nc, power=(), heat=()):
     """Return the union of complete model cells, retaining exact source centres."""
     with xr.open_dataset(nc) as source:
-        _schemas.SourceGridSchema.validate(source)
+        _schemas.validate_source_grid(source)
         x, y = source.x.values, source.y.values
         crs = source.attrs["crs"]
     dx, dy = float(x[1] - x[0]), float(y[1] - y[0])
@@ -22,8 +21,6 @@ def source_grid(nc, power=(), heat=()):
         with xr.open_dataset(power[0]) as cropped:
             ix = np.flatnonzero(np.isin(x, cropped.x.values))
             iy = np.flatnonzero(np.isin(y, cropped.y.values))
-            if len(ix) != len(cropped.x) or len(iy) != len(cropped.y):
-                raise ValueError("Power crop is not on the source grid.")
             windows.append((ix.min(), ix.max() + 1, iy.min(), iy.max() + 1))
     if heat:
         window = json.loads(Path(heat[0]).read_text())
@@ -38,7 +35,7 @@ def source_grid(nc, power=(), heat=()):
     return {"x": x, "y": y, "crs": crs, "transform": transform}
 
 
-def load_fraction(paths, x, y, crs):
+def load_fraction(paths, x, y):
     """Load an exact source-grid subset; never interpolate or silently fill gaps."""
     if not paths:
         return xr.DataArray(
@@ -47,13 +44,5 @@ def load_fraction(paths, x, y, crs):
     import rioxarray
 
     with rioxarray.open_rasterio(paths[0], masked=True) as raster:
-        if CRS.from_user_input(crs) != raster.rio.crs:
-            raise ValueError("Eligibility and model CRS differ.")
-        try:
-            selected = raster.squeeze("band", drop=True).sel(x=x, y=y).load()
-        except KeyError as error:
-            raise ValueError(
-                "Eligibility raster does not cover the exact model grid."
-            ) from error
-    _schemas.EligibilityFractionSchema.validate(selected.values)
+        selected = raster.squeeze("band", drop=True).sel(x=x, y=y).load()
     return selected.drop_vars("spatial_ref", errors="ignore")

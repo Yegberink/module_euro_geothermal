@@ -22,7 +22,7 @@ def main():
     )
     shapes = _schemas.ShapeSchema.validate(gpd.read_parquet(snakemake.input.shapes))
     with xr.open_dataset(snakemake.input.nc) as ds:
-        _schemas.SourceGridSchema.validate(ds)
+        _schemas.validate_source_grid(ds)
         crs = ds.attrs["crs"]
         bounds = [shapes.to_crs(crs).total_bounds]
         if len(networks):

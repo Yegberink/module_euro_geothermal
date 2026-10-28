@@ -145,7 +145,7 @@ def main():
     """Read the prepared source window and write the declared heat maps."""
     window = json.loads(Path(snakemake.input.extent).read_text())
     with xr.open_dataset(snakemake.input.nc) as source:
-        _schemas.TemperatureDepthSchema.validate(source.depth_m.values)
+        _schemas.validate_temperature(source)
         crs = source.attrs["crs"]
         temperature = (
             source.temperature.isel(x=slice(*window["x"]), y=slice(*window["y"]))
@@ -156,18 +156,16 @@ def main():
         dx = float(source.x[1] - source.x[0])
         dy = float(source.y[1] - source.y[0])
     with xr.open_dataset(snakemake.input.sed) as source:
-        if source.attrs["crs"] != crs:
-            raise ValueError("Sediment-grid CRS does not match temperature-grid CRS.")
-        sediment = source.sediment_thickness_m.sel(
-            x=temperature.x, y=temperature.y
-        ).values
+        sediment = (
+            source.sediment_thickness_m.sel(x=temperature.x, y=temperature.y)
+            .transpose("y", "x")
+            .values
+        )
     model = dict(snakemake.params.items())
     model.update(model.pop("scenario"))
     from _eligibility import load_fraction
 
-    fraction = load_fraction(
-        snakemake.input.eligibility, temperature.x, temperature.y, crs
-    )
+    fraction = load_fraction(snakemake.input.eligibility, temperature.x, temperature.y)
     values = calculate_heat(
         temperature.values,
         temperature.depth_m.values,

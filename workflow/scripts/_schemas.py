@@ -60,53 +60,81 @@ class HeatNetworksSchema(ShapeSchema):
     )
 
 
-class SourceGridSchema:
-    """Coordinate contract for the regular subsurface grid."""
-
-    @staticmethod
-    def validate(source):
-        """Require at least two finite, regularly spaced centres per axis."""
-        if not source.attrs.get("crs"):
-            raise ValueError("Temperature grid must declare its CRS.")
-        CRS.from_user_input(source.attrs["crs"])
-        for axis in (source.x.values, source.y.values):
-            if len(axis) < 2:
-                raise ValueError(
-                    "The source grid must contain at least two cells per axis."
-                )
-            spacing = np.diff(axis)
-            if (
-                not np.isfinite(axis).all()
-                or spacing[0] == 0
-                or not np.allclose(spacing, spacing[0])
-            ):
-                raise ValueError("Eligibility requires a regular source grid.")
-        return source
-
-
-class TemperatureDepthSchema:
-    """Depth coordinates used for temperature interpolation."""
-
-    @staticmethod
-    def validate(depths):
-        """Require finite, strictly increasing depths."""
-        if not np.isfinite(depths).all() or np.any(np.diff(depths) <= 0):
+def validate_source_grid(source):
+    """Check downloaded temperature coordinates before cropping or resampling."""
+    CRS.from_user_input(source.attrs["crs"])
+    for name in ("x", "y"):
+        values = source[name].values
+        if values.ndim != 1 or values.size < 2 or not np.isfinite(values).all():
             raise ValueError(
-                "Temperature depths must be finite and strictly increasing."
+                f"Temperature coordinate {name!r} needs two finite centres."
             )
-        return depths
+        steps = np.diff(values)
+        if steps[0] == 0 or not np.allclose(steps, steps[0]):
+            raise ValueError(
+                f"Temperature coordinate {name!r} must be regularly spaced."
+            )
 
 
-class EligibilityFractionSchema:
-    """Available-area fractions on the model grid."""
+def validate_temperature(source):
+    """Check the downloaded temperature cube used for depth interpolation."""
+    validate_source_grid(source)
+    if set(source.temperature.dims) != {"depth_m", "y", "x"}:
+        raise ValueError("Temperature must have depth_m, y and x dimensions.")
+    depths = source.depth_m.values
+    if not depths.size or not np.isfinite(depths).all() or np.any(np.diff(depths) <= 0):
+        raise ValueError("Temperature depths must be finite and strictly increasing.")
 
-    @staticmethod
-    def validate(values):
-        """Require finite fractions in the closed unit interval."""
-        array = np.asarray(values)
-        if not np.isfinite(array).all() or ((array < 0) | (array > 1)).any():
-            raise ValueError("Eligibility fractions must be finite and within [0,1].")
-        return values
+
+def validate_gst1(records):
+    """Interpret downloaded latitude/longitude/thickness rows as a regular grid."""
+    if records.ndim != 2 or records.shape[1] != 3 or not records.shape[0]:
+        raise ValueError("GST-1 XYZ data must contain exactly three columns")
+    if not np.isfinite(records).all() or (records[:, 2] < 0).any():
+        raise ValueError("GST-1 records must be finite with nonnegative thickness")
+
+    latitudes = np.unique(records[:, 0])
+    longitudes = np.unique(records[:, 1])
+    shape = (latitudes.size, longitudes.size)
+    if records.shape[0] != latitudes.size * longitudes.size:
+        raise ValueError("GST-1 rows do not form a complete rectangular grid")
+    grid = records.reshape(*shape, 3)
+    if not (
+        np.all(grid[:, :, 0] == latitudes[:, None])
+        and np.all(grid[:, :, 1] == longitudes[None, :])
+    ):
+        raise ValueError("GST-1 rows must be ordered by latitude then longitude")
+    for coordinates in (latitudes, longitudes):
+        steps = np.diff(coordinates)
+        if not steps.size or not np.allclose(steps, steps[0]):
+            raise ValueError(
+                "GST-1 axes must have at least two regularly spaced centres"
+            )
+    return latitudes, longitudes, grid[:, :, 2]
+
+
+def validate_area_potential(source):
+    """Check supplied raster metadata required for pixel-area calculations."""
+    transform = source.transform
+    if (
+        source.count != 1
+        or source.crs != CRS.from_epsg(4326)
+        or transform.b != 0
+        or transform.d != 0
+        or transform.a <= 0
+        or transform.e >= 0
+        or not np.isclose(transform.a, -transform.e)
+    ):
+        raise ValueError(
+            "Area potential must be a single-band, square, north-up WGS84 raster "
+            "containing available square metres per pixel."
+        )
+
+
+def validate_fractions(values):
+    """Reject invalid supplied areas after normalization, allowing float32 roundoff."""
+    if not np.isfinite(values).all() or ((values < 0) | (values > 1 + 1e-5)).any():
+        raise ValueError("Area fractions must be finite and within [0,1].")
 
 
 class GeothermalRegionsSchema:

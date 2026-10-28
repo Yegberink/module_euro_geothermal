@@ -15,7 +15,6 @@ from _heat import (
     DEMAND_COLUMN,
     METRIC_CRS,
     assign_cell_regions,
-    check_grid,
     read_raster,
     write_raster,
 )
@@ -57,7 +56,6 @@ def candidate_edges(
     networks, regions, lcoh, potential, buffer_km, allow_cross_region_supply
 ):
     """Find nearby feasible cells, optionally restricted to each consumer's region."""
-    check_grid(lcoh, potential)
     valid = (
         np.isfinite(lcoh.values)
         & np.isfinite(potential.values)

@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 import numpy as np
 import rasterio
 from _eligibility import source_grid
-from _schemas import EligibilityFractionSchema
+from _schemas import validate_area_potential, validate_fractions
 from rasterio.transform import array_bounds
 from rasterio.warp import Resampling, reproject, transform_bounds
 from rasterio.windows import Window, from_bounds
@@ -35,20 +35,8 @@ def pixel_areas(transform, rows):
 def resample(area_path, grid, output_path):
     """Normalize in bounded strips, then average directly onto model cells."""
     with rasterio.open(area_path) as source, TemporaryDirectory() as temporary:
+        validate_area_potential(source)
         transform = source.transform
-        if (
-            source.count != 1
-            or source.crs != rasterio.crs.CRS.from_epsg(4326)
-            or transform.b != 0
-            or transform.d != 0
-            or transform.a <= 0
-            or transform.e >= 0
-            or not np.isclose(transform.a, -transform.e)
-        ):
-            raise ValueError(
-                "Area potential must be a single-band, square, north-up WGS84 raster "
-                "containing available square metres per pixel."
-            )
         bounds = transform_bounds(
             grid["crs"],
             source.crs,
@@ -87,13 +75,7 @@ def resample(area_path, grid, output_path):
                     )[:, None]
                 )
                 # Permit float32 roundoff in upstream pixel-area calculations.
-                if (
-                    not np.isfinite(fractions).all()
-                    or ((fractions < 0) | (fractions > 1 + 1e-5)).any()
-                ):
-                    raise ValueError(
-                        "Available area must be finite and between zero and pixel area."
-                    )
+                validate_fractions(fractions)
                 normalized.write(
                     np.clip(fractions, 0, 1).astype("float32"),
                     1,
@@ -111,7 +93,6 @@ def resample(area_path, grid, output_path):
                 resampling=Resampling.average,
             )
 
-    EligibilityFractionSchema.validate(fraction)
     with rasterio.open(
         output_path,
         "w",

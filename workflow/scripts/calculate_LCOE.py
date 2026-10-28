@@ -12,20 +12,7 @@ from _eligibility import load_fraction
 if "snakemake" in dir():
     sys.stdout = sys.stderr = open(snakemake.log[0], "w", buffering=1)
 
-
-VOXEL_NC = snakemake.input.nc
-VAR = "temperature"
-
-# GST-1 sediment thickness pre-aligned to the full temperature grid.
-SEDIMENT_NC = snakemake.input.sed
-
-# efficiency curve CSV
-CSV_PATH = snakemake.input.eff
-
-# EGS cutoff rule:
-Z_THR_M = float(snakemake.params.scenario["EGS_cutoff"])
-
-# other configs
+# Set some global constants from Snakemake parameters to avoid repeated lookups.
 include_egs = bool(snakemake.params.include_egs)
 DRILLING_COST_CURVE_SPEC = resolve_drilling_curve_definition(
     snakemake.params.drilling_cost_curve,
@@ -69,7 +56,7 @@ def gross_power_and_doublets(
     """Return gross MW, doublet count, and EGS status for one voxel."""
     # Missing sediment implies EGS at every positive depth.
     sed_ok = np.where(np.isfinite(sed_thickness), sed_thickness, 0.0).astype(np.float32)
-    cutoff = np.minimum(Z_THR_M, sed_ok)
+    cutoff = np.minimum(snakemake.params.scenario["EGS_cutoff"], sed_ok)
     is_egs = depth > cutoff if include_egs else np.full_like(depth, False, dtype=bool)
 
     # Spacing is in km and available area in km²; each doublet occupies two squares.
@@ -234,11 +221,11 @@ def main():
     # Explicit outputs from Snakemake rule (one tech per job)
     cube_nc = Path(snakemake.output.cube)
 
-    ds = xr.open_dataset(VOXEL_NC)
+    ds = xr.open_dataset(snakemake.input.nc)
     crs_str = ds.attrs["crs"]
 
-    T = ds[VAR]  # (depth_m, y, x)
-    fraction = load_fraction(snakemake.input.eligibility, T.x, T.y, crs_str)
+    T = ds["temperature"]  # (depth_m, y, x)
+    fraction = load_fraction(snakemake.input.eligibility, T.x, T.y)
     area = 100 * fraction
 
     max_depth = float(snakemake.params.scenario["max_depth"])
@@ -246,7 +233,7 @@ def main():
     # Determine effective depth limit
     effective_max = max_depth
     if not include_egs:
-        effective_max = min(effective_max, Z_THR_M)
+        effective_max = min(effective_max, snakemake.params.scenario["EGS_cutoff"])
 
     # Slice depth dimension
     T = T.sel(depth_m=slice(None, effective_max))
@@ -255,23 +242,18 @@ def main():
     depth3d = T["depth_m"].broadcast_like(T)
 
     # Select the exact subset of the full, pre-aligned GST-1 grid.
-    sediment_ds = xr.open_dataset(SEDIMENT_NC)
-    sediment_crs = sediment_ds.attrs["crs"]
-    if sediment_crs != crs_str:
-        raise ValueError(
-            f"Sediment-grid CRS {sediment_crs!r} does not match temperature-grid CRS {crs_str!r}"
-        )
-    sed2d = sediment_ds["sediment_thickness_m"].sel(x=T["x"], y=T["y"])
+    sediment_ds = xr.open_dataset(snakemake.input.sed)
+    sed2d = sediment_ds.sediment_thickness_m.sel(x=T.x, y=T.y).transpose("y", "x")
     sed3d = sed2d.broadcast_like(T)
 
     # Missing sediment implies EGS at every positive depth.
     sed2d_ok = xr.where(np.isfinite(sed2d), sed2d, 0.0).astype(np.float32)
-    cutoff2d = xr.apply_ufunc(np.minimum, Z_THR_M, sed2d_ok).astype(np.float32)
+    cutoff2d = xr.apply_ufunc(np.minimum, snakemake.params.scenario["EGS_cutoff"], sed2d_ok).astype(np.float32)
     cutoff2d.name = "egs_cutoff_depth_m"
     cutoff2d.attrs.update({"crs": crs_str, "units": "m"})
     cutoff3d = cutoff2d.broadcast_like(T)
 
-    temps_curve, effs_curve = load_efficiency_curve_csv(CSV_PATH, cycle)
+    temps_curve, effs_curve = load_efficiency_curve_csv(snakemake.input.eff, cycle)
 
     use_dask = "parallelized" if hasattr(T.data, "chunks") else False
 

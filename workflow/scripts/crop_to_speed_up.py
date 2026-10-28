@@ -45,7 +45,7 @@ def main():
         if shapes_path.suffix.lower() == ".parquet"
         else gpd.read_file(shapes_path)
     )
-    _schemas.SourceGridSchema.validate(ds)
+    _schemas.validate_temperature(ds)
     bbox = gdf.to_crs(ds.attrs["crs"]).total_bounds
 
     ds_small = crop_ds_bbox_projected(

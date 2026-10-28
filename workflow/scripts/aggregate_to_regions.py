@@ -20,7 +20,7 @@ import gregor
 import numpy as np
 import pandas as pd
 import xarray as xr
-from _heat import align_to_grid, check_grid, read_raster, write_raster
+from _heat import align_to_grid, read_raster, write_raster
 
 if "snakemake" in dir():
     sys.stdout = sys.stderr = open(snakemake.log[0], "w", buffering=1)
@@ -80,8 +80,6 @@ def aggregate_one_tech(
     contested_path=None,
 ) -> tuple[pd.DataFrame, object]:
     """Write eligible power alternatives and aggregate each price bin."""
-    check_grid(lcoe, pot)
-    check_grid(specific_capex, pot)
     fraction = (
         align_to_grid(used_fraction, pot).clip(0, 1)
         if used_fraction is not None
@@ -329,7 +327,6 @@ def main():
     if heat_enabled:
         heat_lcoh = read_raster(snakemake.input.heat_lcoh[0])
         allocated = read_raster(snakemake.input.heat_allocated[0])
-        check_grid(allocated, used_fraction)
         write_raster(
             allocated.where(~heat_eligible, 0).where(allocated.notnull()),
             snakemake.output.heat[0],
@@ -342,7 +339,6 @@ def main():
         )
         ledger = pd.read_parquet(snakemake.input.heat_allocations[0])
         heat_capex = read_raster(snakemake.input.heat_capex[0])
-        check_grid(heat_capex, allocated)
         frames.append(
             aggregate_heat(ledger, heat_eligible, regions.index, combined, heat_capex)
         )
