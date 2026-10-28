@@ -13,6 +13,6 @@ maintainers:
     family_name: Egberink
     given_name: Yannick
 module_code_name: module_euro_geothermal
-module_description: This module calculates geothermal heat or power production based
-    on a temperature model by Limberger et al. (2014).
-module_human_name: Geothermal Potential and Costs
+module_description: This module calculates geothermal heat or power production in
+    Europe based on a temperature model by Limberger et al. (2014).
+module_human_name: European Geothermal Potential and Costs

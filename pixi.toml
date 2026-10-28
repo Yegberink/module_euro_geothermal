@@ -1,7 +1,7 @@
 [workspace]
 name = "module_geothermal"
 authors = ["See AUTHORS file"]
-description = "This module calculates geothermal electricity production and costs based on a temperature model by Limberger et al. (2014)."
+description = "This module calculates geothermal heat or power production in Europe based on a temperature model by Limberger et al. (2014)."
 license = "Apache-2.0"
 readme = "README.md"
 channels = ["conda-forge", "bioconda"]

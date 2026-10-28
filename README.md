@@ -1,8 +1,6 @@
-# Modelblocks - Geothermal module
+# European Geothermal Potential and Costs
 
-This module calculates geothermal electricity and district-heating potential,
-with levelized costs of electricity (LCOE) and heat (LCOH), from a European subsurface-temperature model based on
-Limberger et al. (2014).
+This module calculates geothermal heat or power production in Europe based on a temperature model by Limberger et al. (2014).
 
 ![Geothermal LCOE and least-cost conversion technology across Europe](./figures/lcoe_overview.png)
 
