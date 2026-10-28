@@ -23,7 +23,7 @@ SEDIMENT_NC = snakemake.input.sed
 CSV_PATH = snakemake.input.eff
 
 # EGS cutoff rule:
-Z_THR_M = float(snakemake.params.EGS_cutoff)
+Z_THR_M = float(snakemake.params.scenario["EGS_cutoff"])
 
 # other configs
 include_egs = bool(snakemake.params.include_egs)
@@ -241,7 +241,7 @@ def main():
     fraction = load_fraction(snakemake.input.eligibility, T.x, T.y, crs_str)
     area = 100 * fraction
 
-    max_depth = float(snakemake.params.max_depth)
+    max_depth = float(snakemake.params.scenario["max_depth"])
 
     # Determine effective depth limit
     effective_max = max_depth
@@ -285,7 +285,7 @@ def main():
         output_dtypes=[np.float32],
     ).astype(np.float32)
 
-    t_out = float(snakemake.params.temp_turbine_out[cycle_key])
+    t_out = float(snakemake.params.scenario["temp_turbine_out"][cycle_key])
 
     # Evaluate capital costs alongside the additive LCOE contributions.
     lcoe_outputs = xr.apply_ufunc(
@@ -304,20 +304,22 @@ def main():
         keep_attrs=True,
         kwargs=dict(
             cycle_type=cycle,
-            stimulation_cost_per_doublet=snakemake.params.stimulation_cost_per_doublet,
-            pump_cost=snakemake.params.pump_cost,
-            fixed_OM_rate=snakemake.params.fixed_OM_rate,
-            parasitic_fraction=snakemake.params.parasitic_fraction,
-            capacity_factor=snakemake.params.capacity_factor,
-            orc_money_per_kw=snakemake.params.orc_money_per_kw,
-            flash_money_per_kw=snakemake.params.flash_money_per_kw,
-            kalina_money_per_kw=snakemake.params.kalina_money_per_kw,
-            lifetime=snakemake.params.lifetime,
+            stimulation_cost_per_doublet=snakemake.params.scenario[
+                "stimulation_cost_per_doublet"
+            ],
+            pump_cost=snakemake.params.scenario["pump_cost"],
+            fixed_OM_rate=snakemake.params.scenario["fixed_OM_rate"],
+            parasitic_fraction=snakemake.params.scenario["parasitic_fraction"],
+            capacity_factor=snakemake.params.scenario["capacity_factor"],
+            orc_money_per_kw=snakemake.params.scenario["orc_money_per_kw"],
+            flash_money_per_kw=snakemake.params.scenario["flash_money_per_kw"],
+            kalina_money_per_kw=snakemake.params.scenario["kalina_money_per_kw"],
+            lifetime=snakemake.params.scenario["lifetime"],
             discount_rate=snakemake.params.discount_rate,
-            min_dt=snakemake.params.min_dt,
-            well_spacing=snakemake.params.well_spacing,
-            flowrate_egs=snakemake.params.flowrate_egs,
-            flowrate_conventional=snakemake.params.flowrate_conventional,
+            min_dt=snakemake.params.scenario["min_dt"],
+            well_spacing=snakemake.params.scenario["well_spacing"],
+            flowrate_egs=snakemake.params.scenario["flowrate_egs"],
+            flowrate_conventional=snakemake.params.scenario["flowrate_conventional"],
         ),
     )
     lcoe, *component_arrays, specific_capex = [
@@ -344,11 +346,13 @@ def main():
             output_dtypes=[np.float32],
             keep_attrs=True,
             kwargs=dict(
-                min_dt=snakemake.params.min_dt,
-                parasitic_fraction=snakemake.params.parasitic_fraction,
-                well_spacing=snakemake.params.well_spacing,
-                flowrate_egs=snakemake.params.flowrate_egs,
-                flowrate_conventional=snakemake.params.flowrate_conventional,
+                min_dt=snakemake.params.scenario["min_dt"],
+                parasitic_fraction=snakemake.params.scenario["parasitic_fraction"],
+                well_spacing=snakemake.params.scenario["well_spacing"],
+                flowrate_egs=snakemake.params.scenario["flowrate_egs"],
+                flowrate_conventional=snakemake.params.scenario[
+                    "flowrate_conventional"
+                ],
             ),
         )
         .transpose("depth_m", "y", "x")

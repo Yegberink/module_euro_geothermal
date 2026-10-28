@@ -162,6 +162,7 @@ def main():
             x=temperature.x, y=temperature.y
         ).values
     model = dict(snakemake.params.items())
+    model.update(model.pop("scenario"))
     from _eligibility import load_fraction
 
     fraction = load_fraction(

@@ -35,22 +35,10 @@ if HEAT_ENABLED:
         conda:
             "../envs/module.yaml"
         params:
-            max_depth=lambda wc: config["scenario"][wc.scenario]["max_depth"],
+            scenario=lambda wc: config["scenario"][wc.scenario],
             include_egs=config["include_egs"],
-            EGS_cutoff=lambda wc: config["scenario"][wc.scenario]["EGS_cutoff"],
             drilling_cost_curve=config["drilling_cost_curve"],
-            stimulation_cost_per_doublet=lambda wc: config["scenario"][wc.scenario][
-                "stimulation_cost_per_doublet"
-            ],
-            pump_cost=lambda wc: config["scenario"][wc.scenario]["pump_cost"],
-            lifetime=lambda wc: config["scenario"][wc.scenario]["lifetime"],
             discount_rate=config["discount_rate"],
-            fixed_OM_rate=lambda wc: config["scenario"][wc.scenario]["fixed_OM_rate"],
-            well_spacing=lambda wc: config["scenario"][wc.scenario]["well_spacing"],
-            flowrate_egs=lambda wc: config["scenario"][wc.scenario]["flowrate_egs"],
-            flowrate_conventional=lambda wc: config["scenario"][wc.scenario][
-                "flowrate_conventional"
-            ],
             heat_production_temperature=config["heat_production_temperature"],
             heat_reinjection_temperature=config["heat_reinjection_temperature"],
             thermal_plant_cost_per_kw=config["thermal_plant_cost_per_kw"],

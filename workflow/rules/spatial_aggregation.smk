@@ -38,7 +38,7 @@ if POWER_ENABLED:
             "../envs/module.yaml"
         params:
             cycles=CYCLES,
-            max_depth=lambda wc: config["scenario"][wc.scenario]["max_depth"],
+            scenario=lambda wc: config["scenario"][wc.scenario],
         message:
             "Reduce geothermal results for {wildcards.shapes} ({wildcards.scenario}) to 2-D rasters."
         script:
@@ -140,7 +140,7 @@ rule aggregate_to_regions:
         "../envs/module.yaml"
     params:
         carrier_out=config["carrier_out"],
-        max_depth=lambda wc: config["scenario"][wc.scenario]["max_depth"],
+        scenario=lambda wc: config["scenario"][wc.scenario],
         cycles=CYCLES,
         method_region_aggregation=(
             config["method_region_aggregation"] if POWER_ENABLED else None

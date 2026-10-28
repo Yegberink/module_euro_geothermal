@@ -66,7 +66,7 @@ def aggregate_3d_to_2d_lcoe_min(ds: xr.Dataset, depth_dim: str) -> xr.Dataset:
 def main():
     """Reduce all requested cubes and render the model figures."""
     cycles = snakemake.params.cycles
-    max_depth = float(snakemake.params.max_depth)
+    max_depth = float(snakemake.params.scenario["max_depth"])
 
     lcoe_maps = {}
     potential_maps = {}

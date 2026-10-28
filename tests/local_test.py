@@ -1,6 +1,6 @@
 """Optional full workflow, report, and rule-graph tests over three shape sets.
 
-These tests use the power integration configuration, without external heat-network
+These tests use the power configuration, without external heat-network
 or eligibility inputs. Run explicitly; the integration CI task does not include them.
 """
 
