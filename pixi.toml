@@ -1,5 +1,5 @@
 [workspace]
-name = "module_geothermal"
+name = "module_euro_geothermal"
 authors = ["See AUTHORS file"]
 description = "This module calculates geothermal heat or power production in Europe based on a temperature model by Limberger et al. (2014)."
 license = "Apache-2.0"
