@@ -248,7 +248,9 @@ def main():
 
     # Missing sediment implies EGS at every positive depth.
     sed2d_ok = xr.where(np.isfinite(sed2d), sed2d, 0.0).astype(np.float32)
-    cutoff2d = xr.apply_ufunc(np.minimum, snakemake.params.scenario["EGS_cutoff"], sed2d_ok).astype(np.float32)
+    cutoff2d = xr.apply_ufunc(
+        np.minimum, snakemake.params.scenario["EGS_cutoff"], sed2d_ok
+    ).astype(np.float32)
     cutoff2d.name = "egs_cutoff_depth_m"
     cutoff2d.attrs.update({"crs": crs_str, "units": "m"})
     cutoff3d = cutoff2d.broadcast_like(T)
