@@ -8,27 +8,31 @@ import _schemas
 import numpy as np
 import xarray as xr
 from _economics import drilling_cost_meur_per_well, resolve_drilling_curve_definition
+from _eligibility import load_fraction
 from _heat import write_raster
+from affine import Affine
+
+LCOH_COMPONENT_NAMES = ("drilling", "stimulation", "pump", "thermal_plant", "fixed_om")
 
 
 def shallowest_depth(temperature, depths, target, max_depth):
     """Find exact matches or adjacent upward crossings without extrapolation.
 
-    Temperature has shape (depth, y, x). A bracket may end beyond max_depth,
+    The final temperature axis is depth. A bracket may end beyond max_depth,
     provided its interpolated crossing does not. Missing layers never form a
     bracket, and non-monotonic profiles use their shallowest valid crossing.
     """
     depths = np.asarray(depths, dtype=float)
     temperature = np.asarray(temperature, dtype=float)
-    result = np.full(temperature.shape[1:], np.nan)
+    result = np.full(temperature.shape[:-1], np.nan)
     for index, depth in enumerate(depths):
-        layer = temperature[index]
+        layer = temperature[..., index]
         exact = np.isfinite(layer) & (layer == target) & np.isnan(result)
         if 0 < depth <= max_depth:
             result[exact] = depth
         if index == 0:
             continue
-        previous = temperature[index - 1]
+        previous = temperature[..., index - 1]
         crossing = (
             np.isnan(result)
             & np.isfinite(previous)
@@ -56,89 +60,94 @@ def calculate_heat(
     proportionally. No electricity-conversion efficiency or parasitic fraction
     is applied to useful thermal output.
     """
+    scenario = model
+    include_egs = bool(scenario["include_egs"])
     curve_spec = resolve_drilling_curve_definition(
-        model["drilling_cost_curve"], drilling_csv
+        scenario["drilling_cost_curve"], drilling_csv
     )
-    depth = shallowest_depth(
-        temperature, depths, model["heat_production_temperature"], model["max_depth"]
+    # Keep grid labels throughout the calculation, including NumPy callers.
+    T = xr.DataArray(temperature, dims=("depth_m", "y", "x")).assign_coords(
+        depth_m=depths
     )
+    sed2d = xr.DataArray(sediment, dims=("y", "x"), coords={"y": T.y, "x": T.x})
+    use_dask = "parallelized" if hasattr(T.data, "chunks") else False
+    depth = xr.apply_ufunc(
+        shallowest_depth,
+        T,
+        T.depth_m,
+        input_core_dims=[["depth_m"], ["depth_m"]],
+        output_core_dims=[[]],
+        kwargs={
+            "target": scenario["heat_production_temperature"],
+            "max_depth": scenario["max_depth"],
+        },
+        dask=use_dask,
+        output_dtypes=[float],
+    )
+
     # Missing sediment implies EGS at every positive depth.
-    sed_ok = np.where(np.isfinite(sediment), sediment, 0.0).astype(np.float32)
-    cutoff = np.minimum(model["EGS_cutoff"], sed_ok)
-    is_egs = depth > cutoff
-    valid = np.isfinite(depth) & (model["include_egs"] | ~is_egs)
-
-    # `well_spacing` and `area_available` are both expressed in km / km^2 here.
-    doublet_occupation = 2 * model["well_spacing"] ** 2  # km^2 per doublet
-    fraction = np.asarray(eligibility_fraction, dtype=float)
-    valid &= fraction > 0
-    area_available = 100 * fraction
-    n_pairs = area_available / doublet_occupation
-    nr_wells = n_pairs * 2
-    flowrate_wells = np.where(
+    sed2d_ok = xr.where(np.isfinite(sed2d), sed2d, 0.0).astype(np.float32)
+    cutoff2d = np.minimum(scenario["EGS_cutoff"], sed2d_ok)
+    is_egs = depth > cutoff2d
+    fraction = xr.ones_like(depth) * eligibility_fraction
+    area = 100 * fraction
+    n_pairs = area.astype(float) / (2 * scenario["well_spacing"] ** 2)
+    flowrate = xr.where(
         is_egs,
-        model["flowrate_egs"] * n_pairs,
-        model["flowrate_conventional"] * n_pairs,
+        scenario["flowrate_egs"] * n_pairs,
+        scenario["flowrate_conventional"] * n_pairs,
     )
-    Cp_water = 4250.0
-    dT = model["heat_production_temperature"] - model["heat_reinjection_temperature"]
-    therm_out = flowrate_wells * Cp_water * dT / 1e6
-    load_hours = model["heat_capacity_factor"] * 24.0 * 365.0
-    annual_heat = therm_out * load_hours
+    dT = (
+        scenario["heat_production_temperature"]
+        - scenario["heat_reinjection_temperature"]
+    )
+    power = flowrate * 4250.0 * dT / 1e6
+    annual_heat = power * (scenario["heat_capacity_factor"] * 24.0 * 365.0)
+    valid_power = np.isfinite(depth) & (fraction > 0)
+    if not include_egs:
+        valid_power = valid_power & ~is_egs
 
-    well_cost_no_stim = drilling_cost_meur_per_well(depth, curve_spec) * nr_wells
-    stimulation_cost = model["stimulation_cost_per_doublet"] * n_pairs
-    stimulation_investment = np.where(is_egs, stimulation_cost, 0.0)
-    pump_investment = model["pump_cost"] * n_pairs
-    thermalplant_investment = (
-        therm_out * 1000 * model["thermal_plant_cost_per_kw"] / 1e6
+    well_cost = xr.apply_ufunc(
+        drilling_cost_meur_per_well,
+        depth.astype(float),
+        kwargs={"spec": curve_spec},
+        dask=use_dask,
+        output_dtypes=[float],
+    ) * (n_pairs * 2)
+    investments = (
+        well_cost,
+        xr.where(is_egs, scenario["stimulation_cost_per_doublet"] * n_pairs, 0.0),
+        scenario["pump_cost"] * n_pairs,
+        (power * 1000.0 * scenario["thermal_plant_cost_per_kw"]) / 1e6,
     )
-    capex_total = (
-        well_cost_no_stim
-        + stimulation_investment
-        + pump_investment
-        + thermalplant_investment
+    capex_total = sum(investments)
+    lifetime = float(scenario["lifetime"])
+    rate = float(scenario["discount_rate"])
+    annuity = (
+        1 / lifetime
+        if rate == 0
+        else rate * (1 + rate) ** lifetime / ((1 + rate) ** lifetime - 1)
     )
-    fixed_OM_costs = capex_total * model["fixed_OM_rate"]
-
-    discount_rate = float(model["discount_rate"])
-    TT = float(model["lifetime"])
-    annuity_factor = (
-        1 / TT
-        if discount_rate == 0
-        else (discount_rate * (1 + discount_rate) ** TT)
-        / ((1 + discount_rate) ** TT - 1)
-    )
-    meur_to_eur_per_mwh = np.divide(
-        1e6, annual_heat, out=np.full_like(annual_heat, np.nan), where=annual_heat > 0
-    )
-    components = {
-        "lcoh_drilling": well_cost_no_stim * annuity_factor * meur_to_eur_per_mwh,
-        "lcoh_stimulation": stimulation_investment
-        * annuity_factor
-        * meur_to_eur_per_mwh,
-        "lcoh_pump": pump_investment * annuity_factor * meur_to_eur_per_mwh,
-        "lcoh_thermal_plant": thermalplant_investment
-        * annuity_factor
-        * meur_to_eur_per_mwh,
-        "lcoh_fixed_om": fixed_OM_costs * meur_to_eur_per_mwh,
-    }
-    lcoh = sum(components.values())
-    valid &= np.isfinite(lcoh) & np.isfinite(annual_heat) & (annual_heat > 0)
+    conversion = 1e6 / annual_heat.where(annual_heat > 0.0)
+    component_arrays = [cost * annuity * conversion for cost in investments]
+    component_arrays.append(capex_total * scenario["fixed_OM_rate"] * conversion)
+    lcoh = sum(component_arrays)
+    valid_lcoh = np.isfinite(annual_heat) & (annual_heat > 0.0) & np.isfinite(lcoh)
+    specific_capex = capex_total * 1e3 / power.where(power > 0.0)
+    lcoh_components = dict(zip(LCOH_COMPONENT_NAMES, component_arrays))
     values = {
         "depth": depth,
-        "capacity": therm_out,
+        "capacity": power,
         "potential": annual_heat,
         "lcoh": lcoh,
-        "specific_capex": np.divide(
-            capex_total * 1e3,
-            therm_out,
-            out=np.full_like(annual_heat, np.nan),
-            where=therm_out > 0,
-        ),
-        **components,
+        "specific_capex": specific_capex,
+        **{f"lcoh_{name}": values for name, values in lcoh_components.items()},
     }
-    return {name: np.where(valid, value, np.nan) for name, value in values.items()}
+    # Heat maps share one validity mask, including depth and installed capacity.
+    return {
+        name: value.where(valid_power & valid_lcoh).transpose("y", "x")
+        for name, value in values.items()
+    }
 
 
 def main():
@@ -159,25 +168,21 @@ def main():
         sediment = (
             source.sediment_thickness_m.sel(x=temperature.x, y=temperature.y)
             .transpose("y", "x")
-            .values
+            .load()
         )
     model = dict(snakemake.params.items())
     model.update(model.pop("scenario"))
-    from _eligibility import load_fraction
-
     fraction = load_fraction(snakemake.input.eligibility, temperature.x, temperature.y)
     values = calculate_heat(
-        temperature.values,
-        temperature.depth_m.values,
+        temperature,
+        temperature.depth_m,
         sediment,
         model,
-        fraction.values,
+        fraction,
         drilling_csv=snakemake.input.drilling_csv[0]
         if snakemake.input.drilling_csv
         else None,
     )
-    from affine import Affine
-
     transform = Affine(
         dx, 0, float(temperature.x[0]) - dx / 2, 0, dy, float(temperature.y[0]) - dy / 2
     )
@@ -187,15 +192,9 @@ def main():
         ("potential", "MWh_th/year"),
         ("depth", "m"),
     ]:
-        data = (
-            xr.DataArray(
-                values[name],
-                dims=("y", "x"),
-                coords={"x": temperature.x, "y": temperature.y},
-            )
-            .rio.write_crs(crs)
-            .rio.write_transform(transform)
-        )
+        data = values[name].rename(None)
+        data.attrs = {}
+        data = data.rio.write_crs(crs).rio.write_transform(transform)
         if window["empty"]:
             data[:] = np.nan
         write_raster(data, snakemake.output[name], unit)

@@ -41,180 +41,9 @@ def load_efficiency_curve_csv(csv_path, cycle):
 LCOE_COMPONENT_NAMES = ("drilling", "stimulation", "pump", "power_plant", "fixed_om")
 
 
-def gross_power_and_doublets(
-    efficiency,
-    production_temp,
-    depth,
-    temp_turb_out,
-    sed_thickness,
-    area_available,
-    min_dt,
-    well_spacing,
-    flowrate_egs,
-    flowrate_conventional,
-):
-    """Return gross MW, doublet count, and EGS status for one voxel."""
-    # Missing sediment implies EGS at every positive depth.
-    sed_ok = np.where(np.isfinite(sed_thickness), sed_thickness, 0.0).astype(np.float32)
-    cutoff = np.minimum(snakemake.params.scenario["EGS_cutoff"], sed_ok)
-    is_egs = depth > cutoff if include_egs else np.full_like(depth, False, dtype=bool)
-
-    # Spacing is in km and available area in km²; each doublet occupies two squares.
-    n_pairs = area_available / (2 * well_spacing**2)
-    flowrate_wells = np.where(
-        is_egs, flowrate_egs * n_pairs, flowrate_conventional * n_pairs
-    )
-    dT = production_temp - temp_turb_out
-    if not np.isfinite(efficiency) or not np.isfinite(dT) or dT < min_dt:
-        return np.nan, n_pairs, is_egs
-
-    Cp_water = 4250.0
-    therm_out = flowrate_wells * Cp_water * dT / 1e6
-    power = therm_out * efficiency
-    if not np.isfinite(power) or power <= 0.0:
-        return np.nan, n_pairs, is_egs
-    return power, n_pairs, is_egs
-
-
-def calculate_LCOE_components_vec(
-    efficiency,
-    production_temp,
-    depth,
-    temp_turb_out,
-    sed_thickness,
-    area_available,
-    lifetime,
-    discount_rate,
-    cycle_type,
-    stimulation_cost_per_doublet,
-    pump_cost,
-    fixed_OM_rate,
-    parasitic_fraction,
-    capacity_factor,
-    well_spacing,
-    flowrate_egs,
-    flowrate_conventional,
-    orc_money_per_kw,
-    flash_money_per_kw,
-    kalina_money_per_kw,
-    min_dt,
-):
-    """Return LCOE, its five contributions, and CAPEX per net electrical kW."""
-    nan_result = tuple(np.float32(np.nan) for _ in range(2 + len(LCOE_COMPONENT_NAMES)))
-    W, n_pairs, is_egs = gross_power_and_doublets(
-        efficiency,
-        production_temp,
-        depth,
-        temp_turb_out,
-        sed_thickness,
-        area_available,
-        min_dt,
-        well_spacing,
-        flowrate_egs,
-        flowrate_conventional,
-    )
-    if not np.isfinite(W):
-        return nan_result
-    nr_wells = n_pairs * 2
-
-    if cycle_type == "flash":
-        eur_per_kw = flash_money_per_kw
-    elif cycle_type == "orc":
-        eur_per_kw = orc_money_per_kw
-    elif cycle_type == "kalina":
-        eur_per_kw = kalina_money_per_kw
-    else:
-        return nan_result
-
-    powerplant_investment = (W * 1000.0 * eur_per_kw) / 1e6
-    stimulation_cost = stimulation_cost_per_doublet * n_pairs
-
-    well_cost_no_stim = (
-        drilling_cost_meur_per_well(depth, DRILLING_COST_CURVE_SPEC) * nr_wells
-    )
-    stimulation_investment = stimulation_cost if is_egs else 0.0
-    pump_investment = pump_cost * n_pairs
-    capex_total = (
-        well_cost_no_stim
-        + stimulation_investment
-        + pump_investment
-        + powerplant_investment
-    )
-
-    load_hours = capacity_factor * 24.0 * 365.0
-    elec_out = W * load_hours
-    net_elec = elec_out * (1.0 - parasitic_fraction)
-
-    if (not np.isfinite(net_elec)) or (net_elec <= 0.0):
-        return nan_result
-
-    fixed_OM_costs = capex_total * fixed_OM_rate
-    opex_total = fixed_OM_costs
-
-    TT = float(lifetime)
-    annuity_factor = (
-        1 / TT
-        if discount_rate == 0
-        else (discount_rate * (1 + discount_rate) ** TT)
-        / ((1 + discount_rate) ** TT - 1)
-    )
-
-    meur_to_eur_per_mwh = 1e6 / net_elec
-    component_lcoe = (
-        well_cost_no_stim * annuity_factor * meur_to_eur_per_mwh,
-        stimulation_investment * annuity_factor * meur_to_eur_per_mwh,
-        pump_investment * annuity_factor * meur_to_eur_per_mwh,
-        powerplant_investment * annuity_factor * meur_to_eur_per_mwh,
-        opex_total * meur_to_eur_per_mwh,
-    )
-    lcoe = sum(component_lcoe)
-
-    if not np.isfinite(lcoe):
-        return nan_result
-
-    return (
-        np.float32(lcoe),
-        *(np.float32(value) for value in component_lcoe),
-        np.float32(capex_total * 1e3 / (W * (1.0 - parasitic_fraction))),
-    )
-
-
-def calculate_capacity_vec(
-    efficiency,
-    production_temp,
-    depth,
-    temp_turb_out,
-    sed_thickness,
-    area_available,
-    min_dt,
-    parasitic_fraction,
-    well_spacing,
-    flowrate_egs,
-    flowrate_conventional,
-):
-    """Calculate net installed capacity for one voxel."""
-    power, _, _ = gross_power_and_doublets(
-        efficiency,
-        production_temp,
-        depth,
-        temp_turb_out,
-        sed_thickness,
-        area_available,
-        min_dt,
-        well_spacing,
-        flowrate_egs,
-        flowrate_conventional,
-    )
-    potential = power * (1.0 - parasitic_fraction)
-
-    if (not np.isfinite(potential)) or (potential <= 0.0):
-        return np.float32(np.nan)
-
-    return np.float32(potential)
-
-
 def main():
     """Calculate and write the LCOE cube requested by Snakemake."""
+    scenario = snakemake.params.scenario
     cycle = snakemake.params.cycle
     cycle_key = {"orc": "ORC", "flash": "Flash", "kalina": "Kalina"}[cycle]
 
@@ -228,12 +57,12 @@ def main():
     fraction = load_fraction(snakemake.input.eligibility, T.x, T.y)
     area = 100 * fraction
 
-    max_depth = float(snakemake.params.scenario["max_depth"])
+    max_depth = float(scenario["max_depth"])
 
     # Determine effective depth limit
     effective_max = max_depth
     if not include_egs:
-        effective_max = min(effective_max, snakemake.params.scenario["EGS_cutoff"])
+        effective_max = min(effective_max, scenario["EGS_cutoff"])
 
     # Slice depth dimension
     T = T.sel(depth_m=slice(None, effective_max))
@@ -244,13 +73,10 @@ def main():
     # Select the exact subset of the full, pre-aligned GST-1 grid.
     sediment_ds = xr.open_dataset(snakemake.input.sed)
     sed2d = sediment_ds.sediment_thickness_m.sel(x=T.x, y=T.y).transpose("y", "x")
-    sed3d = sed2d.broadcast_like(T)
 
     # Missing sediment implies EGS at every positive depth.
     sed2d_ok = xr.where(np.isfinite(sed2d), sed2d, 0.0).astype(np.float32)
-    cutoff2d = xr.apply_ufunc(
-        np.minimum, snakemake.params.scenario["EGS_cutoff"], sed2d_ok
-    ).astype(np.float32)
+    cutoff2d = np.minimum(scenario["EGS_cutoff"], sed2d_ok).astype(np.float32)
     cutoff2d.name = "egs_cutoff_depth_m"
     cutoff2d.attrs.update({"crs": crs_str, "units": "m"})
     cutoff3d = cutoff2d.broadcast_like(T)
@@ -264,83 +90,68 @@ def main():
         T,
         input_core_dims=[[]],
         kwargs={"xp": temps_curve, "fp": effs_curve, "left": np.nan, "right": np.nan},
-        vectorize=True,
         dask=use_dask,
         output_dtypes=[np.float32],
     ).astype(np.float32)
 
-    t_out = float(snakemake.params.scenario["temp_turbine_out"][cycle_key])
-
-    # Evaluate capital costs alongside the additive LCOE contributions.
-    lcoe_outputs = xr.apply_ufunc(
-        calculate_LCOE_components_vec,
-        eff,
-        T,
-        depth3d,
-        t_out,
-        sed3d,
-        area,
-        input_core_dims=[[], [], [], [], [], []],
-        output_core_dims=[[] for _ in range(2 + len(LCOE_COMPONENT_NAMES))],
-        vectorize=True,
-        dask=use_dask,
-        output_dtypes=[np.float32 for _ in range(2 + len(LCOE_COMPONENT_NAMES))],
-        keep_attrs=True,
-        kwargs=dict(
-            cycle_type=cycle,
-            stimulation_cost_per_doublet=snakemake.params.scenario[
-                "stimulation_cost_per_doublet"
-            ],
-            pump_cost=snakemake.params.scenario["pump_cost"],
-            fixed_OM_rate=snakemake.params.scenario["fixed_OM_rate"],
-            parasitic_fraction=snakemake.params.scenario["parasitic_fraction"],
-            capacity_factor=snakemake.params.scenario["capacity_factor"],
-            orc_money_per_kw=snakemake.params.scenario["orc_money_per_kw"],
-            flash_money_per_kw=snakemake.params.scenario["flash_money_per_kw"],
-            kalina_money_per_kw=snakemake.params.scenario["kalina_money_per_kw"],
-            lifetime=snakemake.params.scenario["lifetime"],
-            discount_rate=snakemake.params.discount_rate,
-            min_dt=snakemake.params.scenario["min_dt"],
-            well_spacing=snakemake.params.scenario["well_spacing"],
-            flowrate_egs=snakemake.params.scenario["flowrate_egs"],
-            flowrate_conventional=snakemake.params.scenario["flowrate_conventional"],
-        ),
+    t_out = float(scenario["temp_turbine_out"][cycle_key])
+    dT = T.astype(float) - t_out
+    is_egs = depth3d > cutoff3d
+    n_pairs = area.astype(float) / (2 * scenario["well_spacing"] ** 2)
+    flowrate = xr.where(
+        is_egs,
+        scenario["flowrate_egs"] * n_pairs,
+        scenario["flowrate_conventional"] * n_pairs,
     )
+    power = flowrate * 4250.0 * dT / 1e6 * eff.astype(float)
+    valid_power = np.isfinite(eff) & np.isfinite(dT) & (dT >= scenario["min_dt"])
+    valid_power &= np.isfinite(power) & (power > 0.0)
+    if not include_egs:
+        valid_power &= ~is_egs
+    power = power.where(valid_power)
+
+    net_fraction = 1.0 - scenario["parasitic_fraction"]
+    cap = power * net_fraction
+    cap = cap.where(np.isfinite(cap) & (cap > 0.0))
+    net_elec = power * (scenario["capacity_factor"] * 24.0 * 365.0) * net_fraction
+
+    # Drilling depends only on depth; broadcast its costs over the doublets.
+    well_cost = xr.apply_ufunc(
+        drilling_cost_meur_per_well,
+        T.depth_m.astype(float),
+        kwargs={"spec": DRILLING_COST_CURVE_SPEC},
+        dask=use_dask,
+        output_dtypes=[float],
+    ) * (n_pairs * 2)
+    investments = (
+        well_cost,
+        xr.where(is_egs, scenario["stimulation_cost_per_doublet"] * n_pairs, 0.0),
+        scenario["pump_cost"] * n_pairs,
+        (power * 1000.0 * scenario[f"{cycle}_money_per_kw"]) / 1e6,
+    )
+    capex_total = sum(investments)
+    lifetime = float(scenario["lifetime"])
+    rate = snakemake.params.discount_rate
+    annuity = (
+        1 / lifetime
+        if rate == 0
+        else rate * (1 + rate) ** lifetime / ((1 + rate) ** lifetime - 1)
+    )
+    conversion = 1e6 / net_elec
+    component_arrays = [cost * annuity * conversion for cost in investments]
+    component_arrays.append(capex_total * scenario["fixed_OM_rate"] * conversion)
+    lcoe = sum(component_arrays)
+    valid_lcoe = np.isfinite(net_elec) & (net_elec > 0.0) & np.isfinite(lcoe)
+    specific_capex = capex_total * 1e3 / (power * net_fraction)
     lcoe, *component_arrays, specific_capex = [
-        output.transpose("depth_m", "y", "x").assign_attrs(
-            units="EUR2020/MWh_e", tech=cycle_key, crs=crs_str
-        )
-        for output in lcoe_outputs
+        output.where(valid_lcoe)
+        .transpose("depth_m", "y", "x")
+        .assign_attrs(eff.attrs, units="EUR2020/MWh_e", tech=cycle_key, crs=crs_str)
+        for output in (lcoe, *component_arrays, specific_capex)
     ]
     lcoe_components = dict(zip(LCOE_COMPONENT_NAMES, component_arrays))
-
-    # Installed capacity cube (net MW)
-    cap = (
-        xr.apply_ufunc(
-            calculate_capacity_vec,
-            eff,
-            T,
-            depth3d,
-            t_out,
-            sed3d,
-            area,
-            input_core_dims=[[], [], [], [], [], []],
-            vectorize=True,
-            dask=use_dask,
-            output_dtypes=[np.float32],
-            keep_attrs=True,
-            kwargs=dict(
-                min_dt=snakemake.params.scenario["min_dt"],
-                parasitic_fraction=snakemake.params.scenario["parasitic_fraction"],
-                well_spacing=snakemake.params.scenario["well_spacing"],
-                flowrate_egs=snakemake.params.scenario["flowrate_egs"],
-                flowrate_conventional=snakemake.params.scenario[
-                    "flowrate_conventional"
-                ],
-            ),
-        )
-        .transpose("depth_m", "y", "x")
-        .assign_attrs(units="MW", tech=cycle_key, crs=crs_str)
+    cap = cap.transpose("depth_m", "y", "x").assign_attrs(
+        eff.attrs, units="MW", tech=cycle_key, crs=crs_str
     )
 
     ds_out = xr.Dataset(
